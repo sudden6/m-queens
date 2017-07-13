@@ -37,7 +37,7 @@ int nqueens(int n) {
           int ncols = cols[d] | bit;
           int ndiagl = (diagl[d] | bit) << 1;
           int ndiagr = (diagr[d] | bit) >> 1;
-          int nposib = ~(ncols | ndiagl | ndiagr);
+          int other_possible = ~(ncols | ndiagl | ndiagr);
           candidates ^= bit; // Eliminate the tried possibility.
 
           // The following is the main additional trick here, as recognizing
@@ -49,7 +49,7 @@ int nqueens(int n) {
           // efficient!
           num += ncols == -1;
 
-          if (nposib) {
+          if (other_possible) {
             if (candidates) { // This if saves stack depth + backtrack
                               // operations when we passed the last possibility
                               // in a row.
@@ -58,7 +58,7 @@ int nqueens(int n) {
             cols[d] = ncols;
             diagl[d] = ndiagl;
             diagr[d] = ndiagr;
-            candidates = nposib;
+            candidates = other_possible;
           }
         }
         candidates = posibs[--d]; // backtrack ...
