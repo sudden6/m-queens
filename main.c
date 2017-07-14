@@ -55,9 +55,7 @@ int nqueens() {
   for (q0 = 0; q0 < N - 2; q0++) {
     for (q1 = q0 + 2; q1 < N; q1++) {
       int bit0 = 1 << q0;
-      bit_set[0] = bit0;
       int bit1 = 1 << q1;
-      bit_set[1] = bit1;
       int d = 0; // d is our depth in the backtrack stack
       cols = bit0 | bit1 | (-1 << N); // The -1 here is used to fill all 'column' bits after n ...
       diagl = ALIGN_COL_L(bit0, 0) | ALIGN_COL_L(bit1, 1);
@@ -120,7 +118,7 @@ int results[17] = {1, 0, 0, 2, 10, 4, 40, 92, 352,
                    724, 2680, 14200, 73712, 365596,
                    2279184, 14772512, 95815104};
 
-main(int ac, char **av) {
+int main(int argc, char argv) {
 
 #ifdef TESTSUITE
     int i;
@@ -134,11 +132,12 @@ main(int ac, char **av) {
         printf("N=%2d, Solutions=%10d, Expected=%10d, Time=%f s\n",n , result, results[i], time_diff / CLOCKS_PER_SEC);
     }
 #else
-  double time_diff, time_start; // for measuring calculation time
-  time_start = clock();
-  printf("Number of solution for %d is %d\n", N, nqueens());
-  time_diff = (clock() - time_start); // calculating time difference
-  printf("End Time:             %f seconds \n",
-  time_diff / CLOCKS_PER_SEC); // needed time in seconds
+    double time_diff, time_start; // for measuring calculation time
+    time_start = clock();
+    int result = nqueens();
+    time_diff = (clock() - time_start); // calculating time difference
+    result == results[N - 1] ? printf("PASS ") : printf("FAIL ");
+    printf("N=%2d, Solutions=%10d, Expected=%10d, Time=%f s\n", N , result, results[N-1], time_diff / CLOCKS_PER_SEC);
 #endif
+    return 0;
 }
