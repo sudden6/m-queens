@@ -2,7 +2,7 @@
 #include <time.h>
 
 #define MAXN 31
-#define N 5
+#define N 17
 
 // align diag values to columns
 #define ALIGN_DIA_R(x, d) ((x) >> (d))
@@ -12,10 +12,32 @@
 #define ALIGN_COL_R(x, d) ((x) << (d))
 #define ALIGN_COL_L(x, d) ((x) << (N - 1 - (d)))
 
+int cols, diagl, diagr;
+int posibs[MAXN] = {0}; // Our backtracking 'stack'
+int bit_set[MAXN] = {0};
+
+void printChessBoard()
+{
+    int row;
+    int col;
+    int col_mask = ~(-1 << N); // mask with only the allowed columns set to 1
+    printf("\n");
+
+    for(row = 0; row  < N; row++) {
+        for(col = 0; col < N; col++) {
+            if(bit_set[row] & (1 << (N - 1 - col))) {
+                printf("X ");		// queen
+            } else {
+                printf("- ");		// empty field
+            }
+        }
+        printf("\n");
+    }
+}
+
 int nqueens(int n) {
   int q0, q1;
-  int cols, diagl, diagr;
-  int posibs[MAXN]; // Our backtracking 'stack'
+
   int num = 0;
   int col_mask = -1 << n; // mask with only the allowed columns set to 1
   //
@@ -26,7 +48,9 @@ int nqueens(int n) {
   for (q0 = 0; q0 < n - 2; q0++) {
     for (q1 = q0 + 2; q1 < n; q1++) {
       int bit0 = 1 << q0;
+      bit_set[0] = bit0;
       int bit1 = 1 << q1;
+      bit_set[1] = bit1;
       int d = 0; // d is our depth in the backtrack stack
       cols = bit0 | bit1 | (-1 << n); // The -1 here is used to fill all 'column' bits after n ...
       diagl = ALIGN_COL_L(bit0, 0) | ALIGN_COL_L(bit1, 1);
@@ -38,8 +62,9 @@ int nqueens(int n) {
       int candidates = ~(cols | ALIGN_DIA_L(diagl, d) | ALIGN_DIA_R(diagr, d));
 
       while (d >= 2) {
+          int bit = 0;
         while (candidates) {
-          int bit = candidates & -candidates; // The standard trick for getting
+          bit = candidates & -candidates; // The standard trick for getting
                                               // the rightmost bit in the mask
           int ncols = cols | bit;
           int nxt_diagl = ALIGN_COL_L(bit, d) | diagl;
@@ -56,27 +81,27 @@ int nqueens(int n) {
           // efficient!
           num += ncols == -1;
 
+          /*
+          if(ncols == -1) {
+              num++;
+              printChessBoard();
+          }//*/
+
           if (nxt_possible) {
-            if (candidates) { // This if saves stack depth + backtrack
-                              // operations when we passed the last possibility
-                              // in a row.
-              d++;
-              posibs[d] = candidates; // Go lower in stack ..
-            }
+            posibs[d] = candidates;
+            bit_set[d] = bit;
+            d++;
             cols = ncols;
             diagl = nxt_diagl;
             diagr = nxt_diagr;
             candidates = nxt_possible;
-          } else {
-              int clear_mask = cols & ALIGN_DIA_L(diagl, d) & ALIGN_DIA_R(diagr, d);
-              cols &= ~clear_mask | col_mask;
-              diagl &= ~(ALIGN_COL_L(clear_mask, d));
-              diagr &= ~(ALIGN_COL_R(clear_mask, d));
           }
         }
-        //TODO: check if col_mask needed
         d--;
-
+        int clear_mask = bit_set[d] & ALIGN_DIA_L(diagl, d) & ALIGN_DIA_R(diagr, d);
+        cols &= ~bit_set[d] | col_mask;
+        diagl &= ~(ALIGN_COL_L(clear_mask, d));
+        diagr &= ~(ALIGN_COL_R(clear_mask, d));
 
         candidates = posibs[d]; // backtrack ...
       }
