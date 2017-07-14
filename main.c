@@ -20,7 +20,6 @@ void printChessBoard()
 {
     int row;
     int col;
-    int col_mask = ~(-1 << N); // mask with only the allowed columns set to 1
     printf("\n");
 
     for(row = 0; row  < N; row++) {
@@ -98,10 +97,9 @@ int nqueens(int n) {
           }
         }
         d--;
-        int clear_mask = bit_set[d] & ALIGN_DIA_L(diagl, d) & ALIGN_DIA_R(diagr, d);
-        cols &= ~bit_set[d] | col_mask;
-        diagl &= ~(ALIGN_COL_L(clear_mask, d));
-        diagr &= ~(ALIGN_COL_R(clear_mask, d));
+        cols &= ~bit_set[d];
+        diagl &= ~(ALIGN_COL_L(bit_set[d], d));
+        diagr &= ~(ALIGN_COL_R(bit_set[d], d));
 
         candidates = posibs[d]; // backtrack ...
       }
@@ -110,6 +108,7 @@ int nqueens(int n) {
   return num * 2;
 }
 
+#ifndef OTHER_MAIN
 main(int ac, char **av) {
 
   double time_diff, time_start; // for measuring calculation time
@@ -119,3 +118,4 @@ main(int ac, char **av) {
   printf("End Time:             %f seconds \n",
          time_diff / CLOCKS_PER_SEC); // needed time in seconds
 }
+#endif
