@@ -10,7 +10,7 @@ int n = 17;
 #define N n
 #define MAXN 31
 #else
-#define N 17
+#define N 19
 #define MAXN N
 #endif
 
@@ -30,7 +30,7 @@ uint64_t nqueens() {
   // be AFTER the first queen.
   //
 
-#pragma omp parallel for reduction(+:num)
+#pragma omp parallel for reduction(+:num) schedule(dynamic)
   for (int q0 = 0; q0 < N - 2; q0++) {
     for (int q1 = q0 + 2; q1 < N; q1++) {
         int cols[MAXN], diagl[MAXN], diagr[MAXN],
@@ -95,12 +95,12 @@ int main(int argc, char **argv) {
   for (i = 1; i < 18; i++) {
     double time_diff, time_start; // for measuring calculation time
     n = i + 1;
-    time_start = clock();
+    time_start = get_time();
     int result = nqueens();
-    time_diff = (clock() - time_start); // calculating time difference
+    time_diff = (get_time() - time_start); // calculating time difference
     result == results[i] ? printf("PASS ") : printf("FAIL ");
     printf("N=%2d, Solutions=%10d, Expected=%10d, Time=%f s\n", n, result,
-           results[i], time_diff / CLOCKS_PER_SEC);
+           results[i], time_diff);
   }
 #else
   double time_diff, time_start; // for measuring calculation time
