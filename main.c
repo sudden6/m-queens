@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <time.h>
+#include <stdint.h>
 
 //#define TESTSUITE
 
@@ -8,43 +9,15 @@ int n = 17;
 #define N n
 #define MAXN 31
 #else
-#define N 17
+#define N 19
 #define MAXN N
 #endif
 
-// align diag values to columns
-#define ALIGN_DIA_R(x, d) ((x) >> (d))
-#define ALIGN_DIA_L(x, d) ((x) >> (N - 1 - (d)))
-
-// align column value to diag
-#define ALIGN_COL_R(x, d) ((x) << (d))
-#define ALIGN_COL_L(x, d) ((x) << (N - 1 - (d)))
-
-int cols, diagl[MAXN], diagr[MAXN];
-int bit_set[MAXN] = {0};
-
-void printChessBoard() {
-  int row;
-  int col;
-  printf("\n");
-
-  for (row = 0; row < N; row++) {
-    for (col = 0; col < N; col++) {
-      if (bit_set[row] & (1 << (N - 1 - col))) {
-        printf("X "); // queen
-      } else {
-        printf("- "); // empty field
-      }
-    }
-    printf("\n");
-  }
-}
-
-int nqueens() {
+uint64_t nqueens() {
   int q0, q1;
   int cols[MAXN], diagl[MAXN], diagr[MAXN],
       posibs[MAXN]; // Our backtracking 'stack'
-  int num = 0;
+  uint64_t num = 0;
   //
   // The top level is two fors, to save one bit of symmetry in the enumeration
   // by forcing second queen to
@@ -56,8 +29,8 @@ int nqueens() {
       int bit1 = 1 << q1;
       int d = 0; // d is our depth in the backtrack stack
       cols[0] = bit0 | bit1 | (-1 << N); // The -1 here is used to fill all 'coloumn' bits after n ...
-      diagl[0] = (bit0 << 1 | bit1) << 1;
-      diagr[0] = (bit0 >> 1 | bit1) >> 1;
+      diagl[0] = (1 << (2 + q0)) | (1 << (1 + q1));
+      diagr[0] = (bit0 >> 2) | (bit1 >> 1);
 
       //  The variable posib contains the bitmask of possibilities we still have
       //  to try in a given row ...
@@ -100,9 +73,10 @@ int nqueens() {
   return num * 2;
 }
 
-int results[17] = {1,     0,      0,       2,        10,      4,
+uint64_t results[19] = {1,     0,      0,       2,        10,      4,
                    40,    92,     352,     724,      2680,    14200,
-                   73712, 365596, 2279184, 14772512, 95815104};
+                   73712, 365596, 2279184, 14772512, 95815104,
+                   666090624,     4968057848};
 
 int main(int argc, char **argv) {
 
