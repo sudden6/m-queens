@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <time.h>
+#include <sys/time.h>
 #include <stdint.h>
 
 //#define TESTSUITE
@@ -9,22 +10,31 @@ int n = 17;
 #define N n
 #define MAXN 31
 #else
-#define N 19
+#define N 17
 #define MAXN N
 #endif
 
+double get_time() {
+    struct timeval tp;
+    struct timezone tz;
+    gettimeofday(&tp, &tz);
+    return tp.tv_sec + tp.tv_usec/1000000.0;
+}
+
 uint64_t nqueens() {
-  int q0, q1;
-  int cols[MAXN], diagl[MAXN], diagr[MAXN],
-      posibs[MAXN]; // Our backtracking 'stack'
+
   uint64_t num = 0;
   //
   // The top level is two fors, to save one bit of symmetry in the enumeration
   // by forcing second queen to
   // be AFTER the first queen.
   //
-  for (q0 = 0; q0 < N - 2; q0++) {
-    for (q1 = q0 + 2; q1 < N; q1++) {
+
+#pragma omp parallel for reduction(+:num)
+  for (int q0 = 0; q0 < N - 2; q0++) {
+    for (int q1 = q0 + 2; q1 < N; q1++) {
+        int cols[MAXN], diagl[MAXN], diagr[MAXN],
+            posibs[MAXN]; // Our backtracking 'stack'
       int bit0 = 1 << q0;
       int bit1 = 1 << q1;
       int d = 0; // d is our depth in the backtrack stack
@@ -82,7 +92,7 @@ int main(int argc, char **argv) {
 
 #ifdef TESTSUITE
   int i;
-  for (i = 1; i < 17; i++) {
+  for (i = 1; i < 18; i++) {
     double time_diff, time_start; // for measuring calculation time
     n = i + 1;
     time_start = clock();
@@ -94,12 +104,12 @@ int main(int argc, char **argv) {
   }
 #else
   double time_diff, time_start; // for measuring calculation time
-  time_start = clock();
+  time_start = get_time();
   int result = nqueens();
-  time_diff = (clock() - time_start); // calculating time difference
+  time_diff = (get_time() - time_start); // calculating time difference
   result == results[N - 1] ? printf("PASS ") : printf("FAIL ");
   printf("N=%2d, Solutions=%10d, Expected=%10d, Time=%f s\n", N, result,
-         results[N - 1], time_diff / CLOCKS_PER_SEC);
+         results[N - 1], time_diff);
 #endif
   return 0;
 }
