@@ -20,8 +20,7 @@ int n = 17;
 #define ALIGN_COL_R(x, d) ((x) << (d))
 #define ALIGN_COL_L(x, d) ((x) << (N - 1 - (d)))
 
-int cols, diagl, diagr;
-int posibs[MAXN] = {0}; // Our backtracking 'stack'
+int cols, diagl[MAXN], diagr[MAXN];
 int bit_set[MAXN] = {0};
 
 
@@ -58,56 +57,40 @@ int nqueens() {
       int bit1 = 1 << q1;
       int d = 0; // d is our depth in the backtrack stack
       cols = bit0 | bit1 | (-1 << N); // The -1 here is used to fill all 'column' bits after n ...
-      diagl = ALIGN_COL_L(bit0, 0) | ALIGN_COL_L(bit1, 1);
-      diagr = ALIGN_COL_R(bit0, 0) | ALIGN_COL_R(bit1, 1);
-      d = 2; // two queens already placed
+      diagl[0]= (bit0<<1 | bit1)<<1;
+      diagr[0]= (bit0>>1 | bit1)>>1;
 
       //  The variable candidates contains the bitmask of possibilities we still
       //  have to try in a given row ...
-      int candidates = ~(cols | ALIGN_DIA_L(diagl, d) | ALIGN_DIA_R(diagr, d));
+      int candidates = ~(cols | diagl[0] | diagr[0]);
 
-      while (d >= 2) {
+      while (d >= 0) {
           int bit = 0;
         while (candidates) {
           bit = candidates & -candidates; // The standard trick for getting
                                               // the rightmost bit in the mask
           int ncols = cols | bit;
-          int nxt_diagl = ALIGN_COL_L(bit, d) | diagl;
-          int nxt_diagr = ALIGN_COL_R(bit, d) | diagr;
-          int nxt_possible = ~(ncols | ALIGN_DIA_L(nxt_diagl, d + 1) | ALIGN_DIA_R(nxt_diagr, d + 1));
-          candidates ^= bit; // Eliminate the tried possibility.
+          int nxt_diagl = (diagl[d] | bit) << 1;
+          int nxt_diagr = (diagr[d] | bit) >> 1;
+          int nxt_possible = ~(ncols | nxt_diagl | nxt_diagr);
 
-          // The following is the main additional trick here, as recognizing
-          // solution can not be done using stack level (d),
-          // since we save the depth+backtrack time at the end of the
-          // enumeration loop. However by noticing all coloumns are
-          // filled (comparison to -1) we know a solution was reached ...
-          // Notice also that avoiding an if on the ncols==-1 comparison is more
-          // efficient!
           num += ncols == -1;
 
-          /*
-          if(ncols == -1) {
-              num++;
-              printChessBoard();
-          }//*/
-
           if (nxt_possible) {
-            posibs[d] = candidates;
-            bit_set[d] = bit;
             d++;
+            bit_set[d] = candidates;
             cols = ncols;
-            diagl = nxt_diagl;
-            diagr = nxt_diagr;
+            diagl[d] = nxt_diagl;
+            diagr[d] = nxt_diagr;
             candidates = nxt_possible;
+          } else {
+              candidates ^= bit; // Eliminate the tried possibility.
           }
         }
-        d--;
-        cols &= ~bit_set[d];
-        diagl &= ~(ALIGN_COL_L(bit_set[d], d));
-        diagr &= ~(ALIGN_COL_R(bit_set[d], d));
-
-        candidates = posibs[d]; // backtrack ...
+            int last_set = bit_set[d] & -bit_set[d];
+            cols &= ~last_set;
+            candidates = ~last_set & bit_set[d];
+            d--;
       }
     }
   }
