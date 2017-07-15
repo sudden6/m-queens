@@ -9,7 +9,7 @@ int n = 17;
 #define MAXN 31
 #else
 #define N 17
-#define MAXN N
+#define MAXN N+2
 #endif
 
 // align diag values to columns
@@ -55,19 +55,19 @@ int nqueens() {
     for (q1 = q0 + 2; q1 < N; q1++) {
       int bit0 = 1 << q0;
       int bit1 = 1 << q1;
-      int d = 0; // d is our depth in the backtrack stack
+      int d = 1; // d is our depth in the backtrack stack
       cols = bit0 | bit1 | (-1 << N); // The -1 here is used to fill all 'column' bits after n ...
-      diagl[0]= (bit0<<1 | bit1)<<1;
-      diagr[0]= (bit0>>1 | bit1)>>1;
+      diagl[d]= (bit0<<1 | bit1)<<1;
+      diagr[d]= (bit0>>1 | bit1)>>1;
 
       //  The variable candidates contains the bitmask of possibilities we still
       //  have to try in a given row ...
-      int candidates = ~(cols | diagl[0] | diagr[0]);
+      bit_set[d] = ~(cols | diagl[d] | diagr[d]);
 
-      while (d >= 0) {
-          int bit = 0;
-        while (candidates) {
-          bit = candidates & -candidates; // The standard trick for getting
+      while (d >= 1) {
+          int candidate = bit_set[d];
+        while (candidate) {
+          int bit = candidate & -candidate; // The standard trick for getting
                                               // the rightmost bit in the mask
           int ncols = cols | bit;
           int nxt_diagl = (diagl[d] | bit) << 1;
@@ -77,20 +77,24 @@ int nqueens() {
           num += ncols == -1;
 
           if (nxt_possible) {
+
+            bit_set[d] = candidate;
             d++;
-            bit_set[d] = candidates;
             cols = ncols;
             diagl[d] = nxt_diagl;
             diagr[d] = nxt_diagr;
-            candidates = nxt_possible;
-          } else {
-              candidates ^= bit; // Eliminate the tried possibility.
-          }
-        }
-            int last_set = bit_set[d] & -bit_set[d];
-            cols &= ~last_set;
-            candidates = ~last_set & bit_set[d];
+            candidate = nxt_possible;
+            bit = 0;
+          } //else {
+          candidate ^= bit; // Eliminate the tried possibility.
+          //bit_set[d] ^= bit;
+          //}
+        } //else {
             d--;
+            int last_set = ~(bit_set[d] & -bit_set[d]);
+            cols &= last_set;
+            bit_set[d] = last_set & bit_set[d];
+        //}
       }
     }
   }
@@ -101,7 +105,7 @@ int results[17] = {1, 0, 0, 2, 10, 4, 40, 92, 352,
                    724, 2680, 14200, 73712, 365596,
                    2279184, 14772512, 95815104};
 
-int main(int argc, char argv) {
+int main(int argc, char** argv) {
 
 #ifdef TESTSUITE
     int i;
