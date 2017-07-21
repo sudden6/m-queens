@@ -1,17 +1,24 @@
+#include <inttypes.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <sys/time.h>
 #include <time.h>
 
+// uncomment to start with n=2 and compare to known results
 //#define TESTSUITE
 
-#ifdef TESTSUITE
-int n = 17;
-#define N n
-#define MAXN 31
-#else
-#define N 18
-#define MAXN N
+#ifndef N
+#define N 17
+#endif
+#define MAXN 29
+
+#if N > MAXN
+#warning "N too big, overflow may occur"
+#endif
+
+#if N < 2
+#error "N too small"
 #endif
 
 // get the current wall clock time in seconds
@@ -21,20 +28,20 @@ double get_time() {
   return tp.tv_sec + tp.tv_usec / 1000000.0;
 }
 
-uint64_t nqueens() {
+uint64_t nqueens(uint_fast8_t n) {
 
   // counter for the number of solutions
   // sufficient until n=29
-  int num = 0;
+  uint_fast64_t num = 0;
   //
   // The top level is two fors, to save one bit of symmetry in the enumeration
   // by forcing second queen to be AFTER the first queen.
   //
-  uint_fast16_t num_starts = ((N - 2) * (N - 2) * (N - 1)) / 2;
+  uint_fast16_t num_starts = ((n - 2) * (n - 2) * (n - 1)) / 2;
   uint_fast16_t start_cnt = 0;
   uint_fast8_t start_queens[num_starts][2];
-  for (uint_fast8_t q0 = 0; q0 < N - 2; q0++) {
-    for (uint_fast8_t q1 = q0 + 2; q1 < N; q1++) {
+  for (uint_fast8_t q0 = 0; q0 < n - 2; q0++) {
+    for (uint_fast8_t q1 = q0 + 2; q1 < n; q1++) {
       start_queens[start_cnt][0] = q0;
       start_queens[start_cnt][1] = q1;
       start_cnt++;
@@ -49,7 +56,7 @@ uint64_t nqueens() {
     uint_fast32_t bit1 = 1 << start_queens[cnt][1]; // The second queen placed
     int_fast16_t d = 0; // d is our depth in the backtrack stack
     // The -1 here is used to fill all 'coloumn' bits after n ...
-    cols[d] = bit0 | bit1 | (-1 << N);
+    cols[d] = bit0 | bit1 | (-1 << n);
     // The next two lines are done with different algorithms, this somehow
     // improves performance a bit...
     diagl[d] = (bit0 << 2) | (bit1 << 1);
@@ -100,33 +107,58 @@ uint64_t nqueens() {
   return num * 2;
 }
 
-uint64_t results[19] = {1,        0,        0,         2,         10,
-                        4,        40,       92,        352,       724,
-                        2680,     14200,    73712,     365596,    2279184,
-                        14772512, 95815104, 666090624, 4968057848};
+// expected results from https://oeis.org/A000170
+uint64_t results[27] = {1ULL,
+                        0ULL,
+                        0ULL,
+                        2ULL,
+                        10ULL,
+                        4ULL,
+                        40ULL,
+                        92ULL,
+                        352ULL,
+                        724ULL,
+                        2680ULL,
+                        14200ULL,
+                        73712ULL,
+                        365596ULL,
+                        2279184ULL,
+                        14772512ULL,
+                        95815104ULL,
+                        666090624ULL,
+                        4968057848ULL,
+                        39029188884ULL,
+                        314666222712ULL,
+                        2691008701644ULL,
+                        24233937684440ULL,
+                        227514171973736ULL,
+                        2207893435808352ULL,
+                        22317699616364044ULL,
+                        234907967154122528ULL};
 
 int main(int argc, char **argv) {
 
 #ifdef TESTSUITE
-  int i;
-  for (i = 1; i < 17; i++) {
-    double time_diff, time_start; // for measuring calculation time
-    n = i + 1;
-    time_start = get_time();
-    uint64_t result = nqueens();
-    time_diff = (get_time() - time_start); // calculating time difference
-    result == results[i] ? printf("PASS ") : printf("FAIL ");
-    printf("N=%2d, Solutions=%10d, Expected=%10d, Time=%fs, Solutions/s= %f\n",
-           n, result, results[i], time_diff, result / time_diff);
-  }
+  int i = 2;
 #else
-  double time_diff, time_start; // for measuring calculation time
-  time_start = get_time();
-  uint64_t result = nqueens();
-  time_diff = (get_time() - time_start); // calculating time difference
-  result == results[N - 1] ? printf("PASS ") : printf("FAIL ");
-  printf("N=%2d, Solutions=%10d, Expected=%10d, Time=%fs, Solutions/s= %f\n", N,
-         result, results[N - 1], time_diff, result / time_diff);
+  int i = N;
 #endif
+  if (argc == 2) {
+    i = atoi(argv[1]);
+    if (i < 1 || i > MAXN) {
+      printf("n must be between 2 and %d!\n", MAXN);
+    }
+  }
+
+  for (; i <= N; i++) {
+    double time_diff, time_start; // for measuring calculation time
+    time_start = get_time();
+    uint64_t result = nqueens(i);
+    time_diff = (get_time() - time_start); // calculating time difference
+    result == results[i - 1] ? printf("PASS ") : printf("FAIL ");
+    printf("N %2d, Solutions %18" PRIu64 ", Expected %18" PRIu64
+           ", Time %fs, Solutions/s %f\n",
+           i, result, results[i - 1], time_diff, result / time_diff);
+  }
   return 0;
 }
