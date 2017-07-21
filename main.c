@@ -65,13 +65,10 @@ uint64_t nqueens() {
           uint_fast32_t new_posib = ~(new_cols | new_diagl | new_diagr);
           posib ^= bit; // Eliminate the tried possibility.
 
-          if (new_posib) {
-            // increment d if there are possibilities left,
-            // not doing this in the if yields better performance
-            d += posib != 0;
+          if (new_posib) {;
             if (posib) { // This if saves stack depth + backtrack operations
                          // when we passed the last possibility in a row.
-              posibs[d] = posib; // Go lower in stack ..
+              posibs[++d] = posib; // Go lower in stack ..
             }
 
             // make values current
