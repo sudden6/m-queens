@@ -36,7 +36,7 @@ uint64_t nqueens() {
   for (int q0 = 0; q0 < N - 2; q0++) {
     for (int q1 = q0 + 2; q1 < N; q1++) {
       uint_fast32_t cols[MAXN], posibs[MAXN];   // Our backtracking 'stack'
-      uint64_t diagl[MAXN], diagr[MAXN];
+      uint_fast32_t diagl[MAXN], diagr[MAXN];
       uint_fast32_t bit0 = 1 << q0; // The first queen placed
       uint_fast32_t bit1 = 1 << q1; // The second queen placed
       int d = 0;          // d is our depth in the backtrack stack
@@ -54,18 +54,18 @@ uint64_t nqueens() {
       while (d >= 0) {
         // moving the two shifts out of the inner loop slightly improves
         // performance
-        uint64_t diagl_shifted = diagl[d] << 1;
-        uint64_t diagr_shifted = diagr[d] >> 1;
+        uint_fast32_t diagl_shifted = diagl[d] << 1;
+        uint_fast32_t diagr_shifted = diagr[d] >> 1;
         while (posib) {
           uint_fast32_t bit = posib & (~posib + 1); // The standard trick for getting the
                                           // rightmost bit in the mask
           uint_fast32_t new_cols = cols[d] | bit;
-          uint64_t new_diagl = (bit << 1) | diagl_shifted;
-          uint64_t new_diagr = (bit >> 1) | diagr_shifted;
-          uint_fast32_t new_posib = ~(new_cols | new_diagl | new_diagr);
+          uint_fast32_t new_diagl = (bit << 1) | diagl_shifted;
+          uint_fast32_t new_diagr = (bit >> 1) | diagr_shifted;
+          uint_fast32_t new_posib = ~((new_cols | new_diagl) | new_diagr);
           posib ^= bit; // Eliminate the tried possibility.
 
-          if (new_posib) {;
+          if (new_posib) {
             if (posib) { // This if saves stack depth + backtrack operations
                          // when we passed the last possibility in a row.
               posibs[++d] = posib; // Go lower in stack ..
