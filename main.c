@@ -10,7 +10,7 @@ int n = 17;
 #define N n
 #define MAXN 31
 #else
-#define N 17
+#define N 18
 #define MAXN N
 #endif
 
@@ -65,13 +65,12 @@ uint64_t nqueens() {
       uint_fast32_t diagl_shifted = diagl[d] << 1;
       uint_fast32_t diagr_shifted = diagr[d] >> 1;
       while (posib) {
-        uint_fast32_t bit =
-            posib & (~posib + 1); // The standard trick for getting the
-                                  // rightmost bit in the mask
+        // The standard trick for getting the rightmost bit in the mask
+        uint_fast32_t bit = posib & (~posib + 1);
         uint_fast32_t new_cols = cols[d] | bit;
         uint_fast32_t new_diagl = (bit << 1) | diagl_shifted;
         uint_fast32_t new_diagr = (bit >> 1) | diagr_shifted;
-        uint_fast32_t new_posib = ~((new_cols | new_diagl) | new_diagr);
+        uint_fast32_t new_posib = ~(new_cols | new_diagl | new_diagr);
         posib ^= bit; // Eliminate the tried possibility.
 
         if (new_posib) {
