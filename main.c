@@ -17,8 +17,7 @@ int n = 17;
 // get the current wall clock time in seconds
 double get_time() {
   struct timeval tp;
-  struct timezone tz;
-  gettimeofday(&tp, &tz);
+  gettimeofday(&tp, NULL);
   return tp.tv_sec + tp.tv_usec / 1000000.0;
 }
 
@@ -31,25 +30,35 @@ uint64_t nqueens() {
 // The top level is two fors, to save one bit of symmetry in the enumeration
 // by forcing second queen to be AFTER the first queen.
 //
+  uint_fast16_t num_starts = ((N-2)*(N-2)*(N-1))/2;
+  uint_fast16_t start_cnt = 0;
+  uint_fast8_t start_queens[num_starts][2];
+  for (uint_fast8_t q0 = 0; q0 < N - 2; q0++) {
+    for (uint_fast8_t q1 = q0 + 2; q1 < N; q1++) {
+        start_queens[start_cnt][0] = q0;
+        start_queens[start_cnt][1] = q1;
+        start_cnt++;
+    }
+  }
+
 
 #pragma omp parallel for reduction(+ : num) schedule(dynamic)
-  for (int q0 = 0; q0 < N - 2; q0++) {
-    for (int q1 = q0 + 2; q1 < N; q1++) {
+  for (uint_fast16_t cnt = 0; cnt < start_cnt; cnt++) {
       uint_fast32_t cols[MAXN], posibs[MAXN];   // Our backtracking 'stack'
       uint_fast32_t diagl[MAXN], diagr[MAXN];
-      uint_fast32_t bit0 = 1 << q0; // The first queen placed
-      uint_fast32_t bit1 = 1 << q1; // The second queen placed
-      int d = 0;          // d is our depth in the backtrack stack
+      uint_fast32_t bit0 = 1 << start_queens[cnt][0]; // The first queen placed
+      uint_fast32_t bit1 = 1 << start_queens[cnt][1]; // The second queen placed
+      int_fast16_t d = 0;          // d is our depth in the backtrack stack
       // The -1 here is used to fill all 'coloumn' bits after n ...
-      cols[0] = bit0 | bit1 | (-1 << N);
+      cols[d] = bit0 | bit1 | (-1 << N);
       // The next two lines are done with different algorithms, this somehow
       // improves performance a bit...
-      diagl[0] = (1 << (2 + q0)) | (1 << (1 + q1));
-      diagr[0] = (bit0 >> 2) | (bit1 >> 1);
+      diagl[d] = (bit0 << 2) | (bit1 << 1);
+      diagr[d] = (bit0 >> 2) | (bit1 >> 1);
 
       //  The variable posib contains the bitmask of possibilities we still have
       //  to try in a given row ...
-      uint_fast32_t posib = ~(cols[0] | diagl[0] | diagr[0]);
+      uint_fast32_t posib = ~(cols[d] | diagl[d] | diagr[d]);
 
       while (d >= 0) {
         // moving the two shifts out of the inner loop slightly improves
@@ -86,7 +95,6 @@ uint64_t nqueens() {
         }
         posib = posibs[d--]; // backtrack ...
       }
-    }
   }
   return num * 2;
 }
