@@ -55,10 +55,9 @@ uint64_t nqueens(uint_fast8_t n) {
     uint_fast32_t bit0 = 1 << start_queens[cnt][0]; // The first queen placed
     uint_fast32_t bit1 = 1 << start_queens[cnt][1]; // The second queen placed
     int_fast16_t d = 0; // d is our depth in the backtrack stack
-    // The -1 here is used to fill all 'coloumn' bits after n ...
-    cols[d] = bit0 | bit1 | (-1 << n);
-    // The next two lines are done with different algorithms, this somehow
-    // improves performance a bit...
+    // The UINT_FAST32_MAX here is used to fill all 'coloumn' bits after n ...
+    cols[d] = bit0 | bit1 | (UINT_FAST32_MAX << n);
+    // This places the first two queens
     diagl[d] = (bit0 << 2) | (bit1 << 1);
     diagr[d] = (bit0 >> 2) | (bit1 >> 1);
 
@@ -83,10 +82,11 @@ uint64_t nqueens(uint_fast8_t n) {
         if (new_posib) {
           // The next two lines save stack depth + backtrack operations
           // when we passed the last possibility in a row.
+          int_fast16_t offs = d + 1;
           d += posib != 0; // avoid branching with this trick
           // Go lower in the stack, avoid branching by writing above the current
           // position
-          posibs[posib ? d : d + 1] = posib;
+          posibs[offs] = posib;
 
           // make values current
           posib = new_posib;
@@ -98,7 +98,7 @@ uint64_t nqueens(uint_fast8_t n) {
           diagr_shifted = new_diagr >> 1;
         } else {
           // when all columns are used, we found a solution
-          num += new_cols == -1;
+          num += new_cols == UINT_FAST32_MAX;
         }
       }
       posib = posibs[d--]; // backtrack ...
