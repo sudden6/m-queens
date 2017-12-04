@@ -53,7 +53,7 @@ uint64_t nqueens(uint_fast8_t n) {
   for (uint_fast16_t cnt = 0; cnt < start_cnt; cnt++) {
     uint_fast32_t cols[MAXN], posibs[MAXN]; // Our backtracking 'stack'
     uint_fast32_t diagl[MAXN], diagr[MAXN];
-    int_fast32_t real_d[MAXN];
+    int_fast32_t rest[MAXN]; // number of rows left
     uint_fast32_t bit0 = start_queens[cnt][0]; // The first queen placed
     uint_fast32_t bit1 = start_queens[cnt][1]; // The second queen placed
     int_fast16_t d = 1; // d is our depth in the backtrack stack
@@ -62,20 +62,20 @@ uint64_t nqueens(uint_fast8_t n) {
     // This places the first two queens
     diagl[d] = (bit0 << 2) | (bit1 << 1);
     diagr[d] = (bit0 >> 2) | (bit1 >> 1);
-    real_d[d] = 1;
+#define LOOKAHEAD 2
+    // we're allready two rows into the field here
+    rest[d] = n - 2 - LOOKAHEAD;
 
     //  The variable posib contains the bitmask of possibilities we still have
     //  to try in a given row ...
     uint_fast32_t posib = ~(cols[d] | diagl[d] | diagr[d]);
-
-#define LOOKAHEAD 2
 
     while (d > 0) {
       // moving the two shifts out of the inner loop slightly improves
       // performance
       uint_fast32_t diagl_shifted = diagl[d] << 1;
       uint_fast32_t diagr_shifted = diagr[d] >> 1;
-      int_fast32_t l_real_d = real_d[d];
+      int_fast32_t l_rest = rest[d];
       while (posib) {
         // The standard trick for getting the rightmost bit in the mask
         uint_fast32_t bit = posib & (~posib + 1);
@@ -87,7 +87,7 @@ uint64_t nqueens(uint_fast8_t n) {
 
         if (new_posib) {
             uint_fast32_t lookahead = ~(new_cols | (new_diagl << (LOOKAHEAD - 1)) | (new_diagr >> (LOOKAHEAD - 1)));
-            uint_fast32_t allowed = l_real_d + 1 + LOOKAHEAD < n;
+            uint_fast32_t allowed = l_rest > 0;
             if(allowed && !lookahead) {
                 continue;
             }
@@ -98,14 +98,14 @@ uint64_t nqueens(uint_fast8_t n) {
           // position
           posibs[d + 1] = posib;
           d += posib != 0; // avoid branching with this trick
-          l_real_d++;
+          l_rest--;
 
           // make values current
           posib = new_posib;
           cols[d] = new_cols;
           diagl[d] = new_diagl;
           diagr[d] = new_diagr;
-          real_d[d] = l_real_d;
+          rest[d] = l_rest;
 
           diagl_shifted = new_diagl << 1;
           diagr_shifted = new_diagr >> 1;
