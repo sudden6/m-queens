@@ -39,22 +39,23 @@ uint64_t nqueens(uint_fast8_t n) {
   //
   uint_fast16_t num_starts = ((n - 2) * (n - 2) * (n - 1)) / 2;
   uint_fast16_t start_cnt = 0;
-  uint_fast8_t start_queens[num_starts][2];
+  uint_fast32_t start_queens[num_starts][2];
+  #pragma omp simd
   for (uint_fast8_t q0 = 0; q0 < n - 2; q0++) {
     for (uint_fast8_t q1 = q0 + 2; q1 < n; q1++) {
-      start_queens[start_cnt][0] = q0;
-      start_queens[start_cnt][1] = q1;
+      start_queens[start_cnt][0] = 1 << q0;
+      start_queens[start_cnt][1] = 1 << q1;
       start_cnt++;
     }
   }
 
-#pragma omp parallel for reduction(+ : num) schedule(dynamic)
+//#pragma omp parallel for reduction(+ : num) schedule(dynamic)
   for (uint_fast16_t cnt = 0; cnt < start_cnt; cnt++) {
     uint_fast32_t cols[MAXN], posibs[MAXN]; // Our backtracking 'stack'
     uint_fast32_t diagl[MAXN], diagr[MAXN];
-    uint_fast32_t bit0 = 1 << start_queens[cnt][0]; // The first queen placed
-    uint_fast32_t bit1 = 1 << start_queens[cnt][1]; // The second queen placed
-    int_fast16_t d = 0; // d is our depth in the backtrack stack
+    uint_fast32_t bit0 = start_queens[cnt][0]; // The first queen placed
+    uint_fast32_t bit1 = start_queens[cnt][1]; // The second queen placed
+    int_fast16_t d = 1; // d is our depth in the backtrack stack
     // The UINT_FAST32_MAX here is used to fill all 'coloumn' bits after n ...
     cols[d] = bit0 | bit1 | (UINT_FAST32_MAX << n);
     // This places the first two queens
@@ -65,7 +66,7 @@ uint64_t nqueens(uint_fast8_t n) {
     //  to try in a given row ...
     uint_fast32_t posib = ~(cols[d] | diagl[d] | diagr[d]);
 
-    while (d >= 0) {
+    while (d > 0) {
       // moving the two shifts out of the inner loop slightly improves
       // performance
       uint_fast32_t diagl_shifted = diagl[d] << 1;
@@ -82,11 +83,11 @@ uint64_t nqueens(uint_fast8_t n) {
         if (new_posib) {
           // The next two lines save stack depth + backtrack operations
           // when we passed the last possibility in a row.
-          int_fast16_t offs = d + 1;
-          d += posib != 0; // avoid branching with this trick
           // Go lower in the stack, avoid branching by writing above the current
           // position
-          posibs[offs] = posib;
+          posibs[d + 1] = posib;
+          d += posib != 0; // avoid branching with this trick
+
 
           // make values current
           posib = new_posib;
