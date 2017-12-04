@@ -66,6 +66,8 @@ uint64_t nqueens(uint_fast8_t n) {
     //  to try in a given row ...
     uint_fast32_t posib = ~(cols[d] | diagl[d] | diagr[d]);
 
+#define LOOKAHEAD 2
+
     while (d > 0) {
       // moving the two shifts out of the inner loop slightly improves
       // performance
@@ -77,7 +79,9 @@ uint64_t nqueens(uint_fast8_t n) {
         uint_fast32_t new_cols = cols[d] | bit;
         uint_fast32_t new_diagl = (bit << 1) | diagl_shifted;
         uint_fast32_t new_diagr = (bit >> 1) | diagr_shifted;
+        uint_fast32_t lookahead = new_cols | (new_diagl << LOOKAHEAD) | (new_diagr >> LOOKAHEAD);
         uint_fast32_t new_posib = ~(new_cols | new_diagl | new_diagr);
+        new_posib &= lookahead;
         posib ^= bit; // Eliminate the tried possibility.
 
         if (new_posib) {
