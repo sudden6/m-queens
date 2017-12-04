@@ -49,7 +49,7 @@ uint64_t nqueens(uint_fast8_t n) {
     }
   }
 
-//#pragma omp parallel for reduction(+ : num) schedule(dynamic)
+#pragma omp parallel for reduction(+ : num) schedule(dynamic)
   for (uint_fast16_t cnt = 0; cnt < start_cnt; cnt++) {
     uint_fast32_t cols[MAXN], posibs[MAXN]; // Our backtracking 'stack'
     uint_fast32_t diagl[MAXN], diagr[MAXN];
