@@ -64,29 +64,29 @@ uint64_t nqueens(uint_fast8_t n) {
 
     //  The variable posib contains the bitmask of possibilities we still have
     //  to try in a given row ...
-    uint_fast32_t posib = ~(cols[d] | diagl[d] | diagr[d]);
+    uint_fast32_t posib = (cols[d] | diagl[d] | diagr[d]);
 
     while (d > 0) {
       // moving the two shifts out of the inner loop slightly improves
       // performance
       uint_fast32_t diagl_shifted = diagl[d] << 1;
       uint_fast32_t diagr_shifted = diagr[d] >> 1;
-      while (posib) {
+      while (posib != UINT_FAST32_MAX) {
         // The standard trick for getting the rightmost bit in the mask
-        uint_fast32_t bit = posib & (~posib + 1);
+        uint_fast32_t bit = ~posib & (posib + 1);
         uint_fast32_t new_cols = cols[d] | bit;
         uint_fast32_t new_diagl = (bit << 1) | diagl_shifted;
         uint_fast32_t new_diagr = (bit >> 1) | diagr_shifted;
-        uint_fast32_t new_posib = ~(new_cols | new_diagl | new_diagr);
+        uint_fast32_t new_posib = (new_cols | new_diagl | new_diagr);
         posib ^= bit; // Eliminate the tried possibility.
 
-        if (new_posib) {
+        if (new_posib != UINT_FAST32_MAX) {
           // The next two lines save stack depth + backtrack operations
           // when we passed the last possibility in a row.
           // Go lower in the stack, avoid branching by writing above the current
           // position
           posibs[d + 1] = posib;
-          d += posib != 0; // avoid branching with this trick
+          d += posib != UINT_FAST32_MAX; // avoid branching with this trick
 
 
           // make values current
