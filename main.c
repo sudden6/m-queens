@@ -49,7 +49,7 @@ uint64_t nqueens(uint_fast8_t n) {
     }
   }
 
-//#pragma omp parallel for reduction(+ : num) schedule(dynamic)
+#pragma omp parallel for reduction(+ : num) schedule(dynamic)
   for (uint_fast16_t cnt = 0; cnt < start_cnt; cnt++) {
     uint_fast32_t cols[MAXN], posibs[MAXN]; // Our backtracking 'stack'
     uint_fast32_t diagl[MAXN], diagr[MAXN];
@@ -68,7 +68,7 @@ uint64_t nqueens(uint_fast8_t n) {
 
     //  The variable posib contains the bitmask of possibilities we still have
     //  to try in a given row ...
-    uint_fast32_t posib = ~(cols[d] | diagl[d] | diagr[d]);
+    uint_fast32_t posib = (cols[d] | diagl[d] | diagr[d]);
 
     while (d > 0) {
       // moving the two shifts out of the inner loop slightly improves
@@ -76,16 +76,17 @@ uint64_t nqueens(uint_fast8_t n) {
       uint_fast32_t diagl_shifted = diagl[d] << 1;
       uint_fast32_t diagr_shifted = diagr[d] >> 1;
       int_fast32_t l_rest = rest[d];
-      while (posib) {
+
+      while (posib != UINT_FAST32_MAX) {
         // The standard trick for getting the rightmost bit in the mask
-        uint_fast32_t bit = posib & (~posib + 1);
+        uint_fast32_t bit = ~posib & (posib + 1);
         uint_fast32_t new_cols = cols[d] | bit;
         uint_fast32_t new_diagl = (bit << 1) | diagl_shifted;
         uint_fast32_t new_diagr = (bit >> 1) | diagr_shifted;
-        uint_fast32_t new_posib = ~(new_cols | new_diagl | new_diagr);
+        uint_fast32_t new_posib = (new_cols | new_diagl | new_diagr);
         posib ^= bit; // Eliminate the tried possibility.
 
-        if (new_posib) {
+        if (new_posib != UINT_FAST32_MAX) {
             uint_fast32_t lookahead = ~(new_cols | (new_diagl << (LOOKAHEAD - 1)) | (new_diagr >> (LOOKAHEAD - 1)));
             uint_fast32_t allowed = l_rest > 0;
             if(allowed && !lookahead) {
@@ -97,7 +98,7 @@ uint64_t nqueens(uint_fast8_t n) {
           // Go lower in the stack, avoid branching by writing above the current
           // position
           posibs[d + 1] = posib;
-          d += posib != 0; // avoid branching with this trick
+          d += posib != UINT_FAST32_MAX; // avoid branching with this trick
           l_rest--;
 
           // make values current
