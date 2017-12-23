@@ -37,7 +37,7 @@ uint64_t nqueens(uint_fast8_t n) {
   // The top level is two fors, to save one bit of symmetry in the enumeration
   // by forcing second queen to be AFTER the first queen.
   //
-  uint_fast16_t num_starts = ((n - 2) * (n - 2) * (n - 1)) / 2;
+  uint_fast16_t num_starts = (n-2)*(n-1);
   uint_fast16_t start_cnt = 0;
   uint_fast32_t start_queens[num_starts][2];
   #pragma omp simd
