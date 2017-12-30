@@ -87,18 +87,70 @@ uint64_t nqueens(uint_fast8_t n) {
         posib ^= bit; // Eliminate the tried possibility.
 
         if (new_posib != UINT_FAST32_MAX) {
-            uint_fast32_t lookahead = ~(new_cols | (new_diagl << (LOOKAHEAD - 2)) | (new_diagr >> (LOOKAHEAD - 2)));
-            uint_fast32_t lookahead2 = ~(new_cols | (new_diagl << (LOOKAHEAD - 1)) | (new_diagr >> (LOOKAHEAD - 1)));
+            uint_fast32_t lookahead1 = (new_cols | (new_diagl << (LOOKAHEAD - 2)) | (new_diagr >> (LOOKAHEAD - 2)));
             uint_fast32_t allowed = l_rest >= 0;
+
+            if(allowed && (lookahead1 == UINT_FAST32_MAX)) {
+                continue;
+            }
+
+            uint_fast32_t lookahead2 = (new_cols | (new_diagl << (LOOKAHEAD - 1)) | (new_diagr >> (LOOKAHEAD - 1)));
             uint_fast32_t allowed2 = l_rest > 0;
-
-            if(allowed && !lookahead) {
+            if(allowed2 && (lookahead2 == UINT_FAST32_MAX)) {
                 continue;
             }
 
-            if(allowed2 && !lookahead2) {
-                continue;
-            }
+
+            /*// for 64Bit machines
+            if(allowed) {
+                uint64_t new64 = new_posib << 32;
+                uint64_t bit1_2 = ~new_posib & (new_posib + 1);
+                new64 |= lookahead1;
+                uint64_t bit2 = ~new64 & (new64 + 1);
+                bit1_2 |= bit2 << 32;
+                bit1_2 = (bit1_2 << 1) | bit1_2 | (bit1_2 >> 1);
+                new64 |= bit1_2;
+                if(new64 == UINT64_MAX) {
+                    continue;
+                }
+            }//*/
+
+            /*// for 64Bit machines
+            if(allowed) {
+                uint64_t new64 = new_posib << 32;
+                uint64_t bit1_2 = ~new_posib & (new_posib + 1);
+                new64 |= lookahead1 & UINT32_MAX;
+                uint64_t bit2 = ~new64 & (new64 + 1);
+                bit1_2 |= bit2 << 32;
+                //uint_fast32_t bit2_expanded = (bit2 << 2) - (bit2 >> 1);
+                //bit1_2 = (bit1_2 << 2) - (bit1_2 >> 1);
+                bit1_2 = (bit1_2 << 1) | bit1_2 | (bit1_2 >> 1);
+                new64 |= bit1_2;
+                //new64 = ~new64;
+                //uint_fast32_t res = ~(lookahead | bit1_expanded) || ~(new_posib | bit2_expanded);
+                if(allowed && (new64 == UINT64_MAX)) {
+                    continue;
+                }
+            }//*/
+
+            /* For 32bit machines
+            if(allowed) {
+                uint_fast32_t bit1 = ~new_posib & (new_posib + 1);
+                //uint_fast32_t bit1_expanded = (bit1 << 2) - (bit1 >> 1);
+                uint_fast32_t bit1_expanded = (bit1 << 1) | bit1 | (bit1 >> 1);
+                uint_fast32_t bit3 = ~lookahead1 & (lookahead1 + 1);
+                //uint_fast32_t bit2_expanded = (bit3 << 2) - (bit3 >> 1);
+                uint_fast32_t bit2_expanded = (bit3 << 1) | bit3 | (bit3 >> 1);
+                uint_fast32_t lower = ~(lookahead1 | bit1_expanded);
+                uint_fast32_t upper = ~(new_posib | bit2_expanded);
+                uint_fast32_t res = upper || lower;
+                if(!res) {
+                    continue;
+                }
+            }//*/
+
+
+
 
           // The next two lines save stack depth + backtrack operations
           // when we passed the last possibility in a row.
