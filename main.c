@@ -87,16 +87,16 @@ uint64_t nqueens(uint_fast8_t n) {
         posib ^= bit; // Eliminate the tried possibility.
 
         if (new_posib != UINT_FAST32_MAX) {
-            uint_fast32_t lookahead = ~(new_cols | (new_diagl << (LOOKAHEAD - 2)) | (new_diagr >> (LOOKAHEAD - 2)));
-            uint_fast32_t lookahead2 = ~(new_cols | (new_diagl << (LOOKAHEAD - 1)) | (new_diagr >> (LOOKAHEAD - 1)));
+            uint_fast32_t lookahead = (new_cols | (new_diagl << (LOOKAHEAD - 2)) | (new_diagr >> (LOOKAHEAD - 2)));
+            uint_fast32_t lookahead2 = (new_cols | (new_diagl << (LOOKAHEAD - 1)) | (new_diagr >> (LOOKAHEAD - 1)));
             uint_fast32_t allowed = l_rest >= 0;
             uint_fast32_t allowed2 = l_rest > 0;
 
-            if(allowed && !lookahead) {
+            if(allowed && (lookahead == UINT_FAST32_MAX)) {
                 continue;
             }
 
-            if(allowed2 && !lookahead2) {
+            if(allowed2 && (lookahead2 == UINT_FAST32_MAX)) {
                 continue;
             }
 
