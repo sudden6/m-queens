@@ -80,19 +80,19 @@ uint64_t nqueens(uint_fast8_t n) {
       while (posib != UINT_FAST32_MAX) {
         // The standard trick for getting the rightmost bit in the mask
         uint_fast32_t bit = ~posib & (posib + 1);
-        uint_fast32_t new_cols = cols[d] | bit;
         uint_fast32_t new_diagl = (bit << 1) | diagl_shifted;
         uint_fast32_t new_diagr = (bit >> 1) | diagr_shifted;
-        uint_fast32_t new_posib = (new_cols | new_diagl | new_diagr);
+        uint_fast32_t new_posib = (cols[d] | bit | new_diagl | new_diagr);
         posib ^= bit; // Eliminate the tried possibility.
+        bit |= cols[d];
 
         if (new_posib != UINT_FAST32_MAX) {
-            uint_fast32_t lookahead = (new_cols | (new_diagl << (LOOKAHEAD - 2)) | (new_diagr >> (LOOKAHEAD - 2)));
-            uint_fast32_t lookahead2 = (new_cols | (new_diagl << (LOOKAHEAD - 1)) | (new_diagr >> (LOOKAHEAD - 1)));
-            uint_fast32_t allowed = l_rest >= 0;
+            uint_fast32_t lookahead = (bit | (new_diagl << (LOOKAHEAD - 2)) | (new_diagr >> (LOOKAHEAD - 2)));
+            uint_fast32_t lookahead2 = (bit | (new_diagl << (LOOKAHEAD - 1)) | (new_diagr >> (LOOKAHEAD - 1)));
+            uint_fast32_t allowed1 = l_rest >= 0;
             uint_fast32_t allowed2 = l_rest > 0;
 
-            if(allowed && (lookahead == UINT_FAST32_MAX)) {
+            if(allowed1 && (lookahead == UINT_FAST32_MAX)) {
                 continue;
             }
 
@@ -106,23 +106,24 @@ uint64_t nqueens(uint_fast8_t n) {
           // position
           posibs[d + 1] = posib;
           d += posib != UINT_FAST32_MAX; // avoid branching with this trick
+          posib = new_posib;
+
           l_rest--;
 
           // make values current
-          posib = new_posib;
-          cols[d] = new_cols;
+          cols[d] = bit;
           diagl[d] = new_diagl;
           diagr[d] = new_diagr;
           rest[d] = l_rest;
-
           diagl_shifted = new_diagl << 1;
           diagr_shifted = new_diagr >> 1;
         } else {
           // when all columns are used, we found a solution
-          num += new_cols == UINT_FAST32_MAX;
+          num += bit == UINT_FAST32_MAX;
         }
       }
-      posib = posibs[d--]; // backtrack ...
+      posib = posibs[d]; // backtrack ...
+      d--;
     }
   }
   return num * 2;
