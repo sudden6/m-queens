@@ -37,7 +37,7 @@ typedef struct {
     uint_fast32_t placed;// number of rows where queens are already placed
 } start_condition;
 
-std::vector<start_condition> create_subboards_s1(uint_fast8_t n) {
+std::vector<start_condition> create_preplacement(uint_fast8_t n) {
     std::vector<start_condition> result;
 
     if(n < 2) {
@@ -67,7 +67,7 @@ std::vector<start_condition> create_subboards_s1(uint_fast8_t n) {
     result.resize(start_cnt); // shrink
 }
 
-std::vector<start_condition> create_subboards_s2(uint_fast8_t n, uint_fast8_t depth, start_condition& start) {
+std::vector<start_condition> create_subboards(uint_fast8_t n, uint_fast8_t depth, start_condition& start) {
     std::vector<start_condition> result;
 
     if(n < 2) {
@@ -315,9 +315,9 @@ int main(int argc, char **argv) {
     uint64_t result = 0;
     time_start = get_time();
     int depth = std::min(std::max(i - 3, 0), 4);
-    std::vector<start_condition> st = create_subboards_s1(i);
+    std::vector<start_condition> st = create_preplacement(i);
     for(auto first : st) {
-        std::vector<start_condition> second = create_subboards_s2(i, depth, first);
+        std::vector<start_condition> second = create_subboards(i, depth, first);
         result += solve_subboard(i, second);
     }
     time_diff = (get_time() - time_start); // calculating time difference
