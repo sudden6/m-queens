@@ -80,7 +80,7 @@ constexpr uint_fast8_t MAXN = 29;
 
 bool ClSolver::init(uint8_t boardsize)
 {
-    if(boardsize > MAXN || boardsize <= MINN) {
+    if(boardsize > MAXN || boardsize < MINN) {
         std::cout << "Invalid boardsize for ClSolver" << std::endl;
         return false;
     }
@@ -123,8 +123,6 @@ uint64_t ClSolver::solve_subboard(std::vector<start_condition>& start)
         std::cout << "cl::Kernel failed: " << err << std::endl;
     }
 
-    std::vector<cl_ulong> results(start.size(), 0);
-
     // Allocate device buffers and transfer input data to device.
     cl::Buffer start_buf(context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
         start.size() * sizeof(start_condition), start.data(), &err);
@@ -132,6 +130,8 @@ uint64_t ClSolver::solve_subboard(std::vector<start_condition>& start)
         std::cout << "cl::Buffer start_buf failed: " << err << std::endl;
     }
 
+    // result buffer
+    std::vector<cl_ulong> results(start.size(), 0);
     cl::Buffer results_buf(context, CL_MEM_WRITE_ONLY,
         results.size() * sizeof(cl_ulong), nullptr, &err);
     if(err != CL_SUCCESS) {
@@ -162,11 +162,14 @@ uint64_t ClSolver::solve_subboard(std::vector<start_condition>& start)
         std::cout << "enqueueReadBuffer failed: " << err << std::endl;
     }
 
+    // wait for completion
     queue.finish();
 
+    uint64_t result = 0;
     for(auto a : results) {
-        std::cout << "test: " << a << std::endl;
+        result += a;
     }
+    return result;
 }
 
 

@@ -11,7 +11,7 @@ constexpr uint_fast8_t MAXN = 29;
 
 bool cpuSolver::init(uint8_t boardsize)
 {
-    if(boardsize <= MAXN && boardsize > MINN) {
+    if(boardsize <= MAXN && boardsize >= MINN) {
         this->boardsize = boardsize;
         return true;
     }

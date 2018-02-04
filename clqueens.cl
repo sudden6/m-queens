@@ -5,34 +5,38 @@ typedef struct {
     uint placed;// number of rows where queens are already placed
 } start_condition;
 
+#define MAXN 29
+
+typedef char int_fast8_t;
+typedef uchar uint_fast8_t;
+typedef short int_fast16_t;
+typedef ushort uint_fast16_t;
+typedef int int_fast32_t;
+typedef uint uint_fast32_t;
+#define UINT_FAST32_MAX UINT_MAX
+
+typedef ulong uint_fast64_t;
+
+
 
 kernel void solve_subboard(__global const start_condition* in_starts, __global ulong* out_cnt) {
     __private size_t id = get_global_id(0);
-    //printf("id = %u, N = %u\n", id, N);
-    out_cnt[0] = 42;
-    printf("abcd");
 
-
-/*
-  // counter for the number of solutions
-  // sufficient until n=29
-  uint_fast64_t num = 0;
-  size_t start_cnt = starts.size();
-
-#pragma omp parallel for reduction(+ : num) schedule(dynamic)
-  for (size_t cnt = 0; cnt < start_cnt; cnt++) {
+    // counter for the number of solutions
+    // sufficient until n=29
+    uint_fast64_t num = 0;
     uint_fast32_t cols[MAXN], posibs[MAXN]; // Our backtracking 'stack'
     uint_fast32_t diagl[MAXN], diagr[MAXN];
     int_fast8_t rest[MAXN]; // number of rows left
     int_fast16_t d = 0; // d is our depth in the backtrack stack
     // The UINT_FAST32_MAX here is used to fill all 'coloumn' bits after n ...
-    cols[d] = starts[cnt].cols | (UINT_FAST32_MAX << n);
+    cols[d] = in_starts[id].cols | (UINT_FAST32_MAX << N);
     // This places the first two queens
-    diagl[d] = starts[cnt].diagl;
-    diagr[d] = starts[cnt].diagr;
-#define LOOKAHEAD 3
+    diagl[d] = in_starts[id].diagl;
+    diagr[d] = in_starts[id].diagr;
+    #define LOOKAHEAD 3
     // we're allready two rows into the field here
-    rest[d] = n - LOOKAHEAD - starts[cnt].placed;
+    rest[d] = N - LOOKAHEAD - in_starts[id].placed;
 
     //  The variable posib contains the bitmask of possibilities we still have
     //  to try in a given row ...
@@ -93,6 +97,6 @@ kernel void solve_subboard(__global const start_condition* in_starts, __global u
       posib = posibs[d]; // backtrack ...
       d--;
     }
-  }
-  return num * 2;*/
+
+    out_cnt[id] = num*2;
 }

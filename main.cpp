@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/time.h>
+#include <iostream>
 #include <time.h>
 #include "clsolver.h"
 #include "cpusolver.h"
@@ -11,10 +12,10 @@
 #include <vector>
 
 // uncomment to start with n=2 and compare to known results
-//#define TESTSUITE
+#define TESTSUITE
 
 #ifndef N
-#define N 5
+#define N 16
 #endif
 #define MAXN 29
 
@@ -237,8 +238,12 @@ int main(int argc, char **argv) {
     std::vector<start_condition> st = create_preplacement(i);
     for(auto first : st) {
         std::vector<start_condition> second = create_subboards(i, depth, first);
-        result += cpu.solve_subboard(second);
-        ocl.solve_subboard(second);
+        uint64_t cpu_res = cpu.solve_subboard(second);
+        uint64_t ocl_res = ocl.solve_subboard(second);
+        if(cpu_res != ocl_res) {
+            std::cout << "Result mismatch" << std::endl;
+        }
+        result += cpu_res;
     }
     time_diff = (get_time() - time_start); // calculating time difference
     result == results[i - 1] ? printf("PASS ") : printf("FAIL ");
