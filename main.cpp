@@ -4,14 +4,17 @@
 #include <stdlib.h>
 #include <sys/time.h>
 #include <time.h>
+#include "clsolver.h"
+#include "cpusolver.h"
+#include "solverstructs.h"
 
 #include <vector>
 
 // uncomment to start with n=2 and compare to known results
-#define TESTSUITE
+//#define TESTSUITE
 
 #ifndef N
-#define N 15
+#define N 5
 #endif
 #define MAXN 29
 
@@ -29,13 +32,6 @@ double get_time() {
   gettimeofday(&tp, nullptr);
   return tp.tv_sec + tp.tv_usec / 1000000.0;
 }
-
-typedef struct {
-    uint_fast32_t cols; // bitfield with all the used columns
-    uint_fast32_t diagl;// bitfield with all the used diagonals down left
-    uint_fast32_t diagr;// bitfield with all the used diagonals down right
-    uint_fast32_t placed;// number of rows where queens are already placed
-} start_condition;
 
 std::vector<start_condition> create_preplacement(uint_fast8_t n) {
     std::vector<start_condition> result;
@@ -181,90 +177,7 @@ std::vector<start_condition> create_subboards(uint_fast8_t n, uint_fast8_t depth
     return result;
 }
 
-uint64_t solve_subboard(uint_fast8_t n, const std::vector<start_condition>& starts) {
 
-  // counter for the number of solutions
-  // sufficient until n=29
-  uint_fast64_t num = 0;
-  size_t start_cnt = starts.size();
-
-#pragma omp parallel for reduction(+ : num) schedule(dynamic)
-  for (size_t cnt = 0; cnt < start_cnt; cnt++) {
-    uint_fast32_t cols[MAXN], posibs[MAXN]; // Our backtracking 'stack'
-    uint_fast32_t diagl[MAXN], diagr[MAXN];
-    int_fast8_t rest[MAXN]; // number of rows left
-    int_fast16_t d = 0; // d is our depth in the backtrack stack
-    // The UINT_FAST32_MAX here is used to fill all 'coloumn' bits after n ...
-    cols[d] = starts[cnt].cols | (UINT_FAST32_MAX << n);
-    // This places the first two queens
-    diagl[d] = starts[cnt].diagl;
-    diagr[d] = starts[cnt].diagr;
-#define LOOKAHEAD 3
-    // we're allready two rows into the field here
-    rest[d] = n - LOOKAHEAD - starts[cnt].placed;
-
-    //  The variable posib contains the bitmask of possibilities we still have
-    //  to try in a given row ...
-    uint_fast32_t posib = (cols[d] | diagl[d] | diagr[d]);
-
-    while (d >= 0) {
-      // moving the two shifts out of the inner loop slightly improves
-      // performance
-      uint_fast32_t diagl_shifted = diagl[d] << 1;
-      uint_fast32_t diagr_shifted = diagr[d] >> 1;
-      int_fast8_t l_rest = rest[d];
-
-      while (posib != UINT_FAST32_MAX) {
-        // The standard trick for getting the rightmost bit in the mask
-        uint_fast32_t bit = ~posib & (posib + 1);
-        uint_fast32_t new_diagl = (bit << 1) | diagl_shifted;
-        uint_fast32_t new_diagr = (bit >> 1) | diagr_shifted;
-        uint_fast32_t new_posib = (cols[d] | bit | new_diagl | new_diagr);
-        posib ^= bit; // Eliminate the tried possibility.
-        bit |= cols[d];
-
-        if (new_posib != UINT_FAST32_MAX) {
-            uint_fast32_t lookahead1 = (bit | (new_diagl << (LOOKAHEAD - 2)) | (new_diagr >> (LOOKAHEAD - 2)));
-            uint_fast32_t lookahead2 = (bit | (new_diagl << (LOOKAHEAD - 1)) | (new_diagr >> (LOOKAHEAD - 1)));
-            uint_fast8_t allowed1 = l_rest >= 0;
-            uint_fast8_t allowed2 = l_rest > 0;
-
-            if(allowed1 && (lookahead1 == UINT_FAST32_MAX)) {
-                continue;
-            }
-
-            if(allowed2 && (lookahead2 == UINT_FAST32_MAX)) {
-                continue;
-            }
-
-            // The next two lines save stack depth + backtrack operations
-            // when we passed the last possibility in a row.
-            // Go lower in the stack, avoid branching by writing above the current
-            // position
-            posibs[d + 1] = posib;
-            d += posib != UINT_FAST32_MAX; // avoid branching with this trick
-            posib = new_posib;
-
-            l_rest--;
-
-            // make values current
-            cols[d] = bit;
-            diagl[d] = new_diagl;
-            diagr[d] = new_diagr;
-            rest[d] = l_rest;
-            diagl_shifted = new_diagl << 1;
-            diagr_shifted = new_diagr >> 1;
-        } else {
-            // when all columns are used, we found a solution
-            num += bit == UINT_FAST32_MAX;
-        }
-      }
-      posib = posibs[d]; // backtrack ...
-      d--;
-    }
-  }
-  return num * 2;
-}
 
 // expected results from https://oeis.org/A000170
 static const uint64_t results[27] = {
@@ -310,6 +223,10 @@ int main(int argc, char **argv) {
     }
   }
 
+  cpuSolver cpu;
+  ClSolver ocl;
+
+
   for (; i <= N; i++) {
     double time_diff, time_start; // for measuring calculation time
     uint64_t result = 0;
@@ -318,7 +235,8 @@ int main(int argc, char **argv) {
     std::vector<start_condition> st = create_preplacement(i);
     for(auto first : st) {
         std::vector<start_condition> second = create_subboards(i, depth, first);
-        result += solve_subboard(i, second);
+        result += cpu.solve_subboard(i, second);
+        ocl.solve_subboard(i, second);
     }
     time_diff = (get_time() - time_start); // calculating time difference
     result == results[i - 1] ? printf("PASS ") : printf("FAIL ");
