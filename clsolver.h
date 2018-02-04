@@ -4,14 +4,18 @@
 #include <cstdint>
 #include <vector>
 #include "solverstructs.h"
-#include <CL/cl2.hpp>
+
+#include <CL/cl.hpp>
 
 class ClSolver
 {
 public:
     ClSolver();
-    uint64_t solve_subboard(uint_fast8_t n, std::vector<start_condition> &start);
+    bool init(uint8_t boardsize);
+    uint64_t solve_subboard(std::vector<start_condition> &start);
 private:
+    cl::Context context;
+    cl::Device device;
     cl::Program program;
 };
 

@@ -1,13 +1,27 @@
 #include "cpusolver.h"
+#include <iostream>
 
 cpuSolver::cpuSolver()
 {
 
 }
 
-#define MAXN 29
+constexpr uint_fast8_t MINN = 2;
+constexpr uint_fast8_t MAXN = 29;
 
-uint64_t cpuSolver::solve_subboard(uint_fast8_t n, const std::vector<start_condition>& starts) {
+bool cpuSolver::init(uint8_t boardsize)
+{
+    if(boardsize <= MAXN && boardsize > MINN) {
+        this->boardsize = boardsize;
+        return true;
+    }
+
+    std::cout << "Invalid boardsize for cpusolver" << std::endl;
+    return false;
+}
+
+
+uint64_t cpuSolver::solve_subboard(const std::vector<start_condition>& starts) {
 
   // counter for the number of solutions
   // sufficient until n=29
@@ -21,13 +35,13 @@ uint64_t cpuSolver::solve_subboard(uint_fast8_t n, const std::vector<start_condi
     int_fast8_t rest[MAXN]; // number of rows left
     int_fast16_t d = 0; // d is our depth in the backtrack stack
     // The UINT_FAST32_MAX here is used to fill all 'coloumn' bits after n ...
-    cols[d] = starts[cnt].cols | (UINT_FAST32_MAX << n);
+    cols[d] = starts[cnt].cols | (UINT_FAST32_MAX << boardsize);
     // This places the first two queens
     diagl[d] = starts[cnt].diagl;
     diagr[d] = starts[cnt].diagr;
 #define LOOKAHEAD 3
     // we're allready two rows into the field here
-    rest[d] = n - LOOKAHEAD - starts[cnt].placed;
+    rest[d] = boardsize - LOOKAHEAD - starts[cnt].placed;
 
     //  The variable posib contains the bitmask of possibilities we still have
     //  to try in a given row ...

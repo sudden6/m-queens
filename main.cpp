@@ -229,14 +229,16 @@ int main(int argc, char **argv) {
 
   for (; i <= N; i++) {
     double time_diff, time_start; // for measuring calculation time
+    cpu.init(i);
+    ocl.init(i);
     uint64_t result = 0;
     time_start = get_time();
     int depth = std::min(std::max(i - 3, 0), 4);
     std::vector<start_condition> st = create_preplacement(i);
     for(auto first : st) {
         std::vector<start_condition> second = create_subboards(i, depth, first);
-        result += cpu.solve_subboard(i, second);
-        ocl.solve_subboard(i, second);
+        result += cpu.solve_subboard(second);
+        ocl.solve_subboard(second);
     }
     time_diff = (get_time() - time_start); // calculating time difference
     result == results[i - 1] ? printf("PASS ") : printf("FAIL ");

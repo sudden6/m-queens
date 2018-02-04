@@ -10,7 +10,10 @@ class cpuSolver
 {
 public:
     cpuSolver();
-    uint64_t solve_subboard(uint_fast8_t n, const std::vector<start_condition>& starts);
+    bool init(uint8_t boardsize);
+    uint64_t solve_subboard(const std::vector<start_condition>& starts);
+private:
+    uint_fast8_t boardsize = 0;
 };
 
 #endif // CPUSOLVER_H
