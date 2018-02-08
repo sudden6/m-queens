@@ -11,7 +11,7 @@ class ClSolver
 {
 public:
     ClSolver();
-    bool init(uint8_t boardsize);
+    bool init(uint8_t boardsize, uint8_t placed);
     uint64_t solve_subboard(std::vector<start_condition> &start);
 private:
     cl::Context context;

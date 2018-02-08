@@ -1,6 +1,7 @@
 cmake_minimum_required(VERSION 2.8)
 
 project(m-queens)
+set (CMAKE_CXX_STANDARD 11)
 
 find_package(OpenCL REQUIRED)
 
@@ -11,6 +12,7 @@ find_package(Threads REQUIRED)
 
 set(${PROJECT_NAME}_SOURCES
   clqueens.cl
+  clqueens_amd.cl
   clsolver.cpp
   clsolver.h
   cpusolver.h
@@ -26,3 +28,4 @@ message("$<TARGET_FILE_DIR:${PROJECT_NAME}>")
 
 # copy OpenCL kernel source
 configure_file(${CMAKE_SOURCE_DIR}/clqueens.cl ./ COPYONLY)
+configure_file(${CMAKE_SOURCE_DIR}/clqueens_amd.cl ./ COPYONLY)

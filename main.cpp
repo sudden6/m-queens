@@ -12,10 +12,10 @@
 #include <vector>
 
 // uncomment to start with n=2 and compare to known results
-#define TESTSUITE
+//#define TESTSUITE
 
 #ifndef N
-#define N 16
+#define N 18
 #endif
 #define MAXN 29
 
@@ -57,14 +57,14 @@ std::vector<start_condition> create_preplacement(uint_fast8_t n) {
         result[start_cnt].cols = bit0 | bit1;
         result[start_cnt].diagl = (bit0 << 2) | (bit1 << 1);
         result[start_cnt].diagr = (bit0 >> 2) | (bit1 >> 1);
-        result[start_cnt].placed = 2;
+        //result[start_cnt].placed = 2;
         start_cnt++;
       }
     }
     result.resize(start_cnt); // shrink
 }
 
-std::vector<start_condition> create_subboards(uint_fast8_t n, uint_fast8_t depth, start_condition& start) {
+std::vector<start_condition> create_subboards(uint_fast8_t n, uint_fast8_t placed, uint_fast8_t depth, start_condition& start) {
     std::vector<start_condition> result;
 
     if(n < 2) {
@@ -78,8 +78,8 @@ std::vector<start_condition> create_subboards(uint_fast8_t n, uint_fast8_t depth
 
     // compute maximum size needed for storing all results
     uint_fast32_t num_starts = 1;
-    uint_fast8_t new_depth = start.placed + depth;
-    int_fast8_t start_placed = n - start.placed;
+    //uint_fast8_t new_depth = start.placed + depth;
+    int_fast8_t start_placed = n - placed;
     // ensure we don't preplace all rows
     if(start_placed - depth < 1) {
         result.push_back(start);
@@ -105,7 +105,7 @@ std::vector<start_condition> create_subboards(uint_fast8_t n, uint_fast8_t depth
     diagr[d] = start.diagr;
 #define LOOKAHEAD 3
     // we're allready two rows into the field here
-    rest[d] = n - LOOKAHEAD - start.placed;
+    //rest[d] = n - LOOKAHEAD - start.placed;
     const int_fast8_t max_depth = rest[d] - depth + 1;  // save result at this depth
 
     //  The variable posib contains the bitmask of possibilities we still have
@@ -146,7 +146,7 @@ std::vector<start_condition> create_subboards(uint_fast8_t n, uint_fast8_t depth
                 result[res_cnt].cols = bit;
                 result[res_cnt].diagl = new_diagl;
                 result[res_cnt].diagr = new_diagr;
-                result[res_cnt].placed = new_depth;
+                //result[res_cnt].placed = new_depth;
                 res_cnt++;
                 continue;
             }
@@ -230,26 +230,32 @@ int main(int argc, char **argv) {
 
   for (; i <= N; i++) {
     double time_diff, time_start; // for measuring calculation time
-    cpu.init(i);
-    ocl.init(i);
+    constexpr int max_depth = 6;
+    int depth = std::min(std::max(i - 4, 0), max_depth);
+    cpu.init(i, depth + 2);
+    ocl.init(i, depth + 2);
     uint64_t result = 0;
     time_start = get_time();
-    int depth = std::min(std::max(i - 3, 0), 4);
     std::vector<start_condition> st = create_preplacement(i);
-    for(auto first : st) {
-        std::vector<start_condition> second = create_subboards(i, depth, first);
-        uint64_t cpu_res = cpu.solve_subboard(second);
+
+    size_t st_size = st.size();
+    for(size_t j = 0; j < st_size; j++) {
+        std::cout << j << " of " << st_size;
+        std::vector<start_condition> second = create_subboards(i, 2, depth, st[j]);
+        //uint64_t cpu_res = cpu.solve_subboard(second);
         uint64_t ocl_res = ocl.solve_subboard(second);
+        std::cout << " subboards: " << second.size() << " DONE" << std::endl;
+        /*
         if(cpu_res != ocl_res) {
             std::cout << "Result mismatch" << std::endl;
-        }
-        result += cpu_res;
+        }//*/
+        result += ocl_res;
     }
+
     time_diff = (get_time() - time_start); // calculating time difference
     result == results[i - 1] ? printf("PASS ") : printf("FAIL ");
-    printf("N %2d, Solutions %18" PRIu64 ", Expected %18" PRIu64
-           ", Time %fs, Solutions/s %5f\n",
-           i, result, results[i - 1], time_diff, result / time_diff);
+    std::cout << "N " << i << ", Solutions " << result << ", Expected " << results[i - 1] <<
+           ", Time " << time_diff << " , Solutions/s " << result/time_diff << std::endl;
   }
   return 0;
 }

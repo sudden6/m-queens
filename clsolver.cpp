@@ -24,7 +24,7 @@ ClSolver::ClSolver()
 
     std::vector<cl::Device> devices;
 
-    err = platform.getDevices(CL_DEVICE_TYPE_CPU, &devices);
+    err = platform.getDevices(CL_DEVICE_TYPE_GPU, &devices);
     if(err != CL_SUCCESS) {
         std::cout << "getDevices failed" << std::endl;
         return;
@@ -63,7 +63,7 @@ ClSolver::ClSolver()
     }
 
     // load source code
-    std::ifstream sourcefile("clqueens.cl");
+    std::ifstream sourcefile("clqueens_amd.cl");
     std::string sourceStr((std::istreambuf_iterator<char>(sourcefile)),
                      std::istreambuf_iterator<char>());
 
@@ -78,15 +78,21 @@ ClSolver::ClSolver()
 constexpr uint_fast8_t MINN = 2;
 constexpr uint_fast8_t MAXN = 29;
 
-bool ClSolver::init(uint8_t boardsize)
+bool ClSolver::init(uint8_t boardsize, uint8_t placed)
 {
     if(boardsize > MAXN || boardsize < MINN) {
         std::cout << "Invalid boardsize for ClSolver" << std::endl;
         return false;
     }
 
+    if(placed >= boardsize) {
+        std::cout << "Invalid number of placed queens for ClSolver" << std::endl;
+        return false;
+    }
+
     std::ostringstream optionsStream;
-    optionsStream << "-D N=" << std::to_string(boardsize);
+    optionsStream << "-D N=" << std::to_string(boardsize)
+                  << " -D PLACED=" <<std::to_string(placed);
     std::string options = optionsStream.str();
 
     cl_int builderr = program.build(options.c_str());
@@ -131,9 +137,9 @@ uint64_t ClSolver::solve_subboard(std::vector<start_condition>& start)
     }
 
     // result buffer
-    std::vector<cl_ulong> results(start.size(), 0);
+    std::vector<cl_uint> results(start.size(), 0);
     cl::Buffer results_buf(context, CL_MEM_WRITE_ONLY,
-        results.size() * sizeof(cl_ulong), nullptr, &err);
+        results.size() * sizeof(cl_uint), nullptr, &err);
     if(err != CL_SUCCESS) {
         std::cout << "cl::Buffer results_buf failed: " << err << std::endl;
     }
@@ -157,7 +163,7 @@ uint64_t ClSolver::solve_subboard(std::vector<start_condition>& start)
     }
 
     // Get result back to host.
-    err = queue.enqueueReadBuffer(results_buf, CL_TRUE, 0, results.size() * sizeof(cl_ulong), results.data());
+    err = queue.enqueueReadBuffer(results_buf, CL_TRUE, 0, results.size() * sizeof(cl_uint), results.data());
     if(err != CL_SUCCESS) {
         std::cout << "enqueueReadBuffer failed: " << err << std::endl;
     }
@@ -169,7 +175,7 @@ uint64_t ClSolver::solve_subboard(std::vector<start_condition>& start)
     for(auto a : results) {
         result += a;
     }
-    return result;
+    return result * 2;
 }
 
 

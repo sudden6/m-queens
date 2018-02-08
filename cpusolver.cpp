@@ -9,15 +9,21 @@ cpuSolver::cpuSolver()
 constexpr uint_fast8_t MINN = 2;
 constexpr uint_fast8_t MAXN = 29;
 
-bool cpuSolver::init(uint8_t boardsize)
+bool cpuSolver::init(uint8_t boardsize, uint8_t placed)
 {
-    if(boardsize <= MAXN && boardsize >= MINN) {
-        this->boardsize = boardsize;
-        return true;
+    if(boardsize > MAXN || boardsize < MINN) {
+        std::cout << "Invalid boardsize for cpusolver" << std::endl;
+        return false;
     }
 
-    std::cout << "Invalid boardsize for cpusolver" << std::endl;
-    return false;
+    if(placed >= boardsize) {
+        std::cout << "Invalid number of placed queens for cpusolver" << std::endl;
+        return false;
+    }
+    this->boardsize = boardsize;
+    this->placed = placed;
+
+    return true;
 }
 
 
@@ -41,7 +47,7 @@ uint64_t cpuSolver::solve_subboard(const std::vector<start_condition>& starts) {
     diagr[d] = starts[cnt].diagr;
 #define LOOKAHEAD 3
     // we're allready two rows into the field here
-    rest[d] = boardsize - LOOKAHEAD - starts[cnt].placed;
+    rest[d] = boardsize - LOOKAHEAD - this->placed;
 
     //  The variable posib contains the bitmask of possibilities we still have
     //  to try in a given row ...
