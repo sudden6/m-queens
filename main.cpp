@@ -143,10 +143,9 @@ std::vector<start_condition> create_subboards(uint_fast8_t n, uint_fast8_t place
             }
 
             if(l_rest == max_depth) {
-                result[res_cnt].cols = bit;
-                result[res_cnt].diagl = new_diagl;
-                result[res_cnt].diagr = new_diagr;
-                //result[res_cnt].placed = new_depth;
+                result[res_cnt].cols = static_cast<uint32_t> (bit);
+                result[res_cnt].diagl = static_cast<uint32_t> (new_diagl);
+                result[res_cnt].diagr = static_cast<uint32_t>(new_diagr);
                 res_cnt++;
                 continue;
             }

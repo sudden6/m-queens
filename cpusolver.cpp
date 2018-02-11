@@ -49,6 +49,8 @@ uint64_t cpuSolver::solve_subboard(const std::vector<start_condition>& starts) {
     // we're allready two rows into the field here
     rest[d] = boardsize - LOOKAHEAD - this->placed;
 
+    //printf("cpuid: X, cols: %x, diagl: %x, diagr: %x, rest: %d\n", cols[d], diagl[d], diagr[d], rest[d]);
+
     //  The variable posib contains the bitmask of possibilities we still have
     //  to try in a given row ...
     uint_fast32_t posib = (cols[d] | diagl[d] | diagr[d]);

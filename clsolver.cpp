@@ -98,19 +98,20 @@ bool ClSolver::init(uint8_t boardsize, uint8_t placed)
     cl_int builderr = program.build(options.c_str());
     if(builderr != CL_SUCCESS) {
         std::cout << "program.build failed: " << builderr << std::endl;
+        cl_int err = 0;
+        std::cout << "OpenCL build log:" << std::endl;
+        auto buildlog = program.getBuildInfo<CL_PROGRAM_BUILD_LOG>(device, &err);
+        std::cout << buildlog << std::endl;
+        if(err != CL_SUCCESS) {
+            std::cout << "getBuildInfo<CL_PROGRAM_BUILD_LOG> failed" << std::endl;
+        }
+        return false;
     }
 
-    cl_int err = 0;
-    std::cout << "OpenCL build log:" << std::endl;
-    auto buildlog = program.getBuildInfo<CL_PROGRAM_BUILD_LOG>(device, &err);
-    std::cout << buildlog << std::endl;
-    if(err != CL_SUCCESS) {
-        std::cout << "getBuildInfo<CL_PROGRAM_BUILD_LOG> failed" << std::endl;
-    }
-    return err && builderr;
+    return true;
 }
 
-uint64_t ClSolver::solve_subboard(std::vector<start_condition>& start)
+uint64_t ClSolver::solve_subboard(std::vector<start_condition> &start)
 {
     if(start.empty()) {
         return 0;
@@ -156,14 +157,15 @@ uint64_t ClSolver::solve_subboard(std::vector<start_condition>& start)
     }
 
     // Launch kernel on the compute device.
-    err = queue.enqueueNDRangeKernel(solve_subboard, cl::NullRange, start.size(),
+    err = queue.enqueueNDRangeKernel(solve_subboard, cl::NullRange, cl::NDRange{start.size()},
                                      cl::NullRange);
     if(err != CL_SUCCESS) {
         std::cout << "enqueueNDRangeKernel failed: " << err << std::endl;
     }
 
     // Get result back to host.
-    err = queue.enqueueReadBuffer(results_buf, CL_TRUE, 0, results.size() * sizeof(cl_uint), results.data());
+    err = queue.enqueueReadBuffer(results_buf, CL_FALSE, 0,
+                                  results.size() * sizeof(cl_ulong), results.data());
     if(err != CL_SUCCESS) {
         std::cout << "enqueueReadBuffer failed: " << err << std::endl;
     }

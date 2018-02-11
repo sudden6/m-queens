@@ -1,4 +1,4 @@
-typedef struct {
+typedef struct __attribute__ ((packed)) {
     uint cols; // bitfield with all the used columns
     uint diagl;// bitfield with all the used diagonals down left
     uint diagr;// bitfield with all the used diagonals down right
@@ -38,6 +38,8 @@ kernel void solve_subboard(__global const start_condition* in_starts, __global u
     // we're allready two rows into the field here
     rest[d] = N - LOOKAHEAD - PLACED;
 
+    //printf("gpuid: %d, cols: %x, diagl: %x, diagr: %x, rest: %d, N: %d\n", id, in_starts[id].cols, in_starts[id].diagl, in_starts[id].diagr, in_starts[id].placed, N);
+    //printf("gpuid: %d, cols: %x, diagl: %x, diagr: %x, rest: %d, N: %d\n", id, cols[d], diagl[d], diagr[d], rest[d], N);
     //  The variable posib contains the bitmask of possibilities we still have
     //  to try in a given row ...
     uint_fast32_t posib = (cols[d] | diagl[d] | diagr[d]);
