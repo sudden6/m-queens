@@ -8,11 +8,12 @@
 #include "clsolver.h"
 #include "cpusolver.h"
 #include "solverstructs.h"
+#include "presolver.h"
 
 #include <vector>
 
 // uncomment to start with n=2 and compare to known results
-//#define TESTSUITE
+#define TESTSUITE
 
 #ifndef N
 #define N 18
@@ -230,7 +231,7 @@ int main(int argc, char **argv) {
   for (; i <= N; i++) {
     double time_diff, time_start; // for measuring calculation time
     constexpr int max_depth = 6;
-    int depth = std::min(std::max(i - 4, 0), max_depth);
+    uint8_t depth = std::min(std::max(i - 4, 0), max_depth);
     cpu.init(i, depth + 2);
     ocl.init(i, depth + 2);
     uint64_t result = 0;
@@ -239,16 +240,22 @@ int main(int argc, char **argv) {
 
     size_t st_size = st.size();
     for(size_t j = 0; j < st_size; j++) {
-        std::cout << j << " of " << st_size;
-        std::vector<start_condition> second = create_subboards(i, 2, depth, st[j]);
-        //uint64_t cpu_res = cpu.solve_subboard(second);
-        uint64_t ocl_res = ocl.solve_subboard(second);
-        std::cout << " subboards: " << second.size() << " DONE" << std::endl;
-        /*
-        if(cpu_res != ocl_res) {
-            std::cout << "Result mismatch" << std::endl;
-        }//*/
-        result += ocl_res;
+        //std::cout << j << " of " << st_size;
+        //std::vector<start_condition> second = create_subboards(i, 2, depth, st[j]);
+        PreSolver pre(i, 2, depth, st[j]);
+
+        std::vector<start_condition> second;
+        while (!pre.empty()) {
+            second = pre.getNext(0xFFFF);
+            uint64_t cpu_res = cpu.solve_subboard(second);
+            //uint64_t ocl_res = ocl.solve_subboard(second);
+            //std::cout << " subboards: " << second.size() << " DONE" << std::endl;
+            /*
+            if(cpu_res != ocl_res) {
+                std::cout << "Result mismatch" << std::endl;
+            }//*/
+            result += cpu_res;
+        }
     }
 
     time_diff = (get_time() - time_start); // calculating time difference

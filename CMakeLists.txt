@@ -17,6 +17,8 @@ set(${PROJECT_NAME}_SOURCES
   clsolver.h
   cpusolver.h
   cpusolver.cpp
+  presolver.cpp
+  presolver.h
   solverstructs.h
  )
 
