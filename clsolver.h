@@ -12,8 +12,11 @@ class ClSolver
 public:
     ClSolver();
     bool init(uint8_t boardsize, uint8_t placed);
-    uint64_t solve_subboard(std::vector<start_condition> &start);
+    uint64_t solve_subboard(start_condition &start);
 private:
+    uint8_t presolve_depth = 0;
+    uint8_t placed = 0;
+    uint8_t boardsize = 0;
     cl::Context context;
     cl::Device device;
     cl::Program program;

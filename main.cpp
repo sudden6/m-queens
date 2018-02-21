@@ -16,7 +16,7 @@
 #define TESTSUITE
 
 #ifndef N
-#define N 18
+#define N 16
 #endif
 #define MAXN 29
 
@@ -242,20 +242,16 @@ int main(int argc, char **argv) {
     for(size_t j = 0; j < st_size; j++) {
         //std::cout << j << " of " << st_size;
         //std::vector<start_condition> second = create_subboards(i, 2, depth, st[j]);
-        PreSolver pre(i, 2, depth, st[j]);
 
-        std::vector<start_condition> second;
-        while (!pre.empty()) {
-            second = pre.getNext(0xFFFF);
-            uint64_t cpu_res = cpu.solve_subboard(second);
-            //uint64_t ocl_res = ocl.solve_subboard(second);
-            //std::cout << " subboards: " << second.size() << " DONE" << std::endl;
-            /*
-            if(cpu_res != ocl_res) {
-                std::cout << "Result mismatch" << std::endl;
-            }//*/
-            result += cpu_res;
-        }
+        std::vector<start_condition> second = {st[j]};
+        uint64_t cpu_res = cpu.solve_subboard(second);
+        uint64_t ocl_res = ocl.solve_subboard(st[j]);
+        //std::cout << " subboards: " << second.size() << " DONE" << std::endl;
+        //*
+        if(cpu_res != ocl_res) {
+            std::cout << "Result mismatch" << std::endl;
+        }//*/
+        result += cpu_res;
     }
 
     time_diff = (get_time() - time_start); // calculating time difference

@@ -6,6 +6,8 @@
 #include <fstream>
 #include <streambuf>
 #include <sstream>
+#include <queue>
+#include "presolver.h"
 
 ClSolver::ClSolver()
 {
@@ -77,6 +79,13 @@ ClSolver::ClSolver()
 
 constexpr uint_fast8_t MINN = 2;
 constexpr uint_fast8_t MAXN = 29;
+/*
+ * GPU_DEPTH defines how many rows should be left for the GPU to solve,
+ * the previous ones have to be solved with the cpu.
+ * With a too high GPU_DEPTH, solving a board takes too long and the
+ * GPU is detected as "hung" by the driver and reset or the system crashes.
+ */
+constexpr uint_fast8_t GPU_DEPTH = 6;
 
 bool ClSolver::init(uint8_t boardsize, uint8_t placed)
 {
@@ -90,9 +99,19 @@ bool ClSolver::init(uint8_t boardsize, uint8_t placed)
         return false;
     }
 
+    this->boardsize = boardsize;
+    this->placed = placed;
+    uint_fast8_t gpu_depth = GPU_DEPTH;
+    if((boardsize - placed) < GPU_DEPTH) {
+        gpu_depth = boardsize - placed;
+        presolve_depth = 0;
+    } else {
+        presolve_depth = boardsize - placed - GPU_DEPTH;
+    }
+
     std::ostringstream optionsStream;
     optionsStream << "-D N=" << std::to_string(boardsize)
-                  << " -D PLACED=" <<std::to_string(placed);
+                  << " -D PLACED=" <<std::to_string(gpu_depth);
     std::string options = optionsStream.str();
 
     cl_int builderr = program.build(options.c_str());
@@ -111,72 +130,123 @@ bool ClSolver::init(uint8_t boardsize, uint8_t placed)
     return true;
 }
 
-uint64_t ClSolver::solve_subboard(std::vector<start_condition> &start)
-{
-    if(start.empty()) {
-        return 0;
-    }
+// should be a multiple of 64 at least for AMD GPUs
+// ideally would be CL_KERNEL_PREFERRED_WORK_GROUP_SIZE_MULTIPLE
+// bigger BATCH_SIZE means higher memory usage
+constexpr size_t BATCH_SIZE = 2048;
 
+typedef struct {
+    cl::Kernel clKernel;
+    cl::Buffer clStartBuf;
+    cl::Buffer clOutputBuf;
+    cl::Event clBatchDone;
+    std::vector<start_condition> hostStartBuf;
+    std::vector<cl_uint> hostOutputBuf;
+    size_t size = 0;
+} batch;
+
+constexpr size_t NUM_BATCHES = 2;
+
+uint64_t ClSolver::solve_subboard(start_condition &start)
+{
     cl_int err = 0;
 
+    // init presolver
+    PreSolver pre(boardsize, placed, presolve_depth, start);
+
     // Create command queue.
-    cl::CommandQueue queue(context, device, 0, &err);
+    cl::CommandQueue cmdQueue(context, device, 0, &err);
     if(err != CL_SUCCESS) {
         std::cout << "CommandQueue failed: " << err << std::endl;
     }
 
-    cl::Kernel solve_subboard(program, "solve_subboard", &err);
-    if(err != CL_SUCCESS) {
-        std::cout << "cl::Kernel failed: " << err << std::endl;
-    }
-
-    // Allocate device buffers and transfer input data to device.
-    cl::Buffer start_buf(context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
-        start.size() * sizeof(start_condition), start.data(), &err);
-    if(err != CL_SUCCESS) {
-        std::cout << "cl::Buffer start_buf failed: " << err << std::endl;
-    }
-
-    // result buffer
-    std::vector<cl_uint> results(start.size(), 0);
-    cl::Buffer results_buf(context, CL_MEM_WRITE_ONLY,
-        results.size() * sizeof(cl_uint), nullptr, &err);
-    if(err != CL_SUCCESS) {
-        std::cout << "cl::Buffer results_buf failed: " << err << std::endl;
-    }
-
-    // Set kernel parameters.
-    err = solve_subboard.setArg(0, start_buf);
-    if(err != CL_SUCCESS) {
-        std::cout << "solve_subboard.setArg(0 failed: " << err << std::endl;
-    }
-
-    err = solve_subboard.setArg(1, results_buf);
-    if(err != CL_SUCCESS) {
-        std::cout << "solve_subboard.setArg(1 failed: " << err << std::endl;
-    }
-
-    // Launch kernel on the compute device.
-    err = queue.enqueueNDRangeKernel(solve_subboard, cl::NullRange, cl::NDRange{start.size()},
-                                     cl::NullRange);
-    if(err != CL_SUCCESS) {
-        std::cout << "enqueueNDRangeKernel failed: " << err << std::endl;
-    }
-
-    // Get result back to host.
-    err = queue.enqueueReadBuffer(results_buf, CL_FALSE, 0,
-                                  results.size() * sizeof(cl_ulong), results.data());
-    if(err != CL_SUCCESS) {
-        std::cout << "enqueueReadBuffer failed: " << err << std::endl;
-    }
-
-    // wait for completion
-    queue.finish();
-
+    std::queue<batch> batQueue;
     uint64_t result = 0;
-    for(auto a : results) {
-        result += a;
+
+    while (!pre.empty()) {
+        if(batQueue.size() >= NUM_BATCHES) {
+            batch first = batQueue.front();
+            first.clBatchDone.wait();
+            for(size_t i = 0; i < first.size; i++) {
+                result += first.hostOutputBuf[i];
+            }
+            batQueue.pop();
+        }
+
+        batch b;
+        // create device kernel
+        b.clKernel = cl::Kernel(program, "solve_subboard", &err);
+        auto& kernel = b.clKernel;
+        if(err != CL_SUCCESS) {
+            std::cout << "cl::Kernel failed: " << err << std::endl;
+        }
+
+        b.hostStartBuf = pre.getNext(BATCH_SIZE);
+        auto& startBuf = b.hostStartBuf;
+        b.size = startBuf.size();
+        const auto& batchSize = b.size;
+
+        // Allocate device buffers and transfer input data to device.
+        b.clStartBuf = cl::Buffer(context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
+            batchSize * sizeof(start_condition), startBuf.data(), &err);
+        if(err != CL_SUCCESS) {
+            std::cout << "cl::Buffer start_buf failed: " << err << std::endl;
+        }
+
+        auto& clStartBuf = b.clStartBuf;
+
+        // result buffer
+        b.hostOutputBuf = std::vector<cl_uint>(batchSize, 0);
+        auto& outBuf = b.hostOutputBuf;
+        b.clOutputBuf = cl::Buffer(context, CL_MEM_WRITE_ONLY,
+            batchSize * sizeof(cl_uint), nullptr, &err);
+        if(err != CL_SUCCESS) {
+            std::cout << "cl::Buffer results_buf failed: " << err << std::endl;
+        }
+
+        auto& clOutputBuf = b.clOutputBuf;
+
+        // Set kernel parameters.
+        err = kernel.setArg(0, clStartBuf);
+        if(err != CL_SUCCESS) {
+            std::cout << "solve_subboard.setArg(0 failed: " << err << std::endl;
+        }
+
+        err = kernel.setArg(1, clOutputBuf);
+        if(err != CL_SUCCESS) {
+            std::cout << "solve_subboard.setArg(1 failed: " << err << std::endl;
+        }
+
+        // Launch kernel on the compute device.
+        err = cmdQueue.enqueueNDRangeKernel(kernel, cl::NullRange, cl::NDRange{batchSize},
+                                         cl::NullRange);
+        if(err != CL_SUCCESS) {
+            std::cout << "enqueueNDRangeKernel failed: " << err << std::endl;
+        }
+
+        // Get result back to host.
+        err = cmdQueue.enqueueReadBuffer(clOutputBuf, CL_FALSE, 0,
+                                      batchSize * sizeof(cl_uint), outBuf.data(), nullptr, &b.clBatchDone);
+        if(err != CL_SUCCESS) {
+            std::cout << "enqueueReadBuffer failed: " << err << std::endl;
+        }
+
+        // send to device
+        cmdQueue.flush();
+        batQueue.push(b);
     }
+
+    cmdQueue.finish();
+
+    while (!batQueue.empty()) {
+        batch first = batQueue.front();
+        first.clBatchDone.wait();
+        for(size_t i = 0; i < first.size; i++) {
+            result += first.hostOutputBuf[i];
+        }
+        batQueue.pop();
+    }
+
     return result * 2;
 }
 
