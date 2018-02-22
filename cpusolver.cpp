@@ -36,6 +36,7 @@ uint64_t cpuSolver::solve_subboard(const std::vector<start_condition>& starts) {
 
 #pragma omp parallel for reduction(+ : num) schedule(dynamic)
   for (size_t cnt = 0; cnt < start_cnt; cnt++) {
+    uint_fast64_t l_num = 0;
     uint_fast32_t cols[MAXN], posibs[MAXN]; // Our backtracking 'stack'
     uint_fast32_t diagl[MAXN], diagr[MAXN];
     int_fast8_t rest[MAXN]; // number of rows left
@@ -104,12 +105,13 @@ uint64_t cpuSolver::solve_subboard(const std::vector<start_condition>& starts) {
             diagr_shifted = new_diagr >> 1;
         } else {
             // when all columns are used, we found a solution
-            num += bit == UINT_FAST32_MAX;
+            l_num += bit == UINT_FAST32_MAX;
         }
       }
       posib = posibs[d]; // backtrack ...
       d--;
     }
+     num += l_num;
   }
   return num * 2;
 }

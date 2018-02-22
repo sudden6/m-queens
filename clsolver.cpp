@@ -8,6 +8,7 @@
 #include <sstream>
 #include <queue>
 #include "presolver.h"
+#include "cpusolver.h"
 
 ClSolver::ClSolver()
 {
@@ -85,7 +86,7 @@ constexpr uint_fast8_t MAXN = 29;
  * With a too high GPU_DEPTH, solving a board takes too long and the
  * GPU is detected as "hung" by the driver and reset or the system crashes.
  */
-constexpr uint_fast8_t GPU_DEPTH = 6;
+constexpr uint_fast8_t GPU_DEPTH = 4;
 
 bool ClSolver::init(uint8_t boardsize, uint8_t placed)
 {
@@ -111,7 +112,7 @@ bool ClSolver::init(uint8_t boardsize, uint8_t placed)
 
     std::ostringstream optionsStream;
     optionsStream << "-D N=" << std::to_string(boardsize)
-                  << " -D PLACED=" <<std::to_string(gpu_depth);
+                  << " -D PLACED=" <<std::to_string(boardsize - gpu_depth);
     std::string options = optionsStream.str();
 
     cl_int builderr = program.build(options.c_str());
@@ -145,7 +146,7 @@ typedef struct {
     size_t size = 0;
 } batch;
 
-constexpr size_t NUM_BATCHES = 2;
+constexpr size_t NUM_BATCHES = 1;
 
 uint64_t ClSolver::solve_subboard(start_condition &start)
 {
@@ -232,7 +233,8 @@ uint64_t ClSolver::solve_subboard(start_condition &start)
         }
 
         // send to device
-        cmdQueue.flush();
+        cmdQueue.finish();
+
         batQueue.push(b);
     }
 
@@ -244,6 +246,11 @@ uint64_t ClSolver::solve_subboard(start_condition &start)
         for(size_t i = 0; i < first.size; i++) {
             result += first.hostOutputBuf[i];
         }
+
+        cpuSolver cpu;
+        cpu.init(boardsize, boardsize - GPU_DEPTH);
+        uint64_t cpu_res = cpu.solve_subboard(first.hostStartBuf);
+
         batQueue.pop();
     }
 

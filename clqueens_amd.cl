@@ -19,6 +19,10 @@ typedef ulong uint_fast64_t;
 
 #define MAXD (N - PLACED)
 
+#if (MAXD > 13)
+#error "Depth to high, risk of overflow in result counter"
+#endif
+
 kernel void solve_subboard(__global const start_condition* in_starts, __global uint* out_cnt) {
     size_t id = get_global_id(0);
 

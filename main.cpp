@@ -63,6 +63,7 @@ std::vector<start_condition> create_preplacement(uint_fast8_t n) {
       }
     }
     result.resize(start_cnt); // shrink
+    return result;
 }
 
 std::vector<start_condition> create_subboards(uint_fast8_t n, uint_fast8_t placed, uint_fast8_t depth, start_condition& start) {
@@ -106,7 +107,7 @@ std::vector<start_condition> create_subboards(uint_fast8_t n, uint_fast8_t place
     diagr[d] = start.diagr;
 #define LOOKAHEAD 3
     // we're allready two rows into the field here
-    //rest[d] = n - LOOKAHEAD - start.placed;
+    rest[d] = n - LOOKAHEAD - placed;
     const int_fast8_t max_depth = rest[d] - depth + 1;  // save result at this depth
 
     //  The variable posib contains the bitmask of possibilities we still have
@@ -213,7 +214,7 @@ static const uint64_t results[27] = {
 int main(int argc, char **argv) {
 
 #ifdef TESTSUITE
-  int i = 2;
+  int i = 10;
 #else
   int i = N;
 #endif
@@ -230,28 +231,27 @@ int main(int argc, char **argv) {
 
   for (; i <= N; i++) {
     double time_diff, time_start; // for measuring calculation time
-    constexpr int max_depth = 6;
-    uint8_t depth = std::min(std::max(i - 4, 0), max_depth);
-    cpu.init(i, depth + 2);
-    ocl.init(i, depth + 2);
+    cpu.init(i, 2);
+    ocl.init(i, 2);
     uint64_t result = 0;
     time_start = get_time();
     std::vector<start_condition> st = create_preplacement(i);
 
     size_t st_size = st.size();
     for(size_t j = 0; j < st_size; j++) {
-        //std::cout << j << " of " << st_size;
+        std::cout << j << " of " << st_size;
         //std::vector<start_condition> second = create_subboards(i, 2, depth, st[j]);
 
+        uint64_t ocl_res;
         std::vector<start_condition> second = {st[j]};
         uint64_t cpu_res = cpu.solve_subboard(second);
-        uint64_t ocl_res = ocl.solve_subboard(st[j]);
-        //std::cout << " subboards: " << second.size() << " DONE" << std::endl;
+        ocl_res = ocl.solve_subboard(st[j]);
+        std::cout << " subboards: " << second.size() << " DONE" << std::endl;
         //*
         if(cpu_res != ocl_res) {
             std::cout << "Result mismatch" << std::endl;
         }//*/
-        result += cpu_res;
+        result += ocl_res;
     }
 
     time_diff = (get_time() - time_start); // calculating time difference

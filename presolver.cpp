@@ -1,5 +1,12 @@
 #include "presolver.h"
 
+/**
+ * @brief PreSolver::PreSolver
+ * @param n board size
+ * @param placed number of already placed queens
+ * @param depth queens to place until done
+ * @param start initial condition
+ */
 PreSolver::PreSolver(uint_fast8_t n, uint_fast8_t placed, uint_fast8_t depth, start_condition start)
 {
     if(n < 2) {
