@@ -2,7 +2,7 @@ typedef struct __attribute__ ((packed)) {
     uint cols; // bitfield with all the used columns
     uint diagl;// bitfield with all the used diagonals down left
     uint diagr;// bitfield with all the used diagonals down right
-    //uint placed;// number of rows where queens are already placed
+    //uint dummy;// dummy to align at 128bit
 } start_condition;
 
 #define MAXN 29

@@ -43,6 +43,11 @@ PreSolver::PreSolver(uint_fast8_t n, uint_fast8_t placed, uint_fast8_t depth, st
     //  to try in a given row ...
     posib = (cols[d] | diagl[d] | diagr[d]);
 
+    // detect if no possibilities left
+    if (posib == UINT_FAST32_MAX) {
+        valid = false;
+    }
+
 }
 
 std::vector<start_condition> PreSolver::getNext(size_t count)
@@ -85,11 +90,11 @@ std::vector<start_condition> PreSolver::getNext(size_t count)
             uint_fast8_t allowed2 = l_rest > 0;
 
             if(allowed1 && (lookahead1 == UINT_FAST32_MAX)) {
-                //continue;
+                continue;
             }
 
             if(allowed2 && (lookahead2 == UINT_FAST32_MAX)) {
-                //continue;
+                continue;
             }
 
             if(l_rest == max_depth) {

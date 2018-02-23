@@ -16,7 +16,7 @@
 #define TESTSUITE
 
 #ifndef N
-#define N 16
+#define N 20
 #endif
 #define MAXN 29
 
@@ -214,7 +214,7 @@ static const uint64_t results[27] = {
 int main(int argc, char **argv) {
 
 #ifdef TESTSUITE
-  int i = 10;
+  int i = 2;
 #else
   int i = N;
 #endif
@@ -239,15 +239,15 @@ int main(int argc, char **argv) {
 
     size_t st_size = st.size();
     for(size_t j = 0; j < st_size; j++) {
-        std::cout << j << " of " << st_size;
+        //std::cout << j << " of " << st_size;
         //std::vector<start_condition> second = create_subboards(i, 2, depth, st[j]);
 
         uint64_t ocl_res;
         std::vector<start_condition> second = {st[j]};
-        uint64_t cpu_res = cpu.solve_subboard(second);
+        //uint64_t cpu_res = cpu.solve_subboard(second);
         ocl_res = ocl.solve_subboard(st[j]);
-        std::cout << " subboards: " << second.size() << " DONE" << std::endl;
-        //*
+        //std::cout << " subboards: " << second.size() << " DONE" << std::endl;
+        /*
         if(cpu_res != ocl_res) {
             std::cout << "Result mismatch" << std::endl;
         }//*/
