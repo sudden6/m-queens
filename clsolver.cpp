@@ -7,6 +7,7 @@
 #include <streambuf>
 #include <sstream>
 #include <queue>
+#include <list>
 #include "presolver.h"
 #include "cpusolver.h"
 
@@ -141,6 +142,8 @@ typedef struct {
     cl::Buffer clStartBuf;
     cl::Buffer clOutputBuf;
     cl::Event clBatchDone;
+    std::vector<cl::Event> clStartKernel;
+    std::vector<cl::Event> clReadResult;
     std::vector<start_condition> hostStartBuf;
     std::vector<cl_uint> hostOutputBuf;
     size_t size = 0;
@@ -161,11 +164,15 @@ uint64_t ClSolver::solve_subboard(start_condition &start)
         std::cout << "CommandQueue failed: " << err << std::endl;
     }
 
-    // ringbuffer
+    // buffer
     batch batches[NUM_BATCHES];
+    std::list<size_t> running;
+    std::list<size_t> complete;
 
     for(int i = 0; i < NUM_BATCHES; i++) {
         batch& b = batches[i];
+        // add this slot to the free queue
+        complete.push_back(i);
         // create device kernel
         b.clKernel = cl::Kernel(program, "solve_subboard", &err);
         if(err != CL_SUCCESS) {
@@ -201,11 +208,13 @@ uint64_t ClSolver::solve_subboard(start_condition &start)
     }
 
     uint64_t result = 0;
-    size_t bIdxHead = 0;
-    size_t bIdxTail = 0;
 
     while (!pre.empty()) {
-        auto& b = batches[bIdxHead];
+        // move idx from free queue to busy queue
+        size_t cur = complete.front();
+        complete.pop_front();
+        running.push_back(cur);
+        auto& b = batches[cur];
 
         b.hostStartBuf = pre.getNext(BATCH_SIZE);
         b.size = b.hostStartBuf.size();
@@ -213,81 +222,75 @@ uint64_t ClSolver::solve_subboard(start_condition &start)
 
         // Transfer start buffer to device
         err = cmdQueue.enqueueWriteBuffer(b.clStartBuf, CL_FALSE, 0,
-                                          batchSize * sizeof(start_condition), b.hostStartBuf.data());
+                                          batchSize * sizeof(start_condition), b.hostStartBuf.data(),
+                                          nullptr, &b.clStartKernel[0]);
 
         if(err != CL_SUCCESS) {
             std::cout << "Failed to transfer start buffer: " << err << std::endl;
         }
 
-        /*
-        // clear result buffer
-        for(int i = 0; i < BATCH_SIZE; i++) {
-            b.hostOutputBuf[i] = 0;
-        }//*/
-
         // Launch kernel on the compute device.
-        err = cmdQueue.enqueueNDRangeKernel(b.clKernel, cl::NullRange, cl::NDRange{batchSize},
-                                         cl::NullRange, nullptr, nullptr);
+        err = cmdQueue.enqueueNDRangeKernel(b.clKernel, cl::NullRange,
+                                            cl::NDRange{batchSize}, cl::NullRange,
+                                            &b.clStartKernel, &b.clReadResult[0]);
         if(err != CL_SUCCESS) {
             std::cout << "enqueueNDRangeKernel failed: " << err << std::endl;
         }
 
         // Get result back to host.
         err = cmdQueue.enqueueReadBuffer(b.clOutputBuf, CL_FALSE, 0,
-                                      batchSize * sizeof(cl_uint), b.hostOutputBuf.data(), nullptr, &(b.clBatchDone));
+                                         batchSize * sizeof(cl_uint), b.hostOutputBuf.data(),
+                                         &b.clReadResult, &b.clBatchDone);
         if(err != CL_SUCCESS) {
             std::cout << "enqueueReadBuffer failed: " << err << std::endl;
         }
 
-        /*
-        // send to device
-        err = cmdQueue.flush();
-        if(err != CL_SUCCESS) {
-            std::cout << "flush() failed: " << err << std::endl;
-        }//*/
+        // poll events to find free slot
 
-        // one batch placed in head
-        bIdxHead++;
-        // Wrap around at NUM_BATCHES
-        bIdxHead = bIdxHead % NUM_BATCHES;
-
-        if(bIdxHead == bIdxTail) {
-
-            batch& tail = batches[bIdxTail];
-            // wait for the oldest element to finish
-            tail.clBatchDone.wait();
-            // get data from oldest element
-            for(size_t i = 0; i < tail.size; i++) {
-                result += tail.hostOutputBuf[i];
+        // wait for free slot
+        auto it = running.begin();
+        while (complete.empty()) {
+            // loop endless over running batches
+            if(it == running.end()) {
+                it = running.begin();
+                // TODO(sudden6): sleep?
             }
-            // Calculate new tail
-            bIdxTail++;
-            // Wrap around at NUM_BATCHES
-            bIdxTail = bIdxTail % NUM_BATCHES;
-            // recheck if work to do, or clearing out buffers
+
+            size_t idx = *it;
+            batch& c = batches[idx];
+            // check if batch finished
+            if(c.clBatchDone.getInfo<CL_EVENT_COMMAND_EXECUTION_STATUS>() == CL_COMPLETE) {
+                // get data from completed batch
+                for(size_t i = 0; i < c.size; i++) {
+                    result += c.hostOutputBuf[i];
+                }
+                // remove from running batches
+                running.erase(it);
+                // add to completed batches
+                complete.push_back(idx);
+            }
         }
     }
 
-    /*
-    err = cmdQueue.finish();
-    if(err != CL_SUCCESS) {
-        std::cout << "finish() failed: " << err << std::endl;
-    }//*/
-
-    // clear out rest of the buffer
-    while(bIdxHead != bIdxTail) {
-        batch& tail = batches[bIdxTail];
-        // wait for the oldest element to finish
-        tail.clBatchDone.wait();
-        // get data from oldest element
-        for(size_t i = 0; i < tail.size; i++) {
-            result += tail.hostOutputBuf[i];
+    auto it = running.begin();
+    while (!running.empty()) {
+        // loop endless over running batches
+        if(it == running.end()) {
+            it = running.begin();
+            // TODO(sudden6): sleep?
         }
-        // Calculate new tail
-        bIdxTail++;
-        // Wrap around at NUM_BATCHES
-        bIdxTail %= NUM_BATCHES;
-        // recheck if work to do, or clearing out buffers
+
+        size_t idx = *it;
+        batch& c = batches[idx];
+        // check if batch finished
+        if(c.clBatchDone.getInfo<CL_EVENT_COMMAND_EXECUTION_STATUS>() == CL_COMPLETE) {
+            // get data from completed batch
+            for(size_t i = 0; i < c.size; i++) {
+                result += c.hostOutputBuf[i];
+            }
+            // remove from running batches
+            it = running.erase(it);
+        }
     }
 
     return result * 2;
