@@ -164,12 +164,19 @@ typedef struct {
 
 constexpr size_t NUM_BATCHES = 16;
 
-uint64_t ClSolver::solve_subboard(start_condition &start)
+uint64_t ClSolver::solve_subboard(const std::vector<start_condition> &start)
 {
     cl_int err = CL_SUCCESS;
 
+    if(start.empty()) {
+        return 0;
+    }
+
+    auto startIt = start.begin();
+
     // init presolver
-    PreSolver pre(boardsize, placed, presolve_depth, start);
+    PreSolver pre(boardsize, placed, presolve_depth, *startIt);
+    startIt++;
 
     // buffer
     batch batches[NUM_BATCHES];
@@ -185,6 +192,9 @@ uint64_t ClSolver::solve_subboard(start_condition &start)
         if(err != CL_SUCCESS) {
             std::cout << "cl::Kernel failed: " << err << std::endl;
         }
+        // Allocate start condition buffer on host
+        b.hostStartBuf.resize(BATCH_SIZE);
+
         // Allocate start condition buffer on device
         b.clStartBuf = cl::Buffer(context, CL_MEM_READ_ONLY | CL_MEM_HOST_WRITE_ONLY,
             BATCH_SIZE * sizeof(start_condition), nullptr, &err);
@@ -224,8 +234,19 @@ uint64_t ClSolver::solve_subboard(start_condition &start)
         running.push_back(cur);
         auto& b = batches[cur];
 
-        b.hostStartBuf = pre.getNext(BATCH_SIZE);
-        b.size = b.hostStartBuf.size();
+        // TODO(sudden6): cleanup
+        auto hostBufIt = b.hostStartBuf.begin();
+        while(hostBufIt != b.hostStartBuf.end()) {
+            hostBufIt = pre.getNext(hostBufIt, b.hostStartBuf.cend());
+            if(pre.empty() && (startIt == start.end())) {
+                break;
+            }
+            if(pre.empty()) {
+                pre = PreSolver(boardsize, placed, presolve_depth, *startIt);
+                startIt++;
+            }
+        }
+        b.size = std::distance(b.hostStartBuf.begin(), hostBufIt);
         const auto& batchSize = b.size;
         b.used = std::max(batchSize, b.used);
 

@@ -10,6 +10,8 @@ class PreSolver
 public:
     PreSolver(uint_fast8_t n, uint_fast8_t placed, uint_fast8_t depth, start_condition start);
     std::vector<start_condition> getNext(size_t count);
+    std::vector<start_condition>::iterator getNext(std::vector<start_condition>::iterator it,
+                 const std::vector<start_condition>::const_iterator end);
     bool empty() const;
 
 private:

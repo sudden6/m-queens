@@ -237,6 +237,8 @@ int main(int argc, char **argv) {
     time_start = get_time();
     std::vector<start_condition> st = create_preplacement(i);
 
+    result = ocl.solve_subboard(st);
+    /*
     size_t st_size = st.size();
     for(size_t j = 0; j < st_size; j++) {
         //std::cout << j << " of " << st_size;
@@ -245,14 +247,14 @@ int main(int argc, char **argv) {
         uint64_t ocl_res;
         std::vector<start_condition> second = {st[j]};
         //uint64_t cpu_res = cpu.solve_subboard(second);
-        ocl_res = ocl.solve_subboard(st[j]);
+        ocl_res = ocl.solve_subboard(second);
         //std::cout << " subboards: " << second.size() << " DONE" << std::endl;
         /*
         if(cpu_res != ocl_res) {
             std::cout << "Result mismatch" << std::endl;
-        }//*/
+        }//
         result += ocl_res;
-    }
+    }*/
 
     time_diff = (get_time() - time_start); // calculating time difference
     result == results[i - 1] ? printf("PASS ") : printf("FAIL ");
