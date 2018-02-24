@@ -23,7 +23,7 @@ typedef ulong uint_fast64_t;
 #error "Depth to high, risk of overflow in result counter"
 #endif
 
-kernel void solve_subboard(__global const start_condition* in_starts, __global uint* out_cnt) {
+kernel void solve_subboard(__global const start_condition* in_starts, __global ulong* out_cnt) {
     size_t id = get_global_id(0);
 
     // counter for the number of solutions
@@ -110,5 +110,5 @@ kernel void solve_subboard(__global const start_condition* in_starts, __global u
       d--;
     }
 
-    out_cnt[id] = num;
+    out_cnt[id] += num;
 }
