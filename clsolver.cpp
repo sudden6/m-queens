@@ -77,6 +77,16 @@ ClSolver::ClSolver()
         std::cout << "cl::Program failed" << std::endl;
         return;
     }
+
+    // Create command queue.
+    cmdQueue = cl::CommandQueue(context, device, CL_QUEUE_OUT_OF_ORDER_EXEC_MODE_ENABLE, &err);
+    if(err != CL_SUCCESS) {
+        std::cout << "CommandQueue failed, probably out-of-order-exec not supported: " << err << std::endl;
+        cmdQueue = cl::CommandQueue(context, device, 0, &err);
+        if(err != CL_SUCCESS) {
+            std::cout << "failed to create command queue: " << err << std::endl;
+        }
+    }
 }
 
 constexpr uint_fast8_t MINN = 2;
@@ -157,12 +167,6 @@ uint64_t ClSolver::solve_subboard(start_condition &start)
 
     // init presolver
     PreSolver pre(boardsize, placed, presolve_depth, start);
-
-    // Create command queue.
-    cl::CommandQueue cmdQueue(context, device, 0, &err);
-    if(err != CL_SUCCESS) {
-        std::cout << "CommandQueue failed: " << err << std::endl;
-    }
 
     // buffer
     batch batches[NUM_BATCHES];
