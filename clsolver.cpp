@@ -78,16 +78,6 @@ ClSolver::ClSolver()
         std::cout << "cl::Program failed" << std::endl;
         return;
     }
-
-    // Create command queue.
-    cmdQueue = cl::CommandQueue(context, device, CL_QUEUE_OUT_OF_ORDER_EXEC_MODE_ENABLE, &err);
-    if(err != CL_SUCCESS) {
-        std::cout << "CommandQueue failed, probably out-of-order-exec not supported: " << err << std::endl;
-        cmdQueue = cl::CommandQueue(context, device, 0, &err);
-        if(err != CL_SUCCESS) {
-            std::cout << "failed to create command queue: " << err << std::endl;
-        }
-    }
 }
 
 constexpr uint_fast8_t MINN = 2;
@@ -146,7 +136,7 @@ bool ClSolver::init(uint8_t boardsize, uint8_t placed)
 // should be a multiple of 64 at least for AMD GPUs
 // ideally would be CL_KERNEL_PREFERRED_WORK_GROUP_SIZE_MULTIPLE
 // bigger BATCH_SIZE means higher memory usage
-constexpr size_t BATCH_SIZE = 1 << 17;
+constexpr size_t BATCH_SIZE = 1 << 22;
 typedef cl_ulong result_type;
 
 typedef struct {
@@ -160,9 +150,11 @@ typedef struct {
     std::vector<result_type> hostOutputBuf;
     size_t size = 0;
     size_t used = 0;
+    cl::CommandQueue* cmdQueue;
 } batch;
 
-constexpr size_t NUM_BATCHES = 16;
+constexpr size_t NUM_BATCHES = 4;
+constexpr size_t NUM_CMDQUEUES = 2;
 
 uint64_t ClSolver::solve_subboard(const std::vector<start_condition> &start)
 {
@@ -177,6 +169,21 @@ uint64_t ClSolver::solve_subboard(const std::vector<start_condition> &start)
     // init presolver
     PreSolver pre(boardsize, placed, presolve_depth, *startIt);
     startIt++;
+
+    cl::CommandQueue queues[NUM_CMDQUEUES];
+    for(size_t i = 0; i < NUM_CMDQUEUES; i++) {
+        auto& cmdQueue = queues[i];
+        // Create command queue.
+        cmdQueue = cl::CommandQueue(context, device, CL_QUEUE_OUT_OF_ORDER_EXEC_MODE_ENABLE, &err);
+        if(err != CL_SUCCESS) {
+            std::cout << "CommandQueue failed, probably out-of-order-exec not supported: " << err << std::endl;
+            cmdQueue = cl::CommandQueue(context, device, 0, &err);
+            if(err != CL_SUCCESS) {
+                std::cout << "failed to create command queue: " << err << std::endl;
+            }
+        }
+    }
+
 
     // buffer
     batch batches[NUM_BATCHES];
@@ -223,6 +230,8 @@ uint64_t ClSolver::solve_subboard(const std::vector<start_condition> &start)
         if(err != CL_SUCCESS) {
             std::cout << "solve_subboard.setArg(1 failed: " << err << std::endl;
         }
+
+        b.cmdQueue = &queues[i % NUM_CMDQUEUES];
     }
 
     uint64_t result = 0;
@@ -233,6 +242,7 @@ uint64_t ClSolver::solve_subboard(const std::vector<start_condition> &start)
         complete.pop_front();
         running.push_back(cur);
         auto& b = batches[cur];
+        auto& cmdQueue = b.cmdQueue;
 
         // TODO(sudden6): cleanup
         auto hostBufIt = b.hostStartBuf.begin();
@@ -251,7 +261,7 @@ uint64_t ClSolver::solve_subboard(const std::vector<start_condition> &start)
         b.used = std::max(batchSize, b.used);
 
         // Transfer start buffer to device
-        err = cmdQueue.enqueueWriteBuffer(b.clStartBuf, CL_FALSE, 0,
+        err = cmdQueue->enqueueWriteBuffer(b.clStartBuf, CL_FALSE, 0,
                                           batchSize * sizeof(start_condition), b.hostStartBuf.data(),
                                           nullptr, &b.clStartKernel[0]);
 
@@ -260,12 +270,14 @@ uint64_t ClSolver::solve_subboard(const std::vector<start_condition> &start)
         }
 
         // Launch kernel on the compute device.
-        err = cmdQueue.enqueueNDRangeKernel(b.clKernel, cl::NullRange,
+        err = cmdQueue->enqueueNDRangeKernel(b.clKernel, cl::NullRange,
                                             cl::NDRange{batchSize}, cl::NullRange,
                                             &b.clStartKernel, &b.clReadResult[0]);
         if(err != CL_SUCCESS) {
             std::cout << "enqueueNDRangeKernel failed: " << err << std::endl;
         }
+
+        //cmdQueue.flush();
 
         // wait for free slot
         auto it = running.begin();
@@ -292,10 +304,11 @@ uint64_t ClSolver::solve_subboard(const std::vector<start_condition> &start)
     running.clear();
     for(size_t i = 0; i < NUM_BATCHES; i++) {
         batch& b = batches[i];
+        auto& cmdQueue = b.cmdQueue;
         if(b.used == 0) {
             continue;
         }
-        err = cmdQueue.enqueueReadBuffer(b.clOutputBuf, CL_FALSE, 0,
+        err = cmdQueue->enqueueReadBuffer(b.clOutputBuf, CL_FALSE, 0,
                                          b.used * sizeof(result_type), b.hostOutputBuf.data(),
                                          &b.clReadResult, &b.clBatchDone);
         if(err != CL_SUCCESS) {

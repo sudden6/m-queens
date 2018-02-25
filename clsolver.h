@@ -20,7 +20,6 @@ private:
     cl::Context context;
     cl::Device device;
     cl::Program program;
-    cl::CommandQueue cmdQueue;
 };
 
 #endif // CLSOLVER_H
