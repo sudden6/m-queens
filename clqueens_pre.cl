@@ -43,9 +43,9 @@ typedef ulong uint_fast64_t;
 
 // res_cnt must be 1 element
 kernel void single_step(__global const start_condition* in_starts,
-												__global start_condition* out_starts,
-												__global uint* out_res,
-												__local uint* res_cnts) {
+                        __global start_condition* out_starts,
+                        __global uint* out_res,
+                        __local uint* res_cnts) {
 
     __local uint_fast32_t cols[WORKGROUP_SIZE][DEPTH]; // Our backtracking 'stack'
     __local uint_fast32_t diagl[WORKGROUP_SIZE][DEPTH], diagr[WORKGROUP_SIZE][DEPTH];
@@ -100,15 +100,14 @@ kernel void single_step(__global const start_condition* in_starts,
                 continue;
             }
 						
-						if(l_rest == STOP_DEPTH) {
-								uint l_idx = atomic_add(res_cnts, 1);
-								uint g_idx = G * MAX_E * WORKGROUP_SIZE + l_idx;
-								out_starts[g_idx].cols = bit;
-								out_starts[g_idx].diagl = new_diagl;
-								out_starts[g_idx].diagr = new_diagr;
-								continue;
-						}
-
+            if(l_rest == STOP_DEPTH) {
+                uint l_idx = atomic_add(res_cnts, 1);
+                uint g_idx = G * MAX_E * WORKGROUP_SIZE + l_idx;
+                out_starts[g_idx].cols = bit;
+                out_starts[g_idx].diagl = new_diagl;
+                out_starts[g_idx].diagr = new_diagr;
+                continue;
+            }
 						
             l_rest--;
 

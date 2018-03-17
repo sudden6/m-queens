@@ -13,6 +13,9 @@ find_package(Threads REQUIRED)
 set(${PROJECT_NAME}_SOURCES
   clqueens.cl
   clqueens_amd.cl
+  clqueens_compact.cl
+  clqueens_final.cl
+  clqueens_pre.cl
   clsolver.cpp
   clsolver.h
   cpusolver.h
