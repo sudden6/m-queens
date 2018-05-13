@@ -2,24 +2,12 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <sys/time.h>
 #include <time.h>
 
-// uncomment to start with n=2 and compare to known results
-//#define TESTSUITE
-
-#ifndef N
-#define N 12
-#endif
+// above this board size overflows may occur
 #define MAXN 29
-
-#if N > MAXN
-#warning "N too big, overflow may occur"
-#endif
-
-#if N < 2
-#error "N too small"
-#endif
 
 // get the current wall clock time in seconds
 double get_time() {
@@ -31,15 +19,14 @@ double get_time() {
 uint64_t nqueens(uint_fast8_t n) {
 
   // counter for the number of solutions
-  // sufficient until n=29
+  // sufficient until n=29 (estimated)
   uint_fast64_t num = 0;
   //
   // The top level is two fors, to save one bit of symmetry in the enumeration
   // by forcing second queen to be AFTER the first queen.
   //
-  uint_fast16_t num_starts = (n-2)*(n-1);
   uint_fast16_t start_cnt = 0;
-  uint_fast32_t start_queens[num_starts][2];
+  uint_fast32_t start_queens[(MAXN - 2)*(MAXN - 1)][2];
   #pragma omp simd
   for (uint_fast8_t q0 = 0; q0 < n - 2; q0++) {
     for (uint_fast8_t q1 = q0 + 2; q1 < n; q1++) {
@@ -130,57 +117,109 @@ uint64_t nqueens(uint_fast8_t n) {
 }
 
 // expected results from https://oeis.org/A000170
-uint64_t results[27] = {1ULL,
-                        0ULL,
-                        0ULL,
-                        2ULL,
-                        10ULL,
-                        4ULL,
-                        40ULL,
-                        92ULL,
-                        352ULL,
-                        724ULL,
-                        2680ULL,
-                        14200ULL,
-                        73712ULL,
-                        365596ULL,
-                        2279184ULL,
-                        14772512ULL,
-                        95815104ULL,
-                        666090624ULL,
-                        4968057848ULL,
-                        39029188884ULL,
-                        314666222712ULL,
-                        2691008701644ULL,
-                        24233937684440ULL,
-                        227514171973736ULL,
-                        2207893435808352ULL,
-                        22317699616364044ULL,
-                        234907967154122528ULL};
+const uint64_t results[MAXN] = {
+    1ULL,
+    0ULL,
+    0ULL,
+    2ULL,
+    10ULL,
+    4ULL,
+    40ULL,
+    92ULL,
+    352ULL,
+    724ULL,
+    2680ULL,
+    14200ULL,
+    73712ULL,
+    365596ULL,
+    2279184ULL,
+    14772512ULL,
+    95815104ULL,
+    666090624ULL,
+    4968057848ULL,
+    39029188884ULL,
+    314666222712ULL,
+    2691008701644ULL,
+    24233937684440ULL,
+    227514171973736ULL,
+    2207893435808352ULL,
+    22317699616364044ULL,
+    234907967154122528ULL,
+    0,  // Not yet calculated
+    0}; // Not yet calculated
+
+void print_usage() {
+  printf("usage: m-queens BOARDSIZE\n");
+  printf("   or: m-queens START END\n");
+  printf("   or: m-queens -h\n");
+  printf("   or: m-queens --help\n");
+  printf("\n");
+  printf("\
+This program computes the number of solutions for the n queens problem\n\
+(see https://en.wikipedia.org/wiki/Eight_queens_puzzle) for the board size\n\
+BOARDSIZE or for a range of board sizes beginning with START and ending\n\
+with END.\n");
+  printf("\n");
+  printf("options:\n");
+  printf("  -h, --help      print this usage information\n");
+  printf("\n");
+  printf("AUTHOR : sudden6 <sudden6@gmx.at>\n");
+  printf("SOURCE : https://github.com/sudden6/m-queens\n");
+  printf("LICENSE: GNU General Public License v3.0\n");
+}
 
 int main(int argc, char **argv) {
 
-#ifdef TESTSUITE
-  int i = 2;
-#else
-  int i = N;
-#endif
+  int start = 2;
+  int end = 16; // This should take a few minutes on a normal PC
+
   if (argc == 2) {
-    i = atoi(argv[1]);
-    if (i < 1 || i > MAXN) {
-      printf("n must be between 2 and %d!\n", MAXN);
+    if((strcmp("-h", argv[1]) == 0) || (strcmp("--help", argv[1]) == 0)) {
+      print_usage();
+      return  EXIT_SUCCESS;
+    }
+
+    start = atoi(argv[1]);
+    if (start < 2 || start > MAXN) {
+      printf("BOARDSIZE must be between 2 and %d!\n", MAXN);
+      return EXIT_FAILURE;
+    }
+    end = start;
+  }
+
+  if (argc == 3) {
+    start = atoi(argv[1]);
+    if (start < 2 || start > MAXN) {
+      printf("START must be between 2 and %d\n", MAXN);
+      return EXIT_FAILURE;
+    }
+    end = atoi(argv[2]);
+    if (end < start || end > MAXN) {
+      printf("END must be between %d and %d\n", start, MAXN);
+      return EXIT_FAILURE;
     }
   }
 
-  for (; i <= N; i++) {
+  // properly cast
+  uint8_t start8 = (uint8_t) start;
+  uint8_t end8 = (uint8_t) end;
+
+  // track if all results passed
+  int all_pass = 1;
+
+  for (uint8_t n = start8; n <= end8; n++) {
     double time_diff, time_start; // for measuring calculation time
     time_start = get_time();
-    uint64_t result = nqueens(i);
+    uint64_t result = nqueens(n);
     time_diff = (get_time() - time_start); // calculating time difference
-    result == results[i - 1] ? printf("PASS ") : printf("FAIL ");
+    // check if result is correct
+    int pass = result == results[n - 1];
+    all_pass &= pass;
+    pass ? printf("PASS ") : printf("FAIL ");
     printf("N %2d, Solutions %18" PRIu64 ", Expected %18" PRIu64
-           ", Time %fs, Solutions/s %f\n",
-           i, result, results[i - 1], time_diff, result / time_diff);
+           ", Time %f sec., Solutions/s %f\n",
+           n, result, results[n - 1], time_diff, result / time_diff);
   }
-  return 0;
+
+  return all_pass ? EXIT_SUCCESS : EXIT_FAILURE;
 }
