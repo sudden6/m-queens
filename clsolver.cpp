@@ -133,28 +133,32 @@ bool ClSolver::init(uint8_t boardsize, uint8_t placed)
     return true;
 }
 
-// should be a multiple of 64 at least for AMD GPUs
-// ideally would be CL_KERNEL_PREFERRED_WORK_GROUP_SIZE_MULTIPLE
-// bigger BATCH_SIZE means higher memory usage
-constexpr size_t BATCH_SIZE = 1 << 22;
-typedef cl_ulong result_type;
-
-typedef struct {
-    cl::Kernel clKernel;
-    cl::Buffer clStartBuf;
-    cl::Buffer clOutputBuf;
-    cl::Event clBatchDone;
-    std::vector<cl::Event> clStartKernel = {cl::Event()};
-    std::vector<cl::Event> clReadResult = {cl::Event()};
-    std::vector<start_condition> hostStartBuf;
-    std::vector<result_type> hostOutputBuf;
-    size_t size = 0;
-    size_t used = 0;
-    cl::CommandQueue* cmdQueue;
-} batch;
+typedef cl_uint result_type;
 
 constexpr size_t NUM_BATCHES = 4;
 constexpr size_t NUM_CMDQUEUES = 2;
+
+typedef enum {FIRST, MID, LAST1, LAST2} STAGE_TYPE;
+
+typedef struct {
+    cl::Kernel clKernel;
+    cl::Buffer clStageBuf;  // buffer for the data alive after this stage
+    cl::Buffer clFillCount; // buffer that holds the fill status
+    cl::Buffer clSum;       // buffer for the sum at the last stage
+    cl::Event clStageDone;  // event when this stage is complete
+    std::vector<cl_ushort> hostFillCount;
+    STAGE_TYPE type;
+} sieve_stage;
+
+typedef struct {
+    uint32_t bufferIdx;     // must be 32 Bit, to match OpenCL kernel
+    uint32_t stageIdx;
+} stage_work_item;
+
+constexpr size_t PLACED_PER_STAGE = 2;  // number of queens placed per sieve stage
+constexpr size_t WORKGROUP_SIZE = 64;   // number of threads that are run in parallel
+constexpr size_t GLOBAL_WORKSIZE = 256; // number of elements per buffer
+constexpr size_t STAGE_SIZE = WORKGROUP_SIZE * GLOBAL_WORKSIZE;
 
 uint64_t ClSolver::solve_subboard(const std::vector<start_condition> &start)
 {
@@ -170,177 +174,267 @@ uint64_t ClSolver::solve_subboard(const std::vector<start_condition> &start)
     PreSolver pre(boardsize, placed, presolve_depth, *startIt);
     startIt++;
 
-    cl::CommandQueue queues[NUM_CMDQUEUES];
-    for(size_t i = 0; i < NUM_CMDQUEUES; i++) {
-        auto& cmdQueue = queues[i];
-        // Create command queue.
-        cmdQueue = cl::CommandQueue(context, device, CL_QUEUE_OUT_OF_ORDER_EXEC_MODE_ENABLE, &err);
-        if(err != CL_SUCCESS) {
-            std::cout << "CommandQueue failed, probably out-of-order-exec not supported: " << err << std::endl;
-            cmdQueue = cl::CommandQueue(context, device, 0, &err);
-            if(err != CL_SUCCESS) {
-                std::cout << "failed to create command queue: " << err << std::endl;
-            }
-        }
+    cl::CommandQueue queue;
+    // Create command queue.
+    queue = cl::CommandQueue(context, device, 0, &err);
+    if(err != CL_SUCCESS) {
+        std::cout << "failed to create command queue: " << err << std::endl;
     }
 
+    std::vector<sieve_stage> stages;
+    // TODO: don't hardcode
+    uint8_t queens_left = GPU_DEPTH; // number of queens to place till board is full
+    // we need at least 2 (first stage) + 2 (mid stage) + 1 (last1 stage) queens left
+    if(queens_left < 5) {
+        std::cout << "not enough queens left" << std::endl;
+        return 0;
+    }
 
-    // buffer
-    batch batches[NUM_BATCHES];
-    std::list<size_t> running;
-    std::list<size_t> complete;
+    // create first sieve stage
+    sieve_stage first{};
+    first.type = FIRST;
+    stages.push_back(first);
+    queens_left -= 2;
 
-    for(int i = 0; i < NUM_BATCHES; i++) {
-        batch& b = batches[i];
-        // add this slot to the free queue
-        complete.push_back(i);
+    // create middle sieve stages
+    while(queens_left > 2) {
+        sieve_stage mid{};
+        mid.type = MID;
+        stages.push_back(mid);
+        queens_left -= 2;
+    }
+
+    // create last sieve stage
+    sieve_stage last{};
+    if(queens_left == 1) {
+        last.type = LAST1;
+    } else if (queens_left == 2) {
+        last.type = LAST2;
+    } else {
+        std::cout << "wrong number of queens left" << std::endl;
+        return 0;
+    }
+
+    stages.push_back(last);
+
+    std::cout << "Number of stages: " << stages.size();
+
+    // initialize OpenCL stuff
+    for(size_t i = 0; i < stages.size(); i++) {
+        sieve_stage& stage = stages.at(i);
+        // Initialize stage buffer
+        if(stage.type != LAST1 || stage.type != LAST2) {
+            stage.clStageBuf = cl::Buffer(context, CL_MEM_READ_WRITE,
+                                          STAGE_SIZE * sizeof(start_condition), nullptr, &err);
+            if(err != CL_SUCCESS) {
+                std::cout << "cl::Buffer clStageBuf failed: " << err << std::endl;
+            }
+
+            // host fill count buffer
+            stage.hostFillCount = std::vector<cl_ushort>(WORKGROUP_SIZE, 0);
+
+            // Initialize stage buffer element count to zero
+            stage.clFillCount = cl::Buffer(context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR,
+                                          WORKGROUP_SIZE * sizeof(cl_ushort), stage.hostFillCount.data(), &err);
+            if(err != CL_SUCCESS) {
+                std::cout << "cl::Buffer clFillCount failed: " << err << std::endl;
+            }
+        }
+
+        // Initialize output buffer
+        if(stage.type == LAST1 || stage.type == LAST2) {
+            stage.clSum = cl::Buffer(context, CL_MEM_READ_WRITE,
+                                          WORKGROUP_SIZE * sizeof(result_type), nullptr, &err);
+            if(err != CL_SUCCESS) {
+                std::cout << "cl::Buffer clSum failed: " << err << std::endl;
+            }
+
+        }
+
+        const auto prev_stage_idx = i - 1;
+        // TODO(sudden6): call actual kernels
         // create device kernel
-        b.clKernel = cl::Kernel(program, "solve_subboard", &err);
+        switch (stage.type) {
+            case FIRST:
+                stage.clKernel = cl::Kernel(program, "first_step", &err);
+                // input buffer
+                // arg 0 set later
+                // output buffer
+                stage.clKernel.setArg(1, stage.clStageBuf);
+                // output buffer fill status
+                stage.clKernel.setArg(2, stage.clFillCount);
+            break;
+            case MID:
+                stage.clKernel = cl::Kernel(program, "inter_step", &err);
+                // input buffer
+                stage.clKernel.setArg(0, stages.at(prev_stage_idx).clStageBuf);
+                // offset
+                // arg 1 set later
+                // output buffer
+                stage.clKernel.setArg(2, stage.clStageBuf);
+                // output buffer fill status
+                stage.clKernel.setArg(3, stage.clFillCount);
+                // input buffer fill status
+                stage.clKernel.setArg(4, stages.at(prev_stage_idx).clFillCount);
+                break;
+            case LAST1:
+            case LAST2:
+                stage.clKernel = cl::Kernel(program, "final_step", &err);
+                // input buffer
+                stage.clKernel.setArg(0, stages.at(prev_stage_idx).clStageBuf);
+                // offset
+                // arg 1 set later
+                // input buffer fill status
+                stage.clKernel.setArg(2, stages.at(prev_stage_idx).clFillCount);
+                // output sum buffer
+                stage.clKernel.setArg(3, stage.clSum);
+                break;
+            default:
+                std::cout << "unexpected stage" << std::endl;
+        }
+
         if(err != CL_SUCCESS) {
             std::cout << "cl::Kernel failed: " << err << std::endl;
         }
-        // Allocate start condition buffer on host
-        b.hostStartBuf.resize(BATCH_SIZE);
 
-        // Allocate start condition buffer on device
-        b.clStartBuf = cl::Buffer(context, CL_MEM_READ_ONLY | CL_MEM_HOST_WRITE_ONLY,
-            BATCH_SIZE * sizeof(start_condition), nullptr, &err);
-        if(err != CL_SUCCESS) {
-            std::cout << "cl::Buffer start_buf failed: " << err << std::endl;
-        }
-
-        // TODO(sudden6): not the most efficient way to create a zero buffer on the device
-        // Allocate result buffer on host
-        b.hostOutputBuf = std::vector<result_type>(BATCH_SIZE, 0);
-
-        // Allocate result buffer on device
-        b.clOutputBuf = cl::Buffer(context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR,
-            BATCH_SIZE * sizeof(result_type), b.hostOutputBuf.data(), &err);
-        if(err != CL_SUCCESS) {
-            std::cout << "cl::Buffer results_buf failed: " << err << std::endl;
-        }
-
-        // Set kernel parameters.
-        err = b.clKernel.setArg(0, b.clStartBuf);
-        if(err != CL_SUCCESS) {
-            std::cout << "solve_subboard.setArg(0 failed: " << err << std::endl;
-        }
-
-        err = b.clKernel.setArg(1, b.clOutputBuf);
-        if(err != CL_SUCCESS) {
-            std::cout << "solve_subboard.setArg(1 failed: " << err << std::endl;
-        }
-
-        b.cmdQueue = &queues[i % NUM_CMDQUEUES];
     }
+
+    // TODO(sudden6): calculate this based on expansion and per stage
+    constexpr size_t BUF_THRESHOLD = 128;
 
     uint64_t result = 0;
 
+    std::list<stage_work_item> work_queue{};
+    cl::Buffer clInputBuf;
+    std::vector<start_condition> hostStartBuf{WORKGROUP_SIZE};
+    std::vector<result_type> hostOutputBuf{WORKGROUP_SIZE, 0};     // store the result of the last stage
+
     while (!pre.empty()) {
-        // move idx from free queue to busy queue
-        size_t cur = complete.front();
-        complete.pop_front();
-        running.push_back(cur);
-        auto& b = batches[cur];
-        auto& cmdQueue = b.cmdQueue;
 
-        // TODO(sudden6): cleanup
-        auto hostBufIt = b.hostStartBuf.begin();
-        while(hostBufIt != b.hostStartBuf.end()) {
-            hostBufIt = pre.getNext(hostBufIt, b.hostStartBuf.cend());
-            if(pre.empty() && (startIt == start.end())) {
-                break;
-            }
-            if(pre.empty()) {
-                pre = PreSolver(boardsize, placed, presolve_depth, *startIt);
-                startIt++;
-            }
-        }
-        b.size = std::distance(b.hostStartBuf.begin(), hostBufIt);
-        const auto& batchSize = b.size;
-        b.used = std::max(batchSize, b.used);
-
-        // Transfer start buffer to device
-        err = cmdQueue->enqueueWriteBuffer(b.clStartBuf, CL_FALSE, 0,
-                                          batchSize * sizeof(start_condition), b.hostStartBuf.data(),
-                                          nullptr, &b.clStartKernel[0]);
-
-        if(err != CL_SUCCESS) {
-            std::cout << "Failed to transfer start buffer: " << err << std::endl;
-        }
-
-        // Launch kernel on the compute device.
-        err = cmdQueue->enqueueNDRangeKernel(b.clKernel, cl::NullRange,
-                                            cl::NDRange{batchSize}, cl::NullRange,
-                                            &b.clStartKernel, &b.clReadResult[0]);
-        if(err != CL_SUCCESS) {
-            std::cout << "enqueueNDRangeKernel failed: " << err << std::endl;
-        }
-
-        //cmdQueue.flush();
-
-        // wait for free slot
-        auto it = running.begin();
-        while (complete.empty()) {
-            // loop endless over running batches
-            if(it == running.end()) {
-                it = running.begin();
-                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        if(work_queue.empty()) {
+            // insert new material at first sieve stage
+            auto& stage = stages.at(0);
+            // fill buffer
+            auto hostBufIt = hostStartBuf.begin();
+            while(hostBufIt != hostStartBuf.end()) {
+                hostBufIt = pre.getNext(hostBufIt, hostStartBuf.cend());
+                if(pre.empty() && (startIt == start.end())) {
+                    break;
+                }
+                if(pre.empty()) {
+                    pre = PreSolver(boardsize, placed, presolve_depth, *startIt);
+                    startIt++;
+                }
             }
 
-            size_t idx = *it;
-            batch& c = batches[idx];
-            // check if batch finished
-            if(c.clReadResult[0].getInfo<CL_EVENT_COMMAND_EXECUTION_STATUS>() == CL_COMPLETE) {
-                // remove from running batches
-                running.erase(it);
-                // add to completed batches
-                complete.push_back(idx);
+            // TODO(sudden6): handle case where we run out of start_conditions before
+            //                filling the buffer
+            //                use filler values? or cpu solver?
+
+            // upload input data to device
+            clInputBuf = cl::Buffer(context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR,
+                                    WORKGROUP_SIZE * sizeof(start_condition), hostStartBuf.data(), &err);
+            if(err != CL_SUCCESS) {
+                std::cout << "cl::Buffer clInputBuf failed: " << err << std::endl;
             }
-        }
-    }
 
+            // input buffer
+            stage.clKernel.setArg(0, clInputBuf);
 
-    running.clear();
-    for(size_t i = 0; i < NUM_BATCHES; i++) {
-        batch& b = batches[i];
-        auto& cmdQueue = b.cmdQueue;
-        if(b.used == 0) {
+            // Launch kernel on the compute device.
+            err = queue.enqueueNDRangeKernel(stage.clKernel, cl::NullRange,
+                                             cl::NDRange{WORKGROUP_SIZE}, cl::NullRange,
+                                             nullptr, &stage.clStageDone);
+
+            if(err != CL_SUCCESS) {
+                std::cout << "enqueueNDRangeKernel failed: " << err << std::endl;
+            }
+
+            // read back buffer fill status
+            err = queue.enqueueReadBuffer(stage.clFillCount, CL_TRUE, 0,
+                                          WORKGROUP_SIZE * sizeof(cl_ushort), stage.hostFillCount.data(),
+                                          nullptr, nullptr);
+            if(err != CL_SUCCESS) {
+                std::cout << "enqueueReadBuffer failed: " << err << std::endl;
+            }
+
+            for(uint32_t i = 0; i < WORKGROUP_SIZE; i++) {
+                if(stage.hostFillCount.at(i) > BUF_THRESHOLD) {
+                    stage_work_item item;
+                    item.stageIdx = 1;
+                    item.bufferIdx = i;
+                    work_queue.push_front(item);
+                }
+            }
+
+            // redo until buffer sufficiently filled
             continue;
         }
-        err = cmdQueue->enqueueReadBuffer(b.clOutputBuf, CL_FALSE, 0,
-                                         b.used * sizeof(result_type), b.hostOutputBuf.data(),
-                                         &b.clReadResult, &b.clBatchDone);
-        if(err != CL_SUCCESS) {
-            std::cout << "enqueueReadBuffer failed: " << err << std::endl;
-        }
-        running.push_back(i);
-    }
 
+        // get work item from queue
+        auto item = work_queue.front();
+        work_queue.pop_front();
+        uint32_t curStageIdx  = item.stageIdx;
+        auto& stage = stages.at(curStageIdx);
 
-    auto it = running.begin();
-    while (!running.empty()) {
-        // loop endless over running batches
-        if(it == running.end()) {
-            it = running.begin();
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
-        }
+        // Only mid and last items can appear here
+        // check if last stage
+        if(curStageIdx == (stages.size() - 1)) {
+            // select buffer
+            stage.clKernel.setArg(1, &item.bufferIdx);
+            // Launch kernel on the compute device.
+            err = queue.enqueueNDRangeKernel(stage.clKernel, cl::NullRange,
+                                             cl::NDRange{WORKGROUP_SIZE}, cl::NullRange,
+                                             nullptr, &stage.clStageDone);
 
-        size_t idx = *it;
-        batch& c = batches[idx];
-        // check if batch finished
-        if(c.clBatchDone.getInfo<CL_EVENT_COMMAND_EXECUTION_STATUS>() == CL_COMPLETE) {
-            // get data from completed batch
-            for(size_t i = 0; i < c.used; i++) {
-                result += c.hostOutputBuf[i];
+            if(err != CL_SUCCESS) {
+                std::cout << "enqueueNDRangeKernel failed: " << err << std::endl;
             }
-            // remove from running batches
-            it = running.erase(it);
+
+            // read back sum buffer
+            err = queue.enqueueReadBuffer(stage.clSum, CL_TRUE, 0,
+                                          WORKGROUP_SIZE * sizeof(result_type), hostOutputBuf.data(),
+                                          nullptr, nullptr);
+            if(err != CL_SUCCESS) {
+                std::cout << "enqueueReadBuffer failed: " << err << std::endl;
+            }
+
+            uint64_t intermediate_res = 0;
+            for(uint32_t i = 0; i < WORKGROUP_SIZE; i++) {
+                intermediate_res += hostOutputBuf[i];
+            }
+
+        } else {
+            // select buffer
+            stage.clKernel.setArg(1, &item.bufferIdx);
+            // Launch kernel on the compute device.
+            err = queue.enqueueNDRangeKernel(stage.clKernel, cl::NullRange,
+                                             cl::NDRange{WORKGROUP_SIZE}, cl::NullRange,
+                                             nullptr, &stage.clStageDone);
+
+            if(err != CL_SUCCESS) {
+                std::cout << "enqueueNDRangeKernel failed: " << err << std::endl;
+            }
+
+            // read back buffer fill status
+            err = queue.enqueueReadBuffer(stage.clFillCount, CL_TRUE, 0,
+                                          WORKGROUP_SIZE * sizeof(cl_ushort), stage.hostFillCount.data(),
+                                          nullptr, nullptr);
+            if(err != CL_SUCCESS) {
+                std::cout << "enqueueReadBuffer failed: " << err << std::endl;
+            }
+
+            for(uint32_t i = 0; i < WORKGROUP_SIZE; i++) {
+                if(stage.hostFillCount.at(i) > BUF_THRESHOLD) {
+                    stage_work_item item;
+                    item.stageIdx = curStageIdx + 1;
+                    item.bufferIdx = i;
+                    work_queue.push_front(item);
+                }
+            }
         }
     }
 
     return result * 2;
 }
-
-
 
