@@ -13,10 +13,10 @@
 #include <vector>
 
 // uncomment to start with n=2 and compare to known results
-#define TESTSUITE
+//#define TESTSUITE
 
 #ifndef N
-#define N 20
+#define N 8
 #endif
 #define MAXN 29
 

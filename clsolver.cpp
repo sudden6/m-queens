@@ -22,14 +22,14 @@ ClSolver::ClSolver()
         return;
     }
 
-    cl::Platform platform = platforms[0];
+    cl::Platform platform = platforms[1];
 
     std::cout << "Platform name: " << platform.getInfo<CL_PLATFORM_NAME>() << std::endl;
     std::cout << "Platform version: " << platform.getInfo<CL_PLATFORM_VERSION>() << std::endl;
 
     std::vector<cl::Device> devices;
 
-    err = platform.getDevices(CL_DEVICE_TYPE_GPU, &devices);
+    err = platform.getDevices(CL_DEVICE_TYPE_CPU, &devices);
     if(err != CL_SUCCESS) {
         std::cout << "getDevices failed" << std::endl;
         return;
@@ -68,7 +68,7 @@ ClSolver::ClSolver()
     }
 
     // load source code
-    std::ifstream sourcefile("clqueens_amd.cl");
+    std::ifstream sourcefile("clqueens_pre.cl");
     std::string sourceStr((std::istreambuf_iterator<char>(sourcefile)),
                      std::istreambuf_iterator<char>());
 
@@ -183,7 +183,7 @@ uint64_t ClSolver::solve_subboard(const std::vector<start_condition> &start)
 
     std::vector<sieve_stage> stages;
     // TODO: don't hardcode
-    uint8_t queens_left = GPU_DEPTH; // number of queens to place till board is full
+    uint8_t queens_left = boardsize - placed - presolve_depth; // number of queens to place till board is full
     // we need at least 2 (first stage) + 2 (mid stage) + 1 (last1 stage) queens left
     if(queens_left < 5) {
         std::cout << "not enough queens left" << std::endl;
@@ -217,7 +217,7 @@ uint64_t ClSolver::solve_subboard(const std::vector<start_condition> &start)
 
     stages.push_back(last);
 
-    std::cout << "Number of stages: " << stages.size();
+    std::cout << "Number of stages: " << stages.size() << std::endl;
 
     // initialize OpenCL stuff
     for(size_t i = 0; i < stages.size(); i++) {
@@ -252,7 +252,6 @@ uint64_t ClSolver::solve_subboard(const std::vector<start_condition> &start)
         }
 
         const auto prev_stage_idx = i - 1;
-        // TODO(sudden6): call actual kernels
         // create device kernel
         switch (stage.type) {
             case FIRST:
@@ -319,6 +318,7 @@ uint64_t ClSolver::solve_subboard(const std::vector<start_condition> &start)
             while(hostBufIt != hostStartBuf.end()) {
                 hostBufIt = pre.getNext(hostBufIt, hostStartBuf.cend());
                 if(pre.empty() && (startIt == start.end())) {
+                    // out of start conditions
                     break;
                 }
                 if(pre.empty()) {
@@ -327,13 +327,21 @@ uint64_t ClSolver::solve_subboard(const std::vector<start_condition> &start)
                 }
             }
 
+            ssize_t dist = std::distance(hostStartBuf.begin(), hostBufIt);
+            if(dist <= 0) {
+                std::cout << "Error negative distance" << std::endl;
+            }
+
+            size_t input_cnt = static_cast<size_t>(dist);
+
+
             // TODO(sudden6): handle case where we run out of start_conditions before
             //                filling the buffer
             //                use filler values? or cpu solver?
 
             // upload input data to device
             clInputBuf = cl::Buffer(context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR,
-                                    WORKGROUP_SIZE * sizeof(start_condition), hostStartBuf.data(), &err);
+                                    input_cnt * sizeof(start_condition), hostStartBuf.data(), &err);
             if(err != CL_SUCCESS) {
                 std::cout << "cl::Buffer clInputBuf failed: " << err << std::endl;
             }
@@ -343,7 +351,7 @@ uint64_t ClSolver::solve_subboard(const std::vector<start_condition> &start)
 
             // Launch kernel on the compute device.
             err = queue.enqueueNDRangeKernel(stage.clKernel, cl::NullRange,
-                                             cl::NDRange{WORKGROUP_SIZE}, cl::NullRange,
+                                             cl::NDRange{input_cnt}, cl::NullRange,
                                              nullptr, &stage.clStageDone);
 
             if(err != CL_SUCCESS) {
@@ -377,7 +385,7 @@ uint64_t ClSolver::solve_subboard(const std::vector<start_condition> &start)
         uint32_t curStageIdx  = item.stageIdx;
         auto& stage = stages.at(curStageIdx);
 
-        // Only mid and last items can appear here
+        // Only MID and LAST items can appear here
         // check if last stage
         if(curStageIdx == (stages.size() - 1)) {
             // select buffer
@@ -433,6 +441,27 @@ uint64_t ClSolver::solve_subboard(const std::vector<start_condition> &start)
                 }
             }
         }
+    }
+
+    // process remaining start conditions in OpenCL device buffers
+
+    // get some stats about stack fill levels, skip LAST stage, it has no stack
+    for(size_t i = 0; i < (stages.size() - 1); i++) {
+        auto& stage = stages.at(i);
+
+        // read back buffer fill status
+        err = queue.enqueueReadBuffer(stage.clFillCount, CL_TRUE, 0,
+                                      WORKGROUP_SIZE * sizeof(cl_ushort), stage.hostFillCount.data(),
+                                      nullptr, nullptr);
+        if(err != CL_SUCCESS) {
+            std::cout << "enqueueReadBuffer failed: " << err << std::endl;
+        }
+
+        std::cout << "Stage " << i << " stack fill:";
+        for(size_t b = 0; b < WORKGROUP_SIZE; b++) {
+            std::cout << " " << stage.hostFillCount.at(b);
+        }
+        std::cout << std::endl;
     }
 
     return result * 2;

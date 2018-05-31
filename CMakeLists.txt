@@ -30,3 +30,4 @@ target_link_libraries(${PROJECT_NAME} Threads::Threads)
 # copy OpenCL kernel source
 configure_file(${CMAKE_SOURCE_DIR}/clqueens.cl ./ COPYONLY)
 configure_file(${CMAKE_SOURCE_DIR}/clqueens_amd.cl ./ COPYONLY)
+configure_file(${CMAKE_SOURCE_DIR}/clqueens_pre.cl ./ COPYONLY)
