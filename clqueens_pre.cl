@@ -60,6 +60,10 @@ typedef uint uint_fast32_t;
 
 typedef ulong uint_fast64_t;
 
+#define DEBUG
+//#define DEBUG printf
+
+
 // maximum global work size, if exceeded synchronisation is broken
 #define MAX_G_SIZE 64
 
@@ -92,6 +96,7 @@ kernel void first_step(__global const start_condition* in_starts, /* base of the
     uint l_out_stack_idx = G * STACK_SIZE + out_stack_idx[G];
     // The UINT_FAST32_MAX here is used to fill all 'coloumn' bits after n ...
     cols[L][d] = in_starts[G].cols | (UINT_FAST32_MAX << N);
+    DEBUG("F|IN  lid: %d, gid: %d, cols: %x\n", L, G, cols[L][d]);
     // This places the first two queens
     diagl[L][d] = in_starts[G].diagl;
     diagr[L][d] = in_starts[G].diagr;
@@ -102,7 +107,7 @@ kernel void first_step(__global const start_condition* in_starts, /* base of the
 
 // TODO(sudden6): this is a backup STOP_DEPTH implementation
 #define REST_INIT DEPTH
-#define STOP_DEPTH 0
+#define STOP_DEPTH 1
 
     // we're allready two rows into the field here
     rest[d] = REST_INIT;//in_starts[id].placed;
@@ -146,6 +151,7 @@ kernel void first_step(__global const start_condition* in_starts, /* base of the
 						
             if(l_rest == STOP_DEPTH) {
                 out_starts[l_out_stack_idx].cols = bit;
+                DEBUG("F|OUT stage_idx: %d, cols: %x, set: %d\n", l_out_stack_idx, bit, popcount(bit&0xFF));
                 out_starts[l_out_stack_idx].diagl = new_diagl;
                 out_starts[l_out_stack_idx].diagr = new_diagr;
                 l_out_stack_idx++;
@@ -212,10 +218,11 @@ kernel void inter_step(__global const start_condition* in_starts, /* base of the
         in_stack_idx[buffer_offset] -= min((uint)WORKGROUP_SIZE, (uint)stack_fill);
     }
 
-    uint in_start_idx = buffer_offset * STACK_SIZE + (stack_fill - G);
+    uint in_start_idx = buffer_offset * STACK_SIZE + (stack_fill - G - 1);
 
     // The UINT_FAST32_MAX here is used to fill all 'coloumn' bits after n ...
     cols[L][d] = in_starts[in_start_idx].cols | (UINT_FAST32_MAX << N);
+    DEBUG("M|IN  lid: %d, gid: %d, cols: %x\n", L, G, cols[L][d]);
     // This places the first two queens
     diagl[L][d] = in_starts[in_start_idx].diagl;
     diagr[L][d] = in_starts[in_start_idx].diagr;
@@ -227,7 +234,7 @@ kernel void inter_step(__global const start_condition* in_starts, /* base of the
 
 // TODO(sudden6): this is a backup STOP_DEPTH implementation
 #define REST_INIT DEPTH
-#define STOP_DEPTH 0
+#define STOP_DEPTH 1
 
     // we're allready two rows into the field here
     rest[d] = REST_INIT;
@@ -270,6 +277,7 @@ kernel void inter_step(__global const start_condition* in_starts, /* base of the
         */
             if(l_rest == STOP_DEPTH) {
                 out_starts[l_out_stack_idx].cols = bit;
+                DEBUG("M|OUT stage_idx: %d, cols: %x, set: %d\n", l_out_stack_idx, bit, popcount(bit&0xFF));
                 out_starts[l_out_stack_idx].diagl = new_diagl;
                 out_starts[l_out_stack_idx].diagr = new_diagr;
                 l_out_stack_idx++;
@@ -315,7 +323,7 @@ kernel void final_step(__global const start_condition* in_starts, /* input buffe
     uint_fast32_t num = 0;
     uint_fast32_t posibs;
     int_fast8_t d = 0; // d is our depth in the backtrack stack
-
+    out_sum[G] = 0; // ensure unused output buffers are cleared
     // calculate the address of the local start_condition
     uint stack_fill = in_stack_idx[buffer_offset];
     // decrease stack index with the last thread
@@ -324,7 +332,6 @@ kernel void final_step(__global const start_condition* in_starts, /* input buffe
 
     // stop this work item when the stack has not enough items
     if(G >= stack_fill) {
-        out_sum[G] = 0; // ensure unused output buffers are cleared
         return;
     }
 
@@ -332,10 +339,11 @@ kernel void final_step(__global const start_condition* in_starts, /* input buffe
         in_stack_idx[buffer_offset] -= min((uint)WORKGROUP_SIZE, (uint)stack_fill);
     }
 
-    uint in_start_idx = buffer_offset * STACK_SIZE + (stack_fill - G);
+    uint in_start_idx = buffer_offset * STACK_SIZE + (stack_fill - G - 1);
 
     // The UINT_FAST32_MAX here is used to fill all 'coloumn' bits after n ...
     cols[L][d] = in_starts[in_start_idx].cols | (UINT_FAST32_MAX << N);
+    DEBUG("L|IN  lid: %d, gid: %d, cols: %x\n", L, G, cols[L][d]);
     // This places the first two queens
     diagl[L][d] = in_starts[in_start_idx].diagl;
     diagr[L][d] = in_starts[in_start_idx].diagr;
@@ -405,6 +413,9 @@ kernel void final_step(__global const start_condition* in_starts, /* input buffe
         } else {
             // when all columns are used, we found a solution
             num += bit == UINT_FAST32_MAX;
+            if(bit == UINT_FAST32_MAX) {
+                DEBUG("L|OUT lid: %d, gid: %d, cols: %x\n", L, G, bit);
+            }
         }
       }
       posib = posibs; // backtrack ...
