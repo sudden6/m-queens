@@ -13,10 +13,10 @@
 #include <vector>
 
 // uncomment to start with n=2 and compare to known results
-//#define TESTSUITE
+#define TESTSUITE
 
 #ifndef N
-#define N 8
+#define N 16
 #endif
 #define MAXN 29
 
@@ -214,7 +214,7 @@ static const uint64_t results[27] = {
 int main(int argc, char **argv) {
 
 #ifdef TESTSUITE
-  int i = 2;
+  int i = 7;
 #else
   int i = N;
 #endif
