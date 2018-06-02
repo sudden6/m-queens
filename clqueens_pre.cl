@@ -203,16 +203,16 @@ kernel void inter_step(__global const start_condition* in_starts, /* base of the
     barrier(CLK_LOCAL_MEM_FENCE | CLK_GLOBAL_MEM_FENCE);
 
     // stop this work item when the stack has not enough items
-    if(stack_fill <= G) {
+    if(G >= stack_fill) {
         return;
     }
 
-    // decrease stack index with the last thread
-    if(G == (get_global_size(0) - 1)) {
-        in_stack_idx[buffer_offset] -= G_SIZE;
+    // decrease stack index with the first thread
+    if(L == 0) {
+        in_stack_idx[buffer_offset] -= min((uint)WORKGROUP_SIZE, (uint)stack_fill);
     }
 
-    uint in_start_idx = buffer_offset * STACK_SIZE + (stack_fill - WORKGROUP_SIZE + G);
+    uint in_start_idx = buffer_offset * STACK_SIZE + (stack_fill - G);
 
     // The UINT_FAST32_MAX here is used to fill all 'coloumn' bits after n ...
     cols[L][d] = in_starts[in_start_idx].cols | (UINT_FAST32_MAX << N);
@@ -323,15 +323,16 @@ kernel void final_step(__global const start_condition* in_starts, /* input buffe
     barrier(CLK_LOCAL_MEM_FENCE | CLK_GLOBAL_MEM_FENCE);
 
     // stop this work item when the stack has not enough items
-    if(stack_fill <= G) {
+    if(G >= stack_fill) {
+        out_sum[G] = 0; // ensure unused output buffers are cleared
         return;
     }
 
-    if(G == (get_global_size(0) - 1)) {
-        in_stack_idx[buffer_offset] -= G_SIZE;
+    if(L == 0) {
+        in_stack_idx[buffer_offset] -= min((uint)WORKGROUP_SIZE, (uint)stack_fill);
     }
 
-    uint in_start_idx = buffer_offset * STACK_SIZE + (stack_fill - WORKGROUP_SIZE + G);
+    uint in_start_idx = buffer_offset * STACK_SIZE + (stack_fill - G);
 
     // The UINT_FAST32_MAX here is used to fill all 'coloumn' bits after n ...
     cols[L][d] = in_starts[in_start_idx].cols | (UINT_FAST32_MAX << N);
