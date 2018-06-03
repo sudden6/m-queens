@@ -1,5 +1,7 @@
 # m-queens
-Very fast n-queens solver with OpenMP support
+
+Multi-queens, a very fast solver for the general
+[eight queens problem](https://en.wikipedia.org/wiki/Eight_queens_puzzle) with OpenMP support.
 
 Based on code from https://rosettacode.org/wiki/N-queens_problem#C but much more optimized.
 
@@ -9,20 +11,26 @@ Also feel free to open a Pull Request to add your own benchmarks.
 # Benchmarks
 ## Single-Thread
 
-Compiled with `gcc-6 -o main.bin main.c -O3 -march=native -mtune=native -std=c99 -DN=18`
+Compiled with `gcc-7 -o m-queens.bin main.c -O2 -march=native -mtune=native -std=c99` and
+run with `./m-queens 18`.
 
 |CPU|N|Time to solve|
 |---|---|---|
-|Intel(R) Core(TM) i7-4600M CPU@ 3.5 GHz (single core)|18|131.596274s|
+|Intel(R) Core(TM) i7-4600M CPU@ 3.5 GHz (single core)|18|129.56s|
 
 ## Multi-Thread
 
-Compiled with `gcc-6 -o main.bin main.c -O3 -march=native -mtune=native -std=c99 -DN=18 -fopenmp`
+Compiled with `gcc-7 -o m-queens.bin main.c -O2 -march=native -mtune=native -std=c99 -fopenmp` and
+run with `./m-queens 18`.
 
 |CPU|Cores (real/virtual)|N|Time to solve|Speedup from Single-Thread|
 |---|---|---|---|---|
-|Intel(R) Core(TM) i7-4600M CPU@ 3.4 GHz (all cores)|2/4|18|57.537617s|2,287|
+|Intel(R) Core(TM) i7-4600M CPU@ 3.4 GHz (all cores)|2/4|18|52.56s|2.46|
 
 # Future Improvements
 
-Use the optimized placement mentioned in https://github.com/preusser/q27 to reduce symmetries.
+### Use the optimized placement mentioned in https://github.com/preusser/q27 to reduce symmetries.
+probably very hard to do with the current implementation
+
+### Use OpenCL to make use of GPUs
+Work in progress in the `sieves`, `split2_debug` and `ringbuffer` branches.
