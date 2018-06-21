@@ -39,14 +39,15 @@ stages output in each stack.
 // maximum size of a local workgroup
 #define WORKGROUP_SIZE 64
 
-// number of stacks in global memory, same as WORKGROUP_SIZE for now
-#define N_STACKS WORKGROUP_SIZE
+// number of stacks in global memory
+#ifndef N_STACKS
+#error "N_STACKS not defined"
+#endif
 
-// number of work-items in the global work group
-#define G_SIZE (get_global_size(0))
-
-// 512 elements
-#define STACK_SIZE 512
+// number of elements in each stack
+#ifndef STACK_SIZE
+#error "STACK_SIZE not defined"
+#endif
 
 #define MAXN 29
 
@@ -223,7 +224,7 @@ kernel void inter_step(__global const start_condition* in_starts, /* base of the
             atomic_add(&in_stack_idx[buffer_offset], fixup_value);
         }
     }
-    // ensure all work-items have read the in_itmes value
+    // ensure all work-items have read the in_items value
     barrier(CLK_LOCAL_MEM_FENCE);
 
     int in_stack_item = old_in_fill - L - 1;

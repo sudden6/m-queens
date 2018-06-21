@@ -83,6 +83,10 @@ ClSolver::ClSolver()
 
 constexpr uint_fast8_t MINN = 2;
 constexpr uint_fast8_t MAXN = 29;
+
+constexpr size_t N_STACKS = 63; // number of stacks
+constexpr size_t STACK_SIZE = 512;      // number of elements in a stack
+
 /*
  * GPU_DEPTH defines how many rows should be left for the GPU to solve,
  * the previous ones have to be solved with the cpu.
@@ -115,7 +119,10 @@ bool ClSolver::init(uint8_t boardsize, uint8_t placed)
 
     std::ostringstream optionsStream;
     optionsStream << "-D N=" << std::to_string(boardsize)
-                  << " -D PLACED=" <<std::to_string(boardsize - gpu_depth);
+                  << " -D PLACED=" << std::to_string(boardsize - gpu_depth)
+                  << " -D N_STACKS=" << std::to_string(N_STACKS)
+                  << " -D STACK_SIZE=" << std::to_string(STACK_SIZE);
+
     std::string options = optionsStream.str();
 
     cl_int builderr = program.build(options.c_str());
@@ -161,8 +168,6 @@ typedef struct {
 
 constexpr size_t PLACED_PER_STAGE = 2;  // number of queens placed per sieve stage
 constexpr size_t WORKGROUP_SIZE = 64;   // number of threads that are run in parallel
-constexpr size_t N_STACKS = WORKGROUP_SIZE; // number of stacks
-constexpr size_t STACK_SIZE = 512;      // number of elements in a stack
 
 uint64_t ClSolver::solve_subboard(const std::vector<start_condition> &start)
 {
