@@ -1,4 +1,5 @@
 #include "clsolver.h"
+#include <iomanip>
 #include <ios>
 #include <iostream>
 #include <iterator>
@@ -22,14 +23,14 @@ ClSolver::ClSolver()
         return;
     }
 
-    cl::Platform platform = platforms[1];
+    cl::Platform platform = platforms[0];
 
     std::cout << "Platform name: " << platform.getInfo<CL_PLATFORM_NAME>() << std::endl;
     std::cout << "Platform version: " << platform.getInfo<CL_PLATFORM_VERSION>() << std::endl;
 
     std::vector<cl::Device> devices;
 
-    err = platform.getDevices(CL_DEVICE_TYPE_CPU, &devices);
+    err = platform.getDevices(CL_DEVICE_TYPE_GPU|CL_DEVICE_TYPE_CPU, &devices);
     if(err != CL_SUCCESS) {
         std::cout << "getDevices failed" << std::endl;
         return;
@@ -149,6 +150,8 @@ typedef struct {
     std::vector<cl_ushort> hostFillCount;
     STAGE_TYPE type;
     uint8_t stageIdx;
+    uint8_t queens_start;   // number of queens at the beginning of this stage
+    uint32_t expansion;     // maximum number of solutions generated from one input solution
 } sieve_stage;
 
 typedef struct {
@@ -183,7 +186,6 @@ uint64_t ClSolver::solve_subboard(const std::vector<start_condition> &start)
     }
 
     std::vector<sieve_stage> stages;
-    // TODO: don't hardcode
     uint8_t queens_left = boardsize - placed - presolve_depth; // number of queens to place till board is full
     // we need at least 2 (first stage) + 2 (mid stage) + 1 (last1 stage) queens left
     if(queens_left < 5) {
@@ -195,6 +197,7 @@ uint64_t ClSolver::solve_subboard(const std::vector<start_condition> &start)
     sieve_stage first{};
     first.type = FIRST;
     first.stageIdx = 0;
+    first.queens_start = queens_left;
     stages.push_back(first);
     queens_left -= 2;
 
@@ -205,6 +208,7 @@ uint64_t ClSolver::solve_subboard(const std::vector<start_condition> &start)
         sieve_stage mid{};
         mid.type = MID;
         mid.stageIdx = cnt;
+        mid.queens_start = queens_left;
         cnt++;
         stages.push_back(mid);
         queens_left -= 2;
@@ -212,6 +216,7 @@ uint64_t ClSolver::solve_subboard(const std::vector<start_condition> &start)
 
     // create last sieve stage
     sieve_stage last{};
+    last.queens_start = queens_left;
     if(queens_left == 1) {
         last.type = LAST1;
     } else if (queens_left == 2) {
@@ -224,7 +229,18 @@ uint64_t ClSolver::solve_subboard(const std::vector<start_condition> &start)
     last.stageIdx = cnt;
     stages.push_back(last);
 
+    uint32_t max_expansion = 0;
+    // compute max expansion factors
+    for(auto& stage : stages) {
+        uint32_t expansion = 1;
+        for(uint32_t i = 0; i < PLACED_PER_STAGE; i++) {
+            expansion *= boardsize - stage.queens_start - 1 - i;
+        }
+        stage.expansion = expansion;
+        max_expansion = std::max(expansion, max_expansion);
+    }
     std::cout << "Number of stages: " << stages.size() << std::endl;
+    std::cout << "Maximum expansion: " << max_expansion << std::endl;
 
     // initialize OpenCL stuff
     for(size_t i = 0; i < stages.size(); i++) {
@@ -306,7 +322,7 @@ uint64_t ClSolver::solve_subboard(const std::vector<start_condition> &start)
     }
 
     // TODO(sudden6): calculate this based on expansion and per stage
-    constexpr size_t BUF_THRESHOLD = 128;
+    const size_t BUF_THRESHOLD = STACK_SIZE - max_expansion;
 
     uint64_t result = 0;
 
@@ -318,6 +334,7 @@ uint64_t ClSolver::solve_subboard(const std::vector<start_condition> &start)
     bool done = false;
 
     while (!done) {
+        queue.finish();
         // fill step
         if(work_queue.empty() && !pre.empty()) {
             // insert new material at first sieve stage
@@ -398,9 +415,9 @@ uint64_t ClSolver::solve_subboard(const std::vector<start_condition> &start)
                     std::cout << "enqueueReadBuffer failed: " << err << std::endl;
                 }
 
-                std::cout << "Stage " << std::to_string(stage.stageIdx) << " stack fill:";
+                std::cout << "Stage " << std::to_string(stage.stageIdx) << " stack fill:" << std::left;
                 for(size_t b = 0; b < N_STACKS; b++) {
-                    std::cout << " " << stage.hostFillCount.at(b);
+                    std::cout << " " << std::setw(3) << stage.hostFillCount.at(b);
                 }
                 std::cout << std::endl;
             }
