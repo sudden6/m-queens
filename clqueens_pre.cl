@@ -60,8 +60,8 @@ typedef uint uint_fast32_t;
 
 typedef ulong uint_fast64_t;
 
-//#define DEBUG
-#define DEBUG printf
+#define DEBUG
+//#define DEBUG printf
 
 
 // maximum global work size, if exceeded synchronisation is broken
@@ -83,9 +83,12 @@ typedef ulong uint_fast64_t;
 #define L (get_local_id(0))
 #define G (get_global_id(0))
 
+#define L_SIZE (get_local_size(0))
+#define G_SIZE (get_global_size(0))
+
 kernel void first_step(__global const start_condition* in_starts, /* base of the input start conditions, G_SIZE*EXPANSION must not overflow output buffers */
                        __global start_condition* out_starts,      /* base of the output start conditions, must be N_STACKS * STACK_SIZE elements */
-                       __global ushort* out_stack_idx		  /* base of the stack indizes, must be N_STACKS elements */
+                       __global int* out_stack_idx		  /* base of the stack indizes, must be N_STACKS elements */
 											 ) {
 
     __local uint_fast32_t cols[WORKGROUP_SIZE][DEPTH]; // Our backtracking 'stack'
@@ -194,37 +197,42 @@ kernel void first_step(__global const start_condition* in_starts, /* base of the
 kernel void inter_step(__global const start_condition* in_starts, /* base of the input start conditions, G_SIZE*EXPANSION must not overflow output buffers */
                        uint buffer_offset,                        /* input buffer number, must be 0 <= x < N_STACKS */
                        __global start_condition* out_starts,      /* base of the output start conditions, must be N_STACKS * STACK_SIZE elements */
-                       __global ushort* out_stack_idx,            /* base of the stack indizes, must be N_STACKS elements */
-                       __global ushort* in_stack_idx              /* base of the stack indizes, must be N_STACKS elements, will remove G_SIZE elements */
+                       __global int* out_stack_idx,            /* base of the stack indizes, must be N_STACKS elements */
+                       __global int* in_stack_idx              /* base of the stack indizes, must be N_STACKS elements, will remove G_SIZE elements */
                       )
 {
 
     __local uint_fast32_t cols[WORKGROUP_SIZE][DEPTH]; // Our backtracking 'stack'
     __local uint_fast32_t diagl[WORKGROUP_SIZE][DEPTH], diagr[WORKGROUP_SIZE][DEPTH];
     __local int_fast8_t rest[WORKGROUP_SIZE][DEPTH]; // number of rows left
+    __local int old_in_fill;
     uint_fast32_t posibs;
     int_fast8_t d = 0; // d is our depth in the backtrack stack
     uint l_out_stack_idx = G * STACK_SIZE + out_stack_idx[G];
 
-    // TODO(sudden6): replace input stack fill decrement by atomics?
+    // handle stack fill update only in first work item
+    if(L == 0) {
+        // take elements from the input stack
+        old_in_fill = atomic_sub(&in_stack_idx[buffer_offset], L_SIZE);
+        int cur_stack_fill = old_in_fill - L_SIZE;
+        // check if we took to many
+        if(cur_stack_fill < 0) {
+            // took to many
+            int fixup_value = min((int)abs(cur_stack_fill),(int)L_SIZE);
+            // fixup fill counter
+            atomic_add(&in_stack_idx[buffer_offset], fixup_value);
+        }
+    }
+    // ensure all work-items have read the in_itmes value
+    barrier(CLK_LOCAL_MEM_FENCE);
 
-    // calculate the address of the local start_condition
-    uint stack_fill = in_stack_idx[buffer_offset];
-    // ensure all work-items have read the stack_fill value before decreasing it
-    // TODO(sudden6): check if both barriers are needed
-    barrier(CLK_LOCAL_MEM_FENCE | CLK_GLOBAL_MEM_FENCE);
-
+    int in_stack_item = old_in_fill - L - 1;
     // stop this work item when the stack has not enough items
-    if(G >= stack_fill) {
+    if(in_stack_item < 0) {
         return;
     }
 
-    // decrease stack index with the first thread
-    if(L == 0) {
-        in_stack_idx[buffer_offset] -= min((uint)WORKGROUP_SIZE, (uint)stack_fill);
-    }
-
-    uint in_start_idx = buffer_offset * STACK_SIZE + (stack_fill - G - 1);
+    uint in_start_idx = buffer_offset * STACK_SIZE + in_stack_item;
 
     // The UINT_FAST32_MAX here is used to fill all 'coloumn' bits after n ...
     cols[L][d] = in_starts[in_start_idx].cols | (UINT_FAST32_MAX << N);
@@ -319,38 +327,47 @@ kernel void inter_step(__global const start_condition* in_starts, /* base of the
 
 kernel void final_step(__global const start_condition* in_starts, /* input buffer base */
                        uint buffer_offset,                        /* input buffer number, must be 0 <= x < N_STACKS */
-                       __global ushort* in_stack_idx,             /* base of the stack indizes, will remove G_SIZE elements */
+                       __global int* in_stack_idx,                /* base of the stack indizes, will remove G_SIZE elements */
                        __global uint* out_sum                     /* sum buffer base, must be G_SIZE elements */
                        ) {
 
     __local uint_fast32_t cols[WORKGROUP_SIZE][DEPTH]; // Our backtracking 'stack'
     __local uint_fast32_t diagl[WORKGROUP_SIZE][DEPTH], diagr[WORKGROUP_SIZE][DEPTH];
 //    __local int_fast8_t rest[DEPTH]; // number of rows left
+    __local int old_in_fill;
     uint_fast32_t num = 0;
     uint_fast32_t posibs;
     int_fast8_t d = 0; // d is our depth in the backtrack stack
     out_sum[G] = 0; // ensure unused output buffers are cleared
-    // calculate the address of the local start_condition
-    uint stack_fill = in_stack_idx[buffer_offset];
-    // decrease stack index with the last thread
-    // TODO(sudden6): check if both barriers are needed
-    barrier(CLK_LOCAL_MEM_FENCE | CLK_GLOBAL_MEM_FENCE);
 
+    // handle stack fill update only in first work item
+    if(L == 0) {
+        // take elements from the input stack
+        old_in_fill = atomic_sub(&in_stack_idx[buffer_offset], L_SIZE);
+        int cur_stack_fill = old_in_fill - L_SIZE;
+        // check if we took to many
+        if(cur_stack_fill < 0) {
+            // took to many
+            int fixup_value = min((int)abs(cur_stack_fill),(int)L_SIZE);
+            // fixup fill counter
+            atomic_add(&in_stack_idx[buffer_offset], fixup_value);
+        }
+    }
+    // ensure all work-items have read the in_itmes value
+    barrier(CLK_LOCAL_MEM_FENCE);
+
+    int in_stack_item = old_in_fill - L - 1;
     // stop this work item when the stack has not enough items
-    if(G >= stack_fill) {
+    if(in_stack_item < 0) {
         return;
     }
 
-    if(L == 0) {
-        in_stack_idx[buffer_offset] -= min((uint)WORKGROUP_SIZE, (uint)stack_fill);
-    }
-
-    uint in_start_idx = buffer_offset * STACK_SIZE + (stack_fill - G - 1);
+    uint in_start_idx = buffer_offset * STACK_SIZE + in_stack_item;
 
     // The UINT_FAST32_MAX here is used to fill all 'coloumn' bits after n ...
     cols[L][d] = in_starts[in_start_idx].cols | (UINT_FAST32_MAX << N);
-    DEBUG("L|IN  lid: %d, gid: %d, cols: %x, fill: %u, buf_off: %u, in_idx: %u, addr: %p\n",
-           L, G, cols[L][d], stack_fill, buffer_offset, in_start_idx, &in_starts[in_start_idx]);
+    DEBUG("L|IN  lid: %d, gid: %d, cols: %x, old_fill: %u, buf_off: %u, in_idx: %u, addr: %p\n",
+           L, G, cols[L][d], old_in_fill, buffer_offset, in_start_idx, &in_starts[in_start_idx]);
     // This places the first two queens
     diagl[L][d] = in_starts[in_start_idx].diagl;
     diagr[L][d] = in_starts[in_start_idx].diagr;

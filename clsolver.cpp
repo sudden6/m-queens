@@ -147,7 +147,7 @@ typedef struct {
     cl::Buffer clFillCount; // buffer that holds the fill status
     cl::Buffer clSum;       // buffer for the sum at the last stage
     cl::Event clStageDone;  // event when this stage is complete
-    std::vector<cl_ushort> hostFillCount;
+    std::vector<cl_int> hostFillCount;
     STAGE_TYPE type;
     uint8_t stageIdx;
     uint8_t queens_start;   // number of queens at the beginning of this stage
@@ -254,11 +254,11 @@ uint64_t ClSolver::solve_subboard(const std::vector<start_condition> &start)
             }
 
             // host fill count buffer
-            stage.hostFillCount = std::vector<cl_ushort>(N_STACKS, 0);
+            stage.hostFillCount = std::vector<cl_int>(N_STACKS, 0);
 
             // Initialize stage buffer element count to zero
             stage.clFillCount = cl::Buffer(context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR,
-                                          N_STACKS * sizeof(cl_ushort), stage.hostFillCount.data(), &err);
+                                          N_STACKS * sizeof(cl_int), stage.hostFillCount.data(), &err);
             if(err != CL_SUCCESS) {
                 std::cout << "cl::Buffer clFillCount failed: " << err << std::endl;
             }
@@ -322,7 +322,7 @@ uint64_t ClSolver::solve_subboard(const std::vector<start_condition> &start)
     }
 
     // TODO(sudden6): calculate this based on expansion and per stage
-    const size_t BUF_THRESHOLD = STACK_SIZE - max_expansion;
+    const cl_int BUF_THRESHOLD = STACK_SIZE - max_expansion;
 
     uint64_t result = 0;
 
@@ -381,7 +381,7 @@ uint64_t ClSolver::solve_subboard(const std::vector<start_condition> &start)
 
             // read back buffer fill status
             err = queue.enqueueReadBuffer(stage.clFillCount, CL_TRUE, 0,
-                                          stage.hostFillCount.size() * sizeof(cl_ushort), stage.hostFillCount.data(),
+                                          stage.hostFillCount.size() * sizeof(cl_int), stage.hostFillCount.data(),
                                           nullptr, nullptr);
             if(err != CL_SUCCESS) {
                 std::cout << "enqueueReadBuffer failed: " << err << std::endl;
@@ -409,7 +409,7 @@ uint64_t ClSolver::solve_subboard(const std::vector<start_condition> &start)
 
                 // read back buffer fill status
                 err = queue.enqueueReadBuffer(stage.clFillCount, CL_TRUE, 0,
-                                              stage.hostFillCount.size() * sizeof(cl_ushort), stage.hostFillCount.data(),
+                                              stage.hostFillCount.size() * sizeof(cl_int), stage.hostFillCount.data(),
                                               nullptr, nullptr);
                 if(err != CL_SUCCESS) {
                     std::cout << "enqueueReadBuffer failed: " << err << std::endl;
@@ -426,7 +426,7 @@ uint64_t ClSolver::solve_subboard(const std::vector<start_condition> &start)
             auto& stage = stages.at(0);
             // read back buffer fill status
             err = queue.enqueueReadBuffer(stage.clFillCount, CL_TRUE, 0,
-                                          stage.hostFillCount.size() * sizeof(cl_ushort), stage.hostFillCount.data(),
+                                          stage.hostFillCount.size() * sizeof(cl_int), stage.hostFillCount.data(),
                                           nullptr, nullptr);
             if(err != CL_SUCCESS) {
                 std::cout << "enqueueReadBuffer failed: " << err << std::endl;
@@ -505,7 +505,7 @@ uint64_t ClSolver::solve_subboard(const std::vector<start_condition> &start)
 
             // read back buffer fill status
             err = queue.enqueueReadBuffer(stage.clFillCount, CL_TRUE, 0,
-                                          stage.hostFillCount.size() * sizeof(cl_ushort), stage.hostFillCount.data(),
+                                          stage.hostFillCount.size() * sizeof(cl_int), stage.hostFillCount.data(),
                                           nullptr, nullptr);
             if(err != CL_SUCCESS) {
                 std::cout << "enqueueReadBuffer failed: " << err << std::endl;
