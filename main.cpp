@@ -13,10 +13,10 @@
 #include <vector>
 
 // uncomment to start with n=2 and compare to known results
-#define TESTSUITE
+//#define TESTSUITE
 
 #ifndef N
-#define N 16
+#define N 27
 #endif
 #define MAXN 29
 
@@ -261,5 +261,6 @@ int main(int argc, char **argv) {
     std::cout << "N " << i << ", Solutions " << result << ", Expected " << results[i - 1] <<
            ", Time " << time_diff << " , Solutions/s " << result/time_diff << std::endl;
   }
+  std::cin.get();
   return 0;
 }

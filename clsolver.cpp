@@ -84,7 +84,8 @@ ClSolver::ClSolver()
 constexpr uint_fast8_t MINN = 2;
 constexpr uint_fast8_t MAXN = 29;
 
-constexpr size_t N_STACKS = 63; // number of stacks
+constexpr size_t N_STACKS = 256; // number of stacks
+constexpr size_t WORKGROUP_SIZE = 256;   // number of threads that are run in parallel
 constexpr size_t STACK_SIZE = 512;      // number of elements in a stack
 
 /*
@@ -93,7 +94,7 @@ constexpr size_t STACK_SIZE = 512;      // number of elements in a stack
  * With a too high GPU_DEPTH, solving a board takes too long and the
  * GPU is detected as "hung" by the driver and reset or the system crashes.
  */
-constexpr uint_fast8_t GPU_DEPTH = 9;
+constexpr uint_fast8_t GPU_DEPTH = 12;
 
 bool ClSolver::init(uint8_t boardsize, uint8_t placed)
 {
@@ -121,9 +122,12 @@ bool ClSolver::init(uint8_t boardsize, uint8_t placed)
     optionsStream << "-D N=" << std::to_string(boardsize)
                   << " -D PLACED=" << std::to_string(boardsize - gpu_depth)
                   << " -D N_STACKS=" << std::to_string(N_STACKS)
+                  << " -D WORKGROUP_SIZE=" << std::to_string(WORKGROUP_SIZE)
                   << " -D STACK_SIZE=" << std::to_string(STACK_SIZE);
 
     std::string options = optionsStream.str();
+
+    std::cout << "OpenCL Kernel Options: " << options << std::endl;
 
     cl_int builderr = program.build(options.c_str());
     if(builderr != CL_SUCCESS) {
@@ -167,7 +171,6 @@ typedef struct {
 } stage_work_item;
 
 constexpr size_t PLACED_PER_STAGE = 2;  // number of queens placed per sieve stage
-constexpr size_t WORKGROUP_SIZE = 64;   // number of threads that are run in parallel
 
 uint64_t ClSolver::solve_subboard(const std::vector<start_condition> &start)
 {
@@ -251,7 +254,7 @@ uint64_t ClSolver::solve_subboard(const std::vector<start_condition> &start)
     for(size_t i = 0; i < stages.size(); i++) {
         sieve_stage& stage = stages.at(i);
         // Initialize stage buffer
-        if(stage.type != LAST1 || stage.type != LAST2) {
+        if(stage.type != LAST1 && stage.type != LAST2) {
             stage.clStageBuf = cl::Buffer(context, CL_MEM_READ_WRITE,
                                           N_STACKS * STACK_SIZE * sizeof(start_condition), nullptr, &err);
             if(err != CL_SUCCESS) {
@@ -327,7 +330,7 @@ uint64_t ClSolver::solve_subboard(const std::vector<start_condition> &start)
     }
 
     // TODO(sudden6): calculate this based on expansion and per stage
-    const cl_int BUF_THRESHOLD = STACK_SIZE - max_expansion;
+    const cl_int BUF_THRESHOLD = STACK_SIZE - max_expansion - 10;
 
     uint64_t result = 0;
 
@@ -377,7 +380,7 @@ uint64_t ClSolver::solve_subboard(const std::vector<start_condition> &start)
 
             // Launch kernel on the compute device.
             err = queue.enqueueNDRangeKernel(stage.clKernel, cl::NullRange,
-                                             cl::NDRange{input_cnt}, cl::NullRange,
+                                             cl::NDRange{input_cnt}, cl::NDRange{std::min(WORKGROUP_SIZE, N_STACKS)},
                                              nullptr, &stage.clStageDone);
 
             if(err != CL_SUCCESS) {
@@ -429,6 +432,13 @@ uint64_t ClSolver::solve_subboard(const std::vector<start_condition> &start)
 #endif
             // select first stage
             auto& stage = stages.at(0);
+
+            if(stage.type == LAST1 || stage.type == LAST2) {
+                std::cout << "Empty work queue on last stage" << std::endl;
+                stages = std::vector<sieve_stage>(++stages.begin(), stages.end());
+                done = true;
+                continue;
+            }
             // read back buffer fill status
             err = queue.enqueueReadBuffer(stage.clFillCount, CL_TRUE, 0,
                                           stage.hostFillCount.size() * sizeof(cl_int), stage.hostFillCount.data(),
@@ -454,10 +464,6 @@ uint64_t ClSolver::solve_subboard(const std::vector<start_condition> &start)
                 stages = std::vector<sieve_stage>(++stages.begin(), stages.end());
             }
 
-            if(stages.empty()) {
-                done = true;
-            }
-
             continue;
         }
 
@@ -474,12 +480,14 @@ uint64_t ClSolver::solve_subboard(const std::vector<start_condition> &start)
             stage.clKernel.setArg(1, item.bufferIdx);
             // Launch kernel on the compute device.
             err = queue.enqueueNDRangeKernel(stage.clKernel, cl::NullRange,
-                                             cl::NDRange{N_STACKS}, cl::NullRange,
+                                             cl::NDRange{N_STACKS}, cl::NDRange{std::min(WORKGROUP_SIZE, N_STACKS)},
                                              nullptr, &stage.clStageDone);
 
             if(err != CL_SUCCESS) {
                 std::cout << "enqueueNDRangeKernel failed: " << err << std::endl;
             }
+
+            queue.finish();
 
             // read back sum buffer
             err = queue.enqueueReadBuffer(stage.clSum, CL_TRUE, 0,
@@ -501,7 +509,7 @@ uint64_t ClSolver::solve_subboard(const std::vector<start_condition> &start)
             stage.clKernel.setArg(1, item.bufferIdx);
             // Launch kernel on the compute device.
             err = queue.enqueueNDRangeKernel(stage.clKernel, cl::NullRange,
-                                             cl::NDRange{N_STACKS}, cl::NullRange,
+                                             cl::NDRange{N_STACKS}, cl::NDRange{std::min(WORKGROUP_SIZE, N_STACKS)},
                                              nullptr, &stage.clStageDone);
 
             if(err != CL_SUCCESS) {
