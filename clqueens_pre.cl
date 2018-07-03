@@ -220,6 +220,8 @@ kernel void first_step(__global const start_condition* in_starts, /* base of the
 #define DEBUG
 //*/
 
+//#undef printf
+
 kernel void inter_step(__global const start_condition* in_starts, /* base of the input start conditions, G_SIZE*EXPANSION must not overflow output buffers */
                        uint buffer_offset,                        /* input buffer number, must be 0 <= x < N_STACKS */
                        __global start_condition* out_starts,      /* base of the output start conditions, must be N_STACKS * STACK_SIZE elements */
@@ -239,8 +241,10 @@ kernel void inter_step(__global const start_condition* in_starts, /* base of the
     // handle stack fill update only in first work item
     if(L == 0) {
         // take elements from the input stack
-        old_in_fill = atomic_sub(&in_stack_idx[buffer_offset], L_SIZE);
-        int cur_stack_fill = old_in_fill - L_SIZE;
+        int take_items = min((int)(G_SIZE - G), (int) WORKGROUP_SIZE);
+        old_in_fill = atomic_sub(&in_stack_idx[buffer_offset], take_items);
+        //printf("G: %d, L_SIZE: %d\n", G, L_SIZE);
+        int cur_stack_fill = old_in_fill - take_items;
         // check if we took to many
         if(cur_stack_fill < 0) {
             // took to many
@@ -390,8 +394,9 @@ kernel void final_step(__global const start_condition* in_starts, /* input buffe
     // handle stack fill update only in first work item
     if(L == 0) {
         // take elements from the input stack
-        old_in_fill = atomic_sub(&in_stack_idx[buffer_offset], L_SIZE);
-        int cur_stack_fill = old_in_fill - L_SIZE;
+        int take_items = min((int)(G_SIZE - G), (int) WORKGROUP_SIZE);
+        old_in_fill = atomic_sub(&in_stack_idx[buffer_offset], take_items);
+        int cur_stack_fill = old_in_fill - take_items;
         // check if we took to many
         if(cur_stack_fill < 0) {
             // took to many

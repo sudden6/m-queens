@@ -84,9 +84,9 @@ ClSolver::ClSolver()
 constexpr uint_fast8_t MINN = 2;
 constexpr uint_fast8_t MAXN = 29;
 
-constexpr size_t N_STACKS = 256; // number of stacks
-constexpr size_t WORKGROUP_SIZE = 256;   // number of threads that are run in parallel
-constexpr size_t STACK_SIZE = 512;      // number of elements in a stack
+constexpr size_t N_STACKS = 1024; // number of stacks
+constexpr size_t WORKGROUP_SIZE = 64;   // number of threads that are run in parallel
+constexpr size_t STACK_SIZE = 4096;      // number of elements in a stack
 
 /*
  * GPU_DEPTH defines how many rows should be left for the GPU to solve,
@@ -94,7 +94,7 @@ constexpr size_t STACK_SIZE = 512;      // number of elements in a stack
  * With a too high GPU_DEPTH, solving a board takes too long and the
  * GPU is detected as "hung" by the driver and reset or the system crashes.
  */
-constexpr uint_fast8_t GPU_DEPTH = 12;
+constexpr uint_fast8_t GPU_DEPTH = 10;
 
 bool ClSolver::init(uint8_t boardsize, uint8_t placed)
 {
@@ -330,7 +330,7 @@ uint64_t ClSolver::solve_subboard(const std::vector<start_condition> &start)
     }
 
     // TODO(sudden6): calculate this based on expansion and per stage
-    const cl_int BUF_THRESHOLD = STACK_SIZE - max_expansion - 10;
+    const cl_int BUF_THRESHOLD = STACK_SIZE - max_expansion;
 
     uint64_t result = 0;
 
@@ -342,7 +342,6 @@ uint64_t ClSolver::solve_subboard(const std::vector<start_condition> &start)
     bool done = false;
 
     while (!done) {
-        queue.finish();
         // fill step
         if(work_queue.empty() && !pre.empty()) {
             // insert new material at first sieve stage
@@ -367,6 +366,10 @@ uint64_t ClSolver::solve_subboard(const std::vector<start_condition> &start)
             }
 
             size_t input_cnt = static_cast<size_t>(dist);
+
+            if(input_cnt > N_STACKS) {
+                std::cout << "Too much input" << std::endl;
+            }
 
             // upload input data to device
             clInputBuf = cl::Buffer(context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR,
@@ -486,8 +489,6 @@ uint64_t ClSolver::solve_subboard(const std::vector<start_condition> &start)
             if(err != CL_SUCCESS) {
                 std::cout << "enqueueNDRangeKernel failed: " << err << std::endl;
             }
-
-            queue.finish();
 
             // read back sum buffer
             err = queue.enqueueReadBuffer(stage.clSum, CL_TRUE, 0,
