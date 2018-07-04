@@ -400,7 +400,6 @@ kernel void final_step(__global const start_condition* in_starts, /* input buffe
     uint_fast32_t num = 0;
     uint_fast32_t posibs;
     int_fast8_t d = 0; // d is our depth in the backtrack stack
-    out_sum[G] = 0; // ensure unused output buffers are cleared
 
     // handle stack fill update only in first work item
     if(L == 0) {

@@ -16,7 +16,7 @@
 //#define TESTSUITE
 
 #ifndef N
-#define N 17
+#define N 18
 #endif
 #define MAXN 29
 
@@ -214,7 +214,7 @@ static const uint64_t results[27] = {
 int main(int argc, char **argv) {
 
 #ifdef TESTSUITE
-  int i = 7;
+  int i = 15;
 #else
   int i = N;
 #endif
@@ -225,11 +225,12 @@ int main(int argc, char **argv) {
     }
   }
 
-  cpuSolver cpu;
-  ClSolver ocl;
 
 
   for (; i <= N; i++) {
+    cpuSolver cpu;
+    ClSolver ocl;
+
     double time_diff, time_start; // for measuring calculation time
     cpu.init(i, 2);
     ocl.init(i, 2);
@@ -261,6 +262,6 @@ int main(int argc, char **argv) {
     std::cout << "N " << i << ", Solutions " << result << ", Expected " << results[i - 1] <<
            ", Time " << time_diff << " , Solutions/s " << result/time_diff << std::endl;
   }
-  std::cin.get();
+  //std::cin.get();
   return 0;
 }

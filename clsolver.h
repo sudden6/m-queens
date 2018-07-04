@@ -31,6 +31,7 @@ private:
         uint32_t expansion;     // maximum number of solutions generated from one input solution
         uint8_t depth;          // number of queens placed in this stage
         cl_int buf_threshold;   // limit after which the buffer is emptied
+        uint32_t runs = 0;      // number of times this stage was run without emptying the buffer
     } ;
 
     uint8_t presolve_depth = 0;
