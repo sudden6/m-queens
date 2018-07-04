@@ -51,6 +51,11 @@ stages output in each stack.
 #error "STACK_SIZE not defined"
 #endif
 
+// how many rows we go down in one step
+#ifndef DEPTH
+#error "DEPTH not defined"
+#endif
+
 #define MAXN 29
 
 typedef char int_fast8_t;
@@ -70,8 +75,6 @@ typedef ulong uint_fast64_t;
 // maximum global work size, if exceeded synchronisation is broken
 #define MAX_G_SIZE 64
 
-// how many rows we go down in one step
-#define DEPTH 2
 // how many results are max in the next row
 // x defines how many rows we went down from the first one
 #define EXPANSION(x) (N - PLACED - 1 - x)
