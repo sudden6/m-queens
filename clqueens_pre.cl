@@ -98,7 +98,7 @@ typedef ulong uint_fast64_t;
 
 #define OUT_STACK_IDX(x) (G*STACK_SIZE + (x))
 
-#define printf
+//#define printf
 
 kernel void first_step(__global const start_condition* in_starts, /* base of the input start conditions, G_SIZE*EXPANSION must not overflow output buffers */
                        __global start_condition* out_starts,      /* base of the output start conditions, must be N_STACKS * STACK_SIZE elements */
@@ -114,7 +114,7 @@ kernel void first_step(__global const start_condition* in_starts, /* base of the
     // The UINT_FAST32_MAX here is used to fill all 'coloumn' bits after n ...
     cols[L][d] = in_starts[G].cols | (UINT_FAST32_MAX << N);
     if(popcount(cols[L][d]&COL_MASK) != PLACED) {
-        printf("[F] wrong number of bits set: %d\n", popcount(cols[L][d]&COL_MASK));
+        printf("[F] entry: wrong number of bits set: %d\n", popcount(cols[L][d]&COL_MASK));
     }
     DEBUG("F|IN  stage_idx: %d, cols: %x, set: %d\n", l_out_stack_idx, cols[L][d], popcount(cols[L][d]&COL_MASK));
     // This places the first two queens
@@ -178,8 +178,8 @@ kernel void first_step(__global const start_condition* in_starts, /* base of the
                 out_starts[OUT_STACK_IDX(l_out_stack_idx)].cols = bit;
                 //DEBUG("F|OUT gid: %d, cols: %x, set: %d d: %d posib: %x posibs: %x rest: %v2d\n",
                 //             G, bit, popcount(bit&COL_MASK), d, posib, posibs, (rest[L][0], rest[L][1]));
-                if(popcount(bit&COL_MASK) != 4) {
-                    printf("[F] wrong number of bits set: %d\n", popcount(bit&COL_MASK));
+                if(popcount(bit&COL_MASK) != (PLACED + DEPTH)) {
+                    printf("[F] exit: wrong number of bits set: %d\n", popcount(bit&COL_MASK));
                 }
                 out_starts[OUT_STACK_IDX(l_out_stack_idx)].diagl = new_diagl;
                 out_starts[OUT_STACK_IDX(l_out_stack_idx)].diagr = new_diagr;
@@ -227,6 +227,8 @@ kernel void first_step(__global const start_condition* in_starts, /* base of the
 
 //#undef printf
 
+#define FULL_RUN
+
 kernel void inter_step(__global const start_condition* in_starts, /* base of the input start conditions, G_SIZE*EXPANSION must not overflow output buffers */
                        uint buffer_offset,                        /* input buffer number, must be 0 <= x < N_STACKS */
                        __global start_condition* out_starts,      /* base of the output start conditions, must be N_STACKS * STACK_SIZE elements */
@@ -238,11 +240,12 @@ kernel void inter_step(__global const start_condition* in_starts, /* base of the
     __local uint_fast32_t cols[WORKGROUP_SIZE][DEPTH]; // Our backtracking 'stack'
     __local uint_fast32_t diagl[WORKGROUP_SIZE][DEPTH], diagr[WORKGROUP_SIZE][DEPTH];
     __local int_fast8_t rest[WORKGROUP_SIZE][DEPTH]; // number of rows left
-    __local int old_in_fill;
     uint_fast32_t posibs;
     int_fast8_t d = 0; // d is our depth in the backtrack stack
     uint l_out_stack_idx = out_stack_idx[G];
 
+#ifndef FULL_RUN
+    __local int old_in_fill;
     // handle stack fill update only in first work item
     if(L == 0) {
         // take elements from the input stack
@@ -268,14 +271,22 @@ kernel void inter_step(__global const start_condition* in_starts, /* base of the
     }
 
     uint in_start_idx = buffer_offset * STACK_SIZE + in_stack_item;
+#else
+    // stack index was already decreased by host, add own Gid here to access
+    int stack_element = in_stack_idx[buffer_offset] + G;
+    if (stack_element < 0) {
+        printf("Stack underrun, tried to access idx: %d\n", stack_element);
+    }
+    uint in_start_idx = buffer_offset * STACK_SIZE + stack_element;
+#endif
 
     // The UINT_FAST32_MAX here is used to fill all 'coloumn' bits after n ...
     cols[L][d] = in_starts[in_start_idx].cols | (UINT_FAST32_MAX << N);
 
     int bitsset = popcount(cols[L][d]&COL_MASK);
 
-    if(bitsset%2 != 0) {
-        printf("[M] wrong number of bits set: %d\n", bitsset);
+    if(bitsset != PLACED) {
+        printf("[M] entry: wrong number of bits set: %d, STAGE: %d, G: %d\n", bitsset, STAGE_IDX, G);
     }
 
     DEBUG("M|IN G: %d, lid: %d, cols: %x, set: %d\n", G, L, cols[L][d], bitsset);
@@ -339,8 +350,8 @@ kernel void inter_step(__global const start_condition* in_starts, /* base of the
                 out_starts[OUT_STACK_IDX(l_out_stack_idx)].cols = bit;
                 DEBUG("M|OUT G: %d, stack_idx: %d, set: %d, addr: %p\n",
                       G, l_out_stack_idx, popcount(bit&COL_MASK), &out_starts[OUT_STACK_IDX(l_out_stack_idx)]);
-                if(popcount(bit&COL_MASK) != (bitsset + 2)) {
-                    printf("[M] wrong number of bits set in output: %d, input: %d\n", popcount(bit&COL_MASK), bitsset);
+                if(popcount(bit&COL_MASK) != (bitsset + DEPTH)) {
+                    printf("[M] exit: wrong number of bits set in output: %d, input: %d\n", popcount(bit&COL_MASK), bitsset);
                 }
                 out_starts[OUT_STACK_IDX(l_out_stack_idx)].diagl = new_diagl;
                 out_starts[OUT_STACK_IDX(l_out_stack_idx)].diagr = new_diagr;
@@ -396,25 +407,28 @@ kernel void final_step(__global const start_condition* in_starts, /* input buffe
 #ifdef LOOKAHEAD
     __local int_fast8_t rest[WORKGROUP_SIZE][DEPTH]; // number of rows left
 #endif
-    __local int old_in_fill;
     uint_fast32_t num = 0;
     uint_fast32_t posibs;
     int_fast8_t d = 0; // d is our depth in the backtrack stack
 
+#ifndef FULL_RUN
+    __local int old_in_fill;
     // handle stack fill update only in first work item
     if(L == 0) {
         // take elements from the input stack
         int take_items = min((int)(G_SIZE - G), (int) WORKGROUP_SIZE);
         old_in_fill = atomic_sub(&in_stack_idx[buffer_offset], take_items);
+        //printf("G: %d, L_SIZE: %d\n", G, L_SIZE);
         int cur_stack_fill = old_in_fill - take_items;
         // check if we took to many
         if(cur_stack_fill < 0) {
             // took to many
             // fixup fill counter
             int res = atomic_xchg(&in_stack_idx[buffer_offset], 0);
+            printf("G: %d, old_in_fill: %d, cur_stack_fill: %d, res: %d\n", G, old_in_fill, cur_stack_fill, res);
         }
     }
-    // ensure all work-items have read the in_ites value
+    // ensure all work-items have read the in_items value
     barrier(CLK_LOCAL_MEM_FENCE);
 
     int in_stack_item = old_in_fill - L - 1;
@@ -424,15 +438,24 @@ kernel void final_step(__global const start_condition* in_starts, /* input buffe
     }
 
     uint in_start_idx = buffer_offset * STACK_SIZE + in_stack_item;
+#else
+    // stack index was already decreased by host, add own Gid here for access
+    int stack_element = in_stack_idx[buffer_offset] + G;
+    if (stack_element < 0) {
+        printf("Stack underrun, tried to access idx: %d\n", stack_element);
+    }
+    uint in_start_idx = buffer_offset * STACK_SIZE + stack_element;
+#endif
 
     // The UINT_FAST32_MAX here is used to fill all 'coloumn' bits after n ...
     cols[L][d] = in_starts[in_start_idx].cols | (UINT_FAST32_MAX << N);
-    if((popcount(cols[L][d]&COL_MASK) != (N-1))
-    && (popcount(cols[L][d]&COL_MASK) != (N-2))) {
-        //printf("[L] wrong number of bits set: %d\n", popcount(cols[L][d]&COL_MASK));
+    uint bitsset = popcount(cols[L][d]&COL_MASK);
+    if((bitsset != (N-1))
+    && (bitsset != (N-2))) {
+        printf("[L] entry: wrong number of bits set: %d\n", bitsset);
     }
-    DEBUG("L|IN  lid: %d, gid: %d, cols: %x, old_fill: %u, buf_off: %u, in_idx: %u, addr: %p\n",
-           L, G, cols[L][d], old_in_fill, buffer_offset, in_start_idx, &in_starts[in_start_idx]);
+    DEBUG("L|IN  lid: %d, gid: %d, cols: %x, buf_off: %u, in_idx: %u, addr: %p\n",
+           L, G, cols[L][d], buffer_offset, in_start_idx, &in_starts[in_start_idx]);
     // This places the first two queens
     diagl[L][d] = in_starts[in_start_idx].diagl;
     diagr[L][d] = in_starts[in_start_idx].diagr;
@@ -453,7 +476,7 @@ kernel void final_step(__global const start_condition* in_starts, /* input buffe
     while (d >= 0) {
 
         if(d >= DEPTH || d < 0) {
-            //printf("[L] d out of range #1\n");
+            printf("[L] d out of range #1\n");
         }
       // moving the two shifts out of the inner loop slightly improves
       // performance
@@ -502,7 +525,7 @@ kernel void final_step(__global const start_condition* in_starts, /* input buffe
             posib = new_posib;
 
             if(d >= DEPTH || d < 0) {
-                //printf("[L] d out of range #2\n");
+                printf("[L] d out of range #2\n");
             }
 
             // make values current

@@ -2,6 +2,7 @@
 #define CLSOLVER_H
 
 #include <cstdint>
+#include <memory>
 #include <vector>
 #include "solverstructs.h"
 
@@ -24,14 +25,14 @@ private:
         cl::Buffer clFillCount; // buffer that holds the fill status
         cl::Buffer clSum;       // buffer for the sum at the last stage
         cl::Event clStageDone;  // event when this stage is complete
-        std::vector<cl_int> hostFillCount;
+        std::unique_ptr<cl_int> hostFillCount = nullptr;
         STAGE_TYPE type;        // type of the current stage
         uint8_t index;          // index of the current stage, mainly for debugging
         uint8_t placed;         // number of queens at the beginning of this stage
         uint32_t expansion;     // maximum number of solutions generated from one input solution
         uint8_t depth;          // number of queens placed in this stage
         cl_int buf_threshold;   // limit after which the buffer is emptied
-        uint32_t runs = 0;      // number of times this stage was run without emptying the buffer
+        uint32_t max_fill = 0;  // maximum fill level of the stage/sum buffer
     } ;
 
     uint8_t presolve_depth = 0;
