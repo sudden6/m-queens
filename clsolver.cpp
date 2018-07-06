@@ -527,7 +527,13 @@ uint64_t ClSolver::solve_subboard(const std::vector<start_condition> &start)
         // get work item from queue
         auto item = work_queue.front();
         work_queue.pop_front();
-        uint32_t curStageIdx  = item.stageIdx;
+        uint32_t curStageIdx;
+        for(curStageIdx = 0; curStageIdx < stages.size(); curStageIdx++) {
+            if(stages.at(curStageIdx).index == item.stageIdx) {
+                break;
+            }
+        }
+
         auto& stage = stages.at(curStageIdx);
         assert(item.taken > 0);
         size_t g_work_size = item.taken;
@@ -604,14 +610,21 @@ uint64_t ClSolver::solve_subboard(const std::vector<start_condition> &start)
                 break;
             }
 
-            fill_work_queue(queue, work_queue, stage, 0);
+            fill_work_queue(queue, work_queue, stage, stage.buf_threshold);
 
             if(work_queue.empty()) {
-                std::cout << "Removing stage " << std::to_string(stage.index) << std::endl;
-                // remove first stage since it's empty and unused now
-                stages = std::move(std::vector<sieve_stage>(
-                                       std::make_move_iterator(++stages.begin()),
-                                       std::make_move_iterator(stages.end())));
+                if(stage.buf_threshold > 0) {
+                    stage.buf_threshold /= 2;
+                    std::cout << "Reducing stage " << std::to_string(stage.index)
+                              << " buf threshold to: " << std::to_string(stage.buf_threshold)
+                              << std::endl;
+                } else {
+                    std::cout << "Removing stage " << std::to_string(stage.index) << std::endl;
+                    // remove first stage since it's empty and unused now
+                    stages = std::move(std::vector<sieve_stage>(
+                                           std::make_move_iterator(++stages.begin()),
+                                           std::make_move_iterator(stages.end())));
+                }
             }
 
             continue;
@@ -620,11 +633,15 @@ uint64_t ClSolver::solve_subboard(const std::vector<start_condition> &start)
         // get work item from queue
         auto item = work_queue.front();
         work_queue.pop_front();
-        uint32_t curStageIdx  = item.stageIdx;
+        uint32_t curStageIdx;
+        for(curStageIdx = 0; curStageIdx < stages.size(); curStageIdx++) {
+            if(stages.at(curStageIdx).index == item.stageIdx) {
+                break;
+            }
+        }
         auto& stage = stages.at(curStageIdx);
         assert(item.taken > 0);
         size_t g_work_size = item.taken;
-
 
         // select buffer
         stage.clKernel.setArg(1, item.bufferIdx);
@@ -675,7 +692,7 @@ uint64_t ClSolver::solve_subboard(const std::vector<start_condition> &start)
                 std::cout << "enqueueBarrier failed: " << err << std::endl;
             }
         } else {
-            fill_work_queue(queue, work_queue, stage, 0);
+            fill_work_queue(queue, work_queue, stage, stage.buf_threshold);
         }
     }
 

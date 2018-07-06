@@ -16,7 +16,7 @@
 //#define TESTSUITE
 
 #ifndef N
-#define N 14
+#define N 18
 #endif
 #define MAXN 29
 
