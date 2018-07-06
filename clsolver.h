@@ -26,7 +26,7 @@ private:
         cl::Buffer clFillCount; // buffer that holds the fill status
         cl::Buffer clSum;       // buffer for the sum at the last stage
         cl::Event clStageDone;  // event when this stage is complete
-        std::unique_ptr<cl_int> hostFillCount = nullptr;
+        //std::unique_ptr<cl_int> hostFillCount = nullptr;
         STAGE_TYPE type;        // type of the current stage
         uint8_t index;          // index of the current stage, mainly for debugging
         uint8_t placed;         // number of queens at the beginning of this stage
@@ -48,6 +48,7 @@ private:
     uint8_t boardsize = 0;
     cl::Context context;
     cl::Device device;
+    cl::CommandQueue queue;
     std::vector<sieve_stage> stages;
     std::string sourceStr;
     bool first_stage();

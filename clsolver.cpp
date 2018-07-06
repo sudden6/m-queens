@@ -69,6 +69,12 @@ ClSolver::ClSolver()
         return;
     }
 
+    // Create command queue.
+    queue = cl::CommandQueue(context, device, 0, &err);
+    if(err != CL_SUCCESS) {
+        std::cout << "failed to create command queue: " << err << std::endl;
+    }
+
     // load source code
     std::ifstream sourcefile("clqueens_pre.cl");
     sourceStr = std::string((std::istreambuf_iterator<char>(sourcefile)),
@@ -227,14 +233,21 @@ bool ClSolver::first_stage() {
     }
 
     // host fill count buffer
-    stage.hostFillCount = std::unique_ptr<cl_int>(new cl_int[N_STACKS]());
+    //stage.hostFillCount = std::unique_ptr<cl_int>(new cl_int[N_STACKS]());
 
     // Initialize stage buffer element count to zero
-    stage.clFillCount = cl::Buffer(context, CL_MEM_READ_WRITE | CL_MEM_USE_HOST_PTR,
-                                  N_STACKS * sizeof(cl_int), stage.hostFillCount.get(), &err);
+    stage.clFillCount = cl::Buffer(context, CL_MEM_READ_WRITE | CL_MEM_ALLOC_HOST_PTR,
+                                  N_STACKS * sizeof(cl_int), nullptr, &err);
     if(err != CL_SUCCESS) {
         std::cout << "cl::Buffer clFillCount failed: " << err << std::endl;
         return false;
+    }
+
+    // zero fill count buffer
+    err = queue.enqueueFillBuffer<cl_int>(stage.clFillCount, 0, 0, N_STACKS * sizeof(cl_int));
+
+    if(err != CL_SUCCESS) {
+        std::cout << "enqueueFillBuffer failed: " << err << std::endl;
     }
 
     // create device kernel
@@ -291,14 +304,21 @@ bool ClSolver::append_mid_stage() {
     }
 
     // host fill count buffer
-    stage.hostFillCount = std::unique_ptr<cl_int>(new cl_int[N_STACKS]());
+    //stage.hostFillCount = std::unique_ptr<cl_int>(new cl_int[N_STACKS]());
 
     // Initialize stage buffer element count to zero
-    stage.clFillCount = cl::Buffer(context, CL_MEM_READ_WRITE | CL_MEM_USE_HOST_PTR,
-                                  N_STACKS * sizeof(cl_int), stage.hostFillCount.get(), &err);
+    stage.clFillCount = cl::Buffer(context, CL_MEM_READ_WRITE | CL_MEM_ALLOC_HOST_PTR,
+                                  N_STACKS * sizeof(cl_int), nullptr, &err);
     if(err != CL_SUCCESS) {
         std::cout << "cl::Buffer clFillCount failed: " << err << std::endl;
         return false;
+    }
+
+    // zero fill count buffer
+    err = queue.enqueueFillBuffer<cl_int>(stage.clFillCount, 0, 0, N_STACKS * sizeof(cl_int));
+
+    if(err != CL_SUCCESS) {
+        std::cout << "enqueueFillBuffer failed: " << err << std::endl;
     }
 
     // create OpenCL kernels
@@ -404,7 +424,7 @@ void ClSolver::fill_work_queue(cl::CommandQueue& queue, std::list<stage_work_ite
         std::cout << "enqueueMapBuffer failed: " << err << std::endl;
     }
 
-    assert(mapped_buffer == stage.hostFillCount.get());
+    //assert(mapped_buffer == stage.hostFillCount.get());
 
     cl_int* fill = (cl_int*) mapped_buffer;
     for(uint32_t i = 0; i < N_STACKS; i++) {
@@ -419,17 +439,18 @@ void ClSolver::fill_work_queue(cl::CommandQueue& queue, std::list<stage_work_ite
     }
 
     // map buffer to device for working
-    err = queue.enqueueUnmapMemObject(stage.clFillCount, stage.hostFillCount.get(),
+    err = queue.enqueueUnmapMemObject(stage.clFillCount, mapped_buffer,
                                  nullptr, nullptr);
     if(err != CL_SUCCESS) {
         std::cout << "enqueueUnmapMemObject failed: " << err << std::endl;
     }
 
+    /*
     // just ensure our buffers are not modified
     err = queue.enqueueBarrierWithWaitList();
     if(err != CL_SUCCESS) {
         std::cout << "enqueueBarrier failed: " << err << std::endl;
-    }
+    }*/
 }
 
 uint64_t ClSolver::solve_subboard(const std::vector<start_condition> &start)
@@ -446,13 +467,6 @@ uint64_t ClSolver::solve_subboard(const std::vector<start_condition> &start)
     PreSolver pre(boardsize, placed, presolve_depth, *startIt);
     startIt++;
 
-    cl::CommandQueue queue;
-    // Create command queue.
-    queue = cl::CommandQueue(context, device, 0, &err);
-    if(err != CL_SUCCESS) {
-        std::cout << "failed to create command queue: " << err << std::endl;
-    }
-
     uint64_t result = 0;
 
     std::list<stage_work_item> work_queue{};
@@ -462,8 +476,9 @@ uint64_t ClSolver::solve_subboard(const std::vector<start_condition> &start)
     std::vector<cl_uint> hostOutputBuf(N_STACKS, 0);     // store the result of the last stage
 
     std::cout << "Entering crunch stage" << std::endl;
-    // exit when all start conditions from the pre solver are handled
-    while (true) {
+
+    // exit when all items in the buffers are removed
+    while(true) {
         // fill step
         if(work_queue.empty() && !pre.empty()) {
             // insert new material at first sieve stage
@@ -474,6 +489,7 @@ uint64_t ClSolver::solve_subboard(const std::vector<start_condition> &start)
                 hostBufIt = pre.getNext(hostBufIt, hostStartBuf.cend());
                 if(pre.empty() && (startIt == start.end())) {
                     // out of start conditions
+                    std::cout << "Out of start conditions" << std::endl;
                     break;
                 }
                 if(pre.empty()) {
@@ -518,87 +534,6 @@ uint64_t ClSolver::solve_subboard(const std::vector<start_condition> &start)
             // redo until buffer sufficiently filled
             continue;
         }
-
-        // process remaining start conditions in OpenCL device buffers
-        if(work_queue.empty()) {
-            break;
-        }
-
-        // get work item from queue
-        auto item = work_queue.front();
-        work_queue.pop_front();
-        uint32_t curStageIdx;
-        for(curStageIdx = 0; curStageIdx < stages.size(); curStageIdx++) {
-            if(stages.at(curStageIdx).index == item.stageIdx) {
-                break;
-            }
-        }
-
-        auto& stage = stages.at(curStageIdx);
-        assert(item.taken > 0);
-        size_t g_work_size = item.taken;
-
-        // select buffer
-        stage.clKernel.setArg(1, item.bufferIdx);
-        // Launch kernel on the compute device.
-        err = queue.enqueueNDRangeKernel(stage.clKernel, cl::NullRange,
-                                         cl::NDRange{g_work_size}, cl::NDRange{std::min(WORKGROUP_SIZE, g_work_size)},
-                                         nullptr, &stage.clStageDone);
-
-        if(err != CL_SUCCESS) {
-            std::cout << "enqueueNDRangeKernel failed: " << err << std::endl;
-        }
-
-        // Only MID and LAST items can appear here
-        // check if last stage
-        if(stage.type == STAGE_TYPE::LAST) {
-            const uint32_t runs_threshold = UINT32_MAX / stage.depth - 10;
-            if(stage.max_fill > runs_threshold) {
-                // read back sum buffer
-                std::cout << "reading sum buffer" << std::endl;
-                err = queue.enqueueReadBuffer(stage.clSum, CL_TRUE, 0,
-                                              hostOutputBuf.size() * sizeof(cl_uint), hostOutputBuf.data(),
-                                              nullptr, nullptr);
-                if(err != CL_SUCCESS) {
-                    std::cout << "enqueueReadBuffer failed: " << err << std::endl;
-                }
-
-                uint64_t intermediate_res = 0;
-                for(uint32_t i = 0; i < N_STACKS; i++) {
-                    intermediate_res += hostOutputBuf[i];
-                }
-
-                result += intermediate_res;
-
-                // zero sum buffer
-                err = queue.enqueueFillBuffer<cl_uint>(stage.clSum, 0, 0, hostOutputBuf.size() * sizeof(cl_uint));
-
-                if(err != CL_SUCCESS) {
-                    std::cout << "enqueueFillBuffer failed: " << err << std::endl;
-                }
-
-                // reset max_fill counter
-                stage.max_fill = 0;
-            } else {
-                stage.max_fill += stage.expansion;
-                // just ensure our buffers are not modified
-                err = queue.enqueueBarrierWithWaitList();
-                if(err != CL_SUCCESS) {
-                    std::cout << "enqueueBarrier failed: " << err << std::endl;
-                }
-            }
-
-        } else {
-            fill_work_queue(queue, work_queue, stage, stage.buf_threshold);
-        }
-    }
-
-    // ensure all buffer access is finished
-    queue.enqueueBarrierWithWaitList();
-
-    std::cout << "Entering cleanup stage" << std::endl;
-    // exit when all items in the buffers are removed
-    while(true) {
         // process remaining start conditions in OpenCL device buffers
         if(work_queue.empty()) {
             // select first stage
@@ -684,12 +619,12 @@ uint64_t ClSolver::solve_subboard(const std::vector<start_condition> &start)
                 // reset max_fill counter
                 stage.max_fill = 0;
             } else {
+                // just ensure our buffers are not modified
+                err = queue.enqueueBarrierWithWaitList();
+                if(err != CL_SUCCESS) {
+                    std::cout << "enqueueBarrier failed: " << err << std::endl;
+                }
                 stage.max_fill += stage.expansion;
-            }
-            // just ensure our buffers are not modified
-            err = queue.enqueueBarrierWithWaitList();
-            if(err != CL_SUCCESS) {
-                std::cout << "enqueueBarrier failed: " << err << std::endl;
             }
         } else {
             fill_work_queue(queue, work_queue, stage, stage.buf_threshold);
