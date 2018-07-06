@@ -283,6 +283,10 @@ kernel void inter_step(__global const start_condition* in_starts, /* base of the
     // The UINT_FAST32_MAX here is used to fill all 'coloumn' bits after n ...
     cols[L][d] = in_starts[in_start_idx].cols | (UINT_FAST32_MAX << N);
 
+    // This places the first two queens
+    diagl[L][d] = in_starts[in_start_idx].diagl;
+    diagr[L][d] = in_starts[in_start_idx].diagr;
+
     int bitsset = popcount(cols[L][d]&COL_MASK);
 
     if(bitsset != PLACED) {
@@ -290,9 +294,6 @@ kernel void inter_step(__global const start_condition* in_starts, /* base of the
     }
 
     DEBUG("M|IN G: %d, lid: %d, cols: %x, set: %d\n", G, L, cols[L][d], bitsset);
-    // This places the first two queens
-    diagl[L][d] = in_starts[in_start_idx].diagl;
-    diagr[L][d] = in_starts[in_start_idx].diagr;
 #undef LOOKAHEAD
 #define LOOKAHEAD 3
 #ifdef LOOKAHEAD

@@ -2,6 +2,7 @@
 #define CLSOLVER_H
 
 #include <cstdint>
+#include <list>
 #include <memory>
 #include <vector>
 #include "solverstructs.h"
@@ -33,7 +34,14 @@ private:
         uint8_t depth;          // number of queens placed in this stage
         cl_int buf_threshold;   // limit after which the buffer is emptied
         uint32_t max_fill = 0;  // maximum fill level of the stage/sum buffer
-    } ;
+    };
+
+    struct stage_work_item {
+        cl_uint bufferIdx;      // must be 32 Bit, to match OpenCL kernel
+        uint32_t stageIdx;
+        cl_int taken;           // amount of items marked as taken, but not yet removed from buffer
+    };
+
 
     uint8_t presolve_depth = 0;
     uint8_t placed = 0;
@@ -49,6 +57,7 @@ private:
     bool append_mid_stage();
     bool append_last_stage();
     void compute_buf_threshold(sieve_stage &stage);
+    void fill_work_queue(cl::CommandQueue &queue, std::list<stage_work_item> &work_queue, sieve_stage &stage, cl_int threshold);
 };
 
 #endif // CLSOLVER_H
