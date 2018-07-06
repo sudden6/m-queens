@@ -113,9 +113,11 @@ kernel void first_step(__global const start_condition* in_starts, /* base of the
     uint l_out_stack_idx = out_stack_idx[G];
     // The UINT_FAST32_MAX here is used to fill all 'coloumn' bits after n ...
     cols[L][d] = in_starts[G].cols | (UINT_FAST32_MAX << N);
+#ifdef ASSERT
     if(popcount(cols[L][d]&COL_MASK) != PLACED) {
         printf("[F] entry: wrong number of bits set: %d\n", popcount(cols[L][d]&COL_MASK));
     }
+#endif
     DEBUG("F|IN  stage_idx: %d, cols: %x, set: %d\n", l_out_stack_idx, cols[L][d], popcount(cols[L][d]&COL_MASK));
     // This places the first two queens
     diagl[L][d] = in_starts[G].diagl;
@@ -142,9 +144,11 @@ kernel void first_step(__global const start_condition* in_starts, /* base of the
       // performance
       uint_fast32_t diagl_shifted = diagl[L][d] << 1;
       uint_fast32_t diagr_shifted = diagr[L][d] >> 1;
+#ifdef ASSERT
       if(d >= DEPTH || d < 0) {
           printf("[F] d out of range #1\n");
       }
+#endif
       int_fast8_t l_rest = rest[L][d];
       uint_fast32_t l_cols = cols[L][d];
 
@@ -178,9 +182,11 @@ kernel void first_step(__global const start_condition* in_starts, /* base of the
                 out_starts[OUT_STACK_IDX(l_out_stack_idx)].cols = bit;
                 //DEBUG("F|OUT gid: %d, cols: %x, set: %d d: %d posib: %x posibs: %x rest: %v2d\n",
                 //             G, bit, popcount(bit&COL_MASK), d, posib, posibs, (rest[L][0], rest[L][1]));
+#ifdef ASSERT
                 if(popcount(bit&COL_MASK) != (PLACED + DEPTH)) {
                     printf("[F] exit: wrong number of bits set: %d\n", popcount(bit&COL_MASK));
                 }
+#endif
                 out_starts[OUT_STACK_IDX(l_out_stack_idx)].diagl = new_diagl;
                 out_starts[OUT_STACK_IDX(l_out_stack_idx)].diagr = new_diagr;
                 l_out_stack_idx++;
@@ -196,9 +202,11 @@ kernel void first_step(__global const start_condition* in_starts, /* base of the
             posibs = posib;
             d += posib != UINT_FAST32_MAX; // avoid branching with this trick
 
+#ifdef ASSERT
             if(d >= DEPTH || d < 0) {
                 printf("d out of range #2\n");
             }
+#endif
 
             posib = new_posib;
 
@@ -274,9 +282,11 @@ kernel void inter_step(__global const start_condition* in_starts, /* base of the
 #else
     // stack index was already decreased by host, add own Gid here to access
     int stack_element = in_stack_idx[buffer_offset] + G;
+#ifdef ASSERT
     if (stack_element < 0) {
         printf("Stack underrun, tried to access idx: %d\n", stack_element);
     }
+#endif
     uint in_start_idx = buffer_offset * STACK_SIZE + stack_element;
 #endif
 
@@ -287,13 +297,14 @@ kernel void inter_step(__global const start_condition* in_starts, /* base of the
     diagl[L][d] = in_starts[in_start_idx].diagl;
     diagr[L][d] = in_starts[in_start_idx].diagr;
 
+#ifdef ASSERT
     int bitsset = popcount(cols[L][d]&COL_MASK);
-
     if(bitsset != PLACED) {
         printf("[M] entry: wrong number of bits set: %d, STAGE: %d, G: %d\n", bitsset, STAGE_IDX, G);
     }
+#endif
 
-    DEBUG("M|IN G: %d, lid: %d, cols: %x, set: %d\n", G, L, cols[L][d], bitsset);
+    DEBUG("M|IN G: %d, lid: %d, cols: %x\n", G, L, cols[L][d]);
 #undef LOOKAHEAD
 #define LOOKAHEAD 3
 #ifdef LOOKAHEAD
@@ -313,9 +324,11 @@ kernel void inter_step(__global const start_condition* in_starts, /* base of the
     uint_fast32_t posib = (cols[L][d] | diagl[L][d] | diagr[L][d]);
 
     while (d >= 0) {
+#ifdef ASSERT
         if(d >= DEPTH || d < 0) {
             printf("d out of range #1\n");
         }
+#endif
       // moving the two shifts out of the inner loop slightly improves
       // performance
       uint_fast32_t diagl_shifted = diagl[L][d] << 1;
@@ -351,9 +364,11 @@ kernel void inter_step(__global const start_condition* in_starts, /* base of the
                 out_starts[OUT_STACK_IDX(l_out_stack_idx)].cols = bit;
                 DEBUG("M|OUT G: %d, stack_idx: %d, set: %d, addr: %p\n",
                       G, l_out_stack_idx, popcount(bit&COL_MASK), &out_starts[OUT_STACK_IDX(l_out_stack_idx)]);
+#ifdef ASSERT
                 if(popcount(bit&COL_MASK) != (bitsset + DEPTH)) {
                     printf("[M] exit: wrong number of bits set in output: %d, input: %d\n", popcount(bit&COL_MASK), bitsset);
                 }
+#endif
                 out_starts[OUT_STACK_IDX(l_out_stack_idx)].diagl = new_diagl;
                 out_starts[OUT_STACK_IDX(l_out_stack_idx)].diagr = new_diagr;
                 l_out_stack_idx++;
@@ -370,9 +385,11 @@ kernel void inter_step(__global const start_condition* in_starts, /* base of the
             d += posib != UINT_FAST32_MAX; // avoid branching with this trick
             posib = new_posib;
 
+#ifdef ASSERT
             if(d >= DEPTH || d < 0) {
                 printf("d out of range #2\n");
             }
+#endif
 
             // make values current
             l_cols = bit;
@@ -442,19 +459,23 @@ kernel void final_step(__global const start_condition* in_starts, /* input buffe
 #else
     // stack index was already decreased by host, add own Gid here for access
     int stack_element = in_stack_idx[buffer_offset] + G;
+#ifdef ASSERT
     if (stack_element < 0) {
         printf("Stack underrun, tried to access idx: %d\n", stack_element);
     }
+#endif
     uint in_start_idx = buffer_offset * STACK_SIZE + stack_element;
 #endif
 
     // The UINT_FAST32_MAX here is used to fill all 'coloumn' bits after n ...
     cols[L][d] = in_starts[in_start_idx].cols | (UINT_FAST32_MAX << N);
+#ifdef ASSERT
     uint bitsset = popcount(cols[L][d]&COL_MASK);
     if((bitsset != (N-1))
     && (bitsset != (N-2))) {
         printf("[L] entry: wrong number of bits set: %d\n", bitsset);
     }
+#endif
     DEBUG("L|IN  lid: %d, gid: %d, cols: %x, buf_off: %u, in_idx: %u, addr: %p\n",
            L, G, cols[L][d], buffer_offset, in_start_idx, &in_starts[in_start_idx]);
     // This places the first two queens
@@ -475,10 +496,11 @@ kernel void final_step(__global const start_condition* in_starts, /* input buffe
     uint_fast32_t posib = (cols[L][d] | diagl[L][d] | diagr[L][d]);
 
     while (d >= 0) {
-
+#ifdef ASSERT
         if(d >= DEPTH || d < 0) {
             printf("[L] d out of range #1\n");
         }
+#endif
       // moving the two shifts out of the inner loop slightly improves
       // performance
       uint_fast32_t diagl_shifted = diagl[L][d] << 1;
@@ -524,10 +546,11 @@ kernel void final_step(__global const start_condition* in_starts, /* input buffe
             posibs = posib;
             d += posib != UINT_FAST32_MAX; // avoid branching with this trick
             posib = new_posib;
-
+#ifdef ASSERT
             if(d >= DEPTH || d < 0) {
                 printf("[L] d out of range #2\n");
             }
+#endif
 
             // make values current
             l_cols = bit;

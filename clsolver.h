@@ -40,6 +40,11 @@ private:
         cl_uint bufferIdx;      // must be 32 Bit, to match OpenCL kernel
         uint32_t stageIdx;
         cl_int taken;           // amount of items marked as taken, but not yet removed from buffer
+        stage_work_item(cl_uint bufferIdx, uint32_t stageIdx, cl_int taken)
+            : bufferIdx{bufferIdx}
+            , stageIdx{stageIdx}
+            , taken{taken}
+        {}
     };
 
 

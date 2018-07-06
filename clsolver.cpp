@@ -85,9 +85,9 @@ ClSolver::ClSolver()
 constexpr uint_fast8_t MINN = 2;
 constexpr uint_fast8_t MAXN = 29;
 
-constexpr size_t N_STACKS = 4096*2; // number of stacks
+constexpr size_t N_STACKS = 9216; // number of stacks
 constexpr size_t WORKGROUP_SIZE = 64;   // number of threads that are run in parallel
-constexpr size_t STACK_SIZE = N_STACKS+100;      // number of elements in a stack
+constexpr size_t STACK_SIZE = N_STACKS+64;      // number of elements in a stack
 constexpr size_t PLACED_PER_STAGE = 2;  // number of queens placed per sieve stage
 
 /*
@@ -427,15 +427,14 @@ void ClSolver::fill_work_queue(cl::CommandQueue& queue, std::list<stage_work_ite
     //assert(mapped_buffer == stage.hostFillCount.get());
 
     cl_int* fill = (cl_int*) mapped_buffer;
+    cl_int max_fill = 0;
     for(uint32_t i = 0; i < N_STACKS; i++) {
         if(fill[i] > threshold) {
-            stage_work_item item;
-            item.stageIdx = stage.index + 1;
-            item.bufferIdx = i;
-            item.taken = std::min((cl_int)N_STACKS, fill[i]);
-            fill[i] -= item.taken;
-            work_queue.push_front(item);
+            cl_int taken = std::min((cl_int)N_STACKS, fill[i]);
+            work_queue.emplace_front(i, stage.index + 1, taken);
+            fill[i] -= taken;
         }
+        max_fill = std::max(fill[i], max_fill);
     }
 
     // map buffer to device for working
@@ -471,7 +470,6 @@ uint64_t ClSolver::solve_subboard(const std::vector<start_condition> &start)
 
     std::list<stage_work_item> work_queue{};
     cl::Buffer clInputBuf;
-    std::vector<cl_uint> zeroBuffer(N_STACKS, 0);        // zero buffer to
     std::vector<start_condition> hostStartBuf{N_STACKS};
     std::vector<cl_uint> hostOutputBuf(N_STACKS, 0);     // store the result of the last stage
 
@@ -529,7 +527,11 @@ uint64_t ClSolver::solve_subboard(const std::vector<start_condition> &start)
                 std::cout << "enqueueNDRangeKernel failed: " << err << std::endl;
             }
 
-            fill_work_queue(queue, work_queue, stage, stage.buf_threshold);
+            stage.max_fill += stage.expansion;
+
+            if(stage.max_fill > stage.buf_threshold) {
+                fill_work_queue(queue, work_queue, stage, stage.buf_threshold);
+            }
 
             // redo until buffer sufficiently filled
             continue;
@@ -545,7 +547,9 @@ uint64_t ClSolver::solve_subboard(const std::vector<start_condition> &start)
                 break;
             }
 
-            fill_work_queue(queue, work_queue, stage, stage.buf_threshold);
+            if(stage.max_fill > stage.buf_threshold) {
+                fill_work_queue(queue, work_queue, stage, stage.buf_threshold);
+            }
 
             if(work_queue.empty()) {
                 if(stage.buf_threshold > 0) {
@@ -620,14 +624,17 @@ uint64_t ClSolver::solve_subboard(const std::vector<start_condition> &start)
                 stage.max_fill = 0;
             } else {
                 // just ensure our buffers are not modified
-                err = queue.enqueueBarrierWithWaitList();
+                /*err = queue.enqueueBarrierWithWaitList();
                 if(err != CL_SUCCESS) {
                     std::cout << "enqueueBarrier failed: " << err << std::endl;
-                }
+                }*/
                 stage.max_fill += stage.expansion;
             }
         } else {
-            fill_work_queue(queue, work_queue, stage, stage.buf_threshold);
+            stage.max_fill += stage.expansion;
+            if(stage.max_fill > stage.buf_threshold) {
+                fill_work_queue(queue, work_queue, stage, stage.buf_threshold);
+            }
         }
     }
 
