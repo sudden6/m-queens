@@ -64,7 +64,7 @@ private:
     bool append_mid_stage();
     bool append_last_stage();
     void compute_buf_threshold(sieve_stage &stage);
-    void fill_work_queue(cl::CommandQueue &queue, std::list<stage_work_item> &work_queue, sieve_stage &stage, cl_int threshold);
+    void fill_work_queue(cl::CommandQueue &queue, std::list<stage_work_item> &work_queue, sieve_stage &stage);
 };
 
 #endif // CLSOLVER_H

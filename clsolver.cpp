@@ -85,7 +85,7 @@ ClSolver::ClSolver()
 constexpr uint_fast8_t MINN = 2;
 constexpr uint_fast8_t MAXN = 29;
 
-constexpr size_t N_STACKS = 1024*4+256; // number of stacks
+constexpr size_t N_STACKS = 1024*8; // number of stacks
 constexpr size_t WORKGROUP_SIZE = 64;   // number of threads that are run in parallel
 constexpr size_t STACK_SIZE = N_STACKS+128;      // number of elements in a stack
 constexpr size_t PLACED_PER_STAGE = 2;  // number of queens placed per sieve stage
@@ -413,7 +413,7 @@ constexpr size_t NUM_BATCHES = 4;
 constexpr size_t NUM_CMDQUEUES = 2;
 
 void ClSolver::fill_work_queue(cl::CommandQueue& queue, std::list<stage_work_item>& work_queue,
-                               sieve_stage& stage, cl_int threshold) {
+                               sieve_stage& stage) {
     cl_int err = CL_SUCCESS;
 
     // map buffer to host for updating
@@ -429,13 +429,17 @@ void ClSolver::fill_work_queue(cl::CommandQueue& queue, std::list<stage_work_ite
     cl_int* fill = (cl_int*) mapped_buffer;
     cl_int max_fill = 0;
     for(uint32_t i = 0; i < N_STACKS; i++) {
-        if(fill[i] > threshold) {
+        if(fill[i] > stage.buf_threshold) {
             cl_int taken = std::min((cl_int)N_STACKS, fill[i]);
             work_queue.emplace_front(i, stage.index + 1, taken);
             fill[i] -= taken;
         }
         max_fill = std::max(fill[i], max_fill);
     }
+
+    // ensure we overestimated
+    assert(max_fill <= stage.max_fill);
+    stage.max_fill = max_fill;
 
     // map buffer to device for working
     err = queue.enqueueUnmapMemObject(stage.clFillCount, mapped_buffer,
@@ -531,7 +535,7 @@ uint64_t ClSolver::solve_subboard(const std::vector<start_condition>::const_iter
             stage.max_fill += stage.expansion;
 
             if(stage.max_fill > stage.buf_threshold) {
-                fill_work_queue(queue, work_queue, stage, stage.buf_threshold);
+                fill_work_queue(queue, work_queue, stage);
             }
 
             // redo until buffer sufficiently filled
@@ -549,12 +553,14 @@ uint64_t ClSolver::solve_subboard(const std::vector<start_condition>::const_iter
             }
 
             if(stage.max_fill > stage.buf_threshold) {
-                fill_work_queue(queue, work_queue, stage, stage.buf_threshold);
+                fill_work_queue(queue, work_queue, stage);
             }
 
             if(work_queue.empty()) {
                 if(stage.buf_threshold > 0) {
                     stage.buf_threshold /= 2;
+                    // ensure multiple of WORKGROUP_SIZE
+                    stage.buf_threshold -= stage.buf_threshold % WORKGROUP_SIZE;
                     std::cout << "Reducing stage " << std::to_string(stage.index)
                               << " buf threshold to: " << std::to_string(stage.buf_threshold)
                               << std::endl;
@@ -634,7 +640,7 @@ uint64_t ClSolver::solve_subboard(const std::vector<start_condition>::const_iter
         } else {
             stage.max_fill += stage.expansion;
             if(stage.max_fill > stage.buf_threshold) {
-                fill_work_queue(queue, work_queue, stage, stage.buf_threshold);
+                fill_work_queue(queue, work_queue, stage);
             }
         }
     }
