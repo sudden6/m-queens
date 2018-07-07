@@ -429,13 +429,17 @@ void ClSolver::fill_work_queue(cl::CommandQueue& queue, std::list<stage_work_ite
     cl_int* fill = (cl_int*) mapped_buffer;
     cl_int max_fill = 0;
     for(uint32_t i = 0; i < N_STACKS; i++) {
-        if(fill[i] > threshold) {
+        if(fill[i] > stage.buf_threshold) {
             cl_int taken = std::min((cl_int)N_STACKS, fill[i]);
             work_queue.emplace_front(i, stage.index + 1, taken);
             fill[i] -= taken;
         }
         max_fill = std::max(fill[i], max_fill);
     }
+
+    assert(max_fill <= stage.max_fill);
+
+    stage.max_fill = max_fill;
 
     // map buffer to device for working
     err = queue.enqueueUnmapMemObject(stage.clFillCount, mapped_buffer,
@@ -519,9 +523,15 @@ uint64_t ClSolver::solve_subboard(const std::vector<start_condition>::const_iter
             // input buffer
             stage.clKernel.setArg(0, clInputBuf);
 
+            size_t local_size = WORKGROUP_SIZE;
+            while(input_cnt % local_size != 0) {
+                local_size /= 2;
+            }
+
             // Launch kernel on the compute device.
             err = queue.enqueueNDRangeKernel(stage.clKernel, cl::NullRange,
-                                             cl::NDRange{input_cnt}, cl::NDRange{std::min(WORKGROUP_SIZE, input_cnt)},
+                                             cl::NDRange{input_cnt},
+                                             cl::NDRange{local_size},
                                              nullptr, &stage.clStageDone);
 
             if(err != CL_SUCCESS) {
@@ -555,6 +565,8 @@ uint64_t ClSolver::solve_subboard(const std::vector<start_condition>::const_iter
             if(work_queue.empty()) {
                 if(stage.buf_threshold > 0) {
                     stage.buf_threshold /= 2;
+                    // ensure multiple of workgroup size
+                    stage.buf_threshold -= stage.buf_threshold % WORKGROUP_SIZE;
                     std::cout << "Reducing stage " << std::to_string(stage.index)
                               << " buf threshold to: " << std::to_string(stage.buf_threshold)
                               << std::endl;
@@ -585,9 +597,15 @@ uint64_t ClSolver::solve_subboard(const std::vector<start_condition>::const_iter
 
         // select buffer
         stage.clKernel.setArg(1, item.bufferIdx);
+
+        size_t local_size = WORKGROUP_SIZE;
+        while(g_work_size % local_size != 0) {
+            local_size /= 2;
+        }
+
         // Launch kernel on the compute device.
         err = queue.enqueueNDRangeKernel(stage.clKernel, cl::NullRange,
-                                         cl::NDRange{g_work_size}, cl::NDRange{std::min(WORKGROUP_SIZE, g_work_size)},
+                                         cl::NDRange{g_work_size}, cl::NDRange{local_size},
                                          nullptr, &stage.clStageDone);
 
         if(err != CL_SUCCESS) {
