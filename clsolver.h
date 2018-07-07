@@ -14,7 +14,8 @@ class ClSolver
 public:
     ClSolver();
     bool init(uint8_t boardsize, uint8_t placed);
-    uint64_t solve_subboard(const std::vector<start_condition>& start);
+    uint64_t solve_subboard(const std::vector<start_condition>::const_iterator &begin,
+                            const std::vector<start_condition>::const_iterator &end);
 private:
 
     enum class STAGE_TYPE {FIRST, MID, LAST};

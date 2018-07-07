@@ -85,7 +85,7 @@ ClSolver::ClSolver()
 constexpr uint_fast8_t MINN = 2;
 constexpr uint_fast8_t MAXN = 29;
 
-constexpr size_t N_STACKS = 1024*8; // number of stacks
+constexpr size_t N_STACKS = 1024*4+256; // number of stacks
 constexpr size_t WORKGROUP_SIZE = 64;   // number of threads that are run in parallel
 constexpr size_t STACK_SIZE = N_STACKS+128;      // number of elements in a stack
 constexpr size_t PLACED_PER_STAGE = 2;  // number of queens placed per sieve stage
@@ -452,15 +452,16 @@ void ClSolver::fill_work_queue(cl::CommandQueue& queue, std::list<stage_work_ite
     }*/
 }
 
-uint64_t ClSolver::solve_subboard(const std::vector<start_condition> &start)
+uint64_t ClSolver::solve_subboard(const std::vector<start_condition>::const_iterator &begin,
+                                  const std::vector<start_condition>::const_iterator &end)
 {
     cl_int err = CL_SUCCESS;
 
-    if(start.empty()) {
+    if(begin == end) {
         return 0;
     }
 
-    auto startIt = start.begin();
+    auto startIt = begin;
 
     // init presolver
     PreSolver pre(boardsize, placed, presolve_depth, *startIt);
@@ -485,7 +486,7 @@ uint64_t ClSolver::solve_subboard(const std::vector<start_condition> &start)
             auto hostBufIt = hostStartBuf.begin();
             while(hostBufIt != hostStartBuf.end()) {
                 hostBufIt = pre.getNext(hostBufIt, hostStartBuf.cend());
-                if(pre.empty() && (startIt == start.end())) {
+                if(pre.empty() && (startIt == end)) {
                     // out of start conditions
                     std::cout << "Out of start conditions" << std::endl;
                     break;
@@ -520,7 +521,7 @@ uint64_t ClSolver::solve_subboard(const std::vector<start_condition> &start)
 
             // Launch kernel on the compute device.
             err = queue.enqueueNDRangeKernel(stage.clKernel, cl::NullRange,
-                                             cl::NDRange{input_cnt}, cl::NDRange{std::min(WORKGROUP_SIZE, N_STACKS)},
+                                             cl::NDRange{input_cnt}, cl::NDRange{std::min(WORKGROUP_SIZE, input_cnt)},
                                              nullptr, &stage.clStageDone);
 
             if(err != CL_SUCCESS) {
