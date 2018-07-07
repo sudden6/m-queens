@@ -284,7 +284,7 @@ kernel void inter_step(__global const start_condition* in_starts, /* base of the
 
     __local uint_fast32_t cols[WORKGROUP_SIZE][DEPTH]; // Our backtracking 'stack'
     __local uint_fast32_t diagl[WORKGROUP_SIZE][DEPTH], diagr[WORKGROUP_SIZE][DEPTH];
-    __local int_fast8_t rest[WORKGROUP_SIZE][DEPTH]; // number of rows left
+    //__local int_fast8_t rest[WORKGROUP_SIZE][DEPTH]; // number of rows left
     uint_fast32_t posibs;
     int_fast8_t d = 0; // d is our depth in the backtrack stack
     uint l_out_stack_idx = out_stack_idx[G];
@@ -355,7 +355,9 @@ kernel void inter_step(__global const start_condition* in_starts, /* base of the
 #endif
 
     // we're allready two rows into the field here
-    rest[L][d] = REST_INIT;
+    //rest[L][d] = REST_INIT;
+    uint rest = REST_INIT;
+    store_cnt(&rest, d);
 
     //  The variable posib contains the bitmask of possibilities we still have
     //  to try in a given row ...
@@ -371,7 +373,8 @@ kernel void inter_step(__global const start_condition* in_starts, /* base of the
       // performance
       uint_fast32_t diagl_shifted = diagl[L][d] << 1;
       uint_fast32_t diagr_shifted = diagr[L][d] >> 1;
-      int_fast8_t l_rest = rest[L][d];
+      //int_fast8_t l_rest = rest[L][d];
+      load_cnt(&rest, d);
       uint_fast32_t l_cols = cols[L][d];
 
       while (posib != UINT_FAST32_MAX) {
@@ -387,8 +390,12 @@ kernel void inter_step(__global const start_condition* in_starts, /* base of the
 #ifdef LOOKAHEAD
             uint_fast32_t lookahead1 = (bit | (new_diagl << (LOOKAHEAD - 2)) | (new_diagr >> (LOOKAHEAD - 2)));
             uint_fast32_t lookahead2 = (bit | (new_diagl << (LOOKAHEAD - 1)) | (new_diagr >> (LOOKAHEAD - 1)));
-            uint_fast8_t allowed1 = l_rest >= 0;
-            uint_fast8_t allowed2 = l_rest > 0;
+            //uint_fast8_t allowed1 = l_rest >= 0;
+            //uint_fast8_t allowed2 = l_rest > 0;
+
+            uint_fast8_t allowed1 = (rest & 0xFF) >= 0;
+            uint_fast8_t allowed2 = (rest & 0xFF) > 0;
+
 
             if(allowed1 && (lookahead1 == UINT_FAST32_MAX)) {
                 continue;
@@ -398,7 +405,7 @@ kernel void inter_step(__global const start_condition* in_starts, /* base of the
                 continue;
             }
 #endif
-            if(l_rest == STOP_DEPTH) {
+            if((rest & 0xFF) == STOP_DEPTH) {
                 out_starts[OUT_STACK_IDX(l_out_stack_idx)].cols = bit;
 #ifdef DEBUG
                 printf("M|OUT G: %d, stack_idx: %d, set: %d, addr: %p\n",
@@ -415,7 +422,7 @@ kernel void inter_step(__global const start_condition* in_starts, /* base of the
                 continue;
             }
 
-            l_rest--;
+            rest--;
 
             // The next two lines save stack depth + backtrack operations
             // when we passed the last possibility in a row.
@@ -436,7 +443,8 @@ kernel void inter_step(__global const start_condition* in_starts, /* base of the
             cols[L][d] = bit;
             diagl[L][d] = new_diagl;
             diagr[L][d] = new_diagr;
-            rest[L][d] = l_rest;
+            //rest[L][d] = l_rest;
+            store_cnt(&rest, d);
             diagl_shifted = new_diagl << 1;
             diagr_shifted = new_diagr >> 1;
         }

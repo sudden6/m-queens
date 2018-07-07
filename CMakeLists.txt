@@ -9,6 +9,7 @@ find_package(OpenCL REQUIRED)
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads REQUIRED)
 
+set (CMAKE_CXX_FLAGS "-march=native")
 
 set(${PROJECT_NAME}_SOURCES
   clqueens.cl
