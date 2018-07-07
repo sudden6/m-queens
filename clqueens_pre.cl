@@ -126,6 +126,9 @@ void sub_cnt(uint* var) {
     //printf("[%03d][A] sub  | var: %08x\n", G, *var);
 }
 
+// start conditions consumed by each work item
+#define K_FACTOR 2
+
 kernel void first_step(__global const start_condition* in_starts, /* base of the input start conditions, G_SIZE*EXPANSION must not overflow output buffers */
                        __global start_condition* out_starts,      /* base of the output start conditions, must be N_STACKS * STACK_SIZE elements */
                        __global int* out_stack_idx		  /* base of the stack indizes, must be N_STACKS elements */
@@ -133,13 +136,18 @@ kernel void first_step(__global const start_condition* in_starts, /* base of the
 
     __local uint_fast32_t cols[WORKGROUP_SIZE][DEPTH]; // Our backtracking 'stack'
     __local uint_fast32_t diagl[WORKGROUP_SIZE][DEPTH], diagr[WORKGROUP_SIZE][DEPTH];
+    uint l_out_stack_idx = out_stack_idx[G];
+
+    for(size_t i = 0; i < K_FACTOR; i++) {
     //__local int_fast8_t rest[WORKGROUP_SIZE]; // number of rows left
     uint rest = 0;
     uint_fast32_t posibs = 0;
     int_fast8_t d = 0; // d is our depth in the backtrack stack
-    uint l_out_stack_idx = out_stack_idx[G];
+
+    const __global start_condition* in_start = &in_starts[N_STACKS*i + G];
+
     // The UINT_FAST32_MAX here is used to fill all 'coloumn' bits after n ...
-    cols[L][d] = in_starts[G].cols | (UINT_FAST32_MAX << N);
+    cols[L][d] = in_start->cols | (UINT_FAST32_MAX << N);
 #ifdef ASSERT
     if(popcount(cols[L][d]&COL_MASK) != PLACED) {
         printf("[F] entry: wrong number of bits set: %d\n", popcount(cols[L][d]&COL_MASK));
@@ -150,8 +158,8 @@ kernel void first_step(__global const start_condition* in_starts, /* base of the
 #endif
 
     // This places the first two queens
-    diagl[L][d] = in_starts[G].diagl;
-    diagr[L][d] = in_starts[G].diagr;
+    diagl[L][d] = in_start->diagl;
+    diagr[L][d] = in_start->diagr;
 #define LOOKAHEAD 3
 #ifdef LOOKAHEAD
 #define REST_INIT (N - LOOKAHEAD - PLACED)
@@ -269,6 +277,7 @@ kernel void first_step(__global const start_condition* in_starts, /* base of the
       d--;
     }
 
+    } // K_FACTOR end
     out_stack_idx[G] = l_out_stack_idx;
 }
 
