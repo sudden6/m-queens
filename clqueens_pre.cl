@@ -56,8 +56,6 @@ stages output in each stack.
 #error "DEPTH not defined"
 #endif
 
-#define MAXN 29
-
 typedef char int_fast8_t;
 typedef uchar uint_fast8_t;
 typedef short int_fast16_t;
@@ -83,6 +81,8 @@ typedef ulong uint_fast64_t;
 // output array access
 
 #define OUT_STACK_IDX(x) (G*STACK_SIZE + (x))
+
+//#define ASSERT
 
 // pack two nibbles into one byte
 uint get_nibble(__local unsigned char* byte, uint index) {
@@ -126,6 +126,8 @@ void sub_cnt(uint* var) {
     //printf("[%03d][A] sub  | var: %08x\n", G, *var);
 }
 
+//#define DEBUG
+
 kernel void first_step(__global const start_condition* in_starts, /* base of the input start conditions, G_SIZE*EXPANSION must not overflow output buffers */
                        __global start_condition* out_starts,      /* base of the output start conditions, must be N_STACKS * STACK_SIZE elements */
                        __global int* out_stack_idx		  /* base of the stack indizes, must be N_STACKS elements */
@@ -134,7 +136,7 @@ kernel void first_step(__global const start_condition* in_starts, /* base of the
     __local uint_fast32_t cols[WORKGROUP_SIZE][DEPTH]; // Our backtracking 'stack'
     __local uint_fast32_t diagl[WORKGROUP_SIZE][DEPTH], diagr[WORKGROUP_SIZE][DEPTH];
     //__local int_fast8_t rest[WORKGROUP_SIZE]; // number of rows left
-    uint rest = 0;
+    //uint rest = 0;
     uint_fast32_t posibs = 0;
     int_fast8_t d = 0; // d is our depth in the backtrack stack
     uint l_out_stack_idx = out_stack_idx[G];
@@ -146,7 +148,7 @@ kernel void first_step(__global const start_condition* in_starts, /* base of the
     }
 #endif
 #ifdef DEBUG
-    printf("F|IN  stage_idx: %d, cols: %x, set: %d\n", l_out_stack_idx, cols[L][d], popcount(cols[L][d]&COL_MASK));
+    printf("F|IN  gid: %d, stage_idx: %d, cols: %x, set: %d\n", G, l_out_stack_idx, cols[L][d], popcount(cols[L][d]&COL_MASK));
 #endif
 
     // This places the first two queens
@@ -154,18 +156,22 @@ kernel void first_step(__global const start_condition* in_starts, /* base of the
     diagr[L][d] = in_starts[G].diagr;
 #define LOOKAHEAD 3
 #ifdef LOOKAHEAD
-#define REST_INIT (N - LOOKAHEAD - PLACED)
-#define STOP_DEPTH (REST_INIT - DEPTH + 1)
+//#define REST_INIT (N - LOOKAHEAD - PLACED)
+//#define STOP_DEPTH (REST_INIT - DEPTH + 1)
 #else
 // this is a backup STOP_DEPTH implementation
 #define REST_INIT DEPTH
-#define STOP_DEPTH 1
 #endif
+
+#define STOP_DEPTH (PLACED + DEPTH)
+
 
     // we're allready two rows into the field here
     //set_nibble(&rest[L], d, REST_INIT);
-    rest = REST_INIT;
-    store_cnt(&rest, d);
+    //rest = REST_INIT;
+    //store_cnt(&rest, d);
+    //uchar2 rest_store = 0;
+    //rest_store.s0 = REST_INIT;
 
     //  The variable posib contains the bitmask of possibilities we still have
     //  to try in a given row ...
@@ -182,7 +188,8 @@ kernel void first_step(__global const start_condition* in_starts, /* base of the
       }
 #endif
       //int_fast8_t l_rest = get_nibble(&rest[L], d);
-      load_cnt(&rest, d);
+      //load_cnt(&rest, d);
+      //uchar l_rest = d ? rest_store.s1 : rest_store.s0;
 
       uint_fast32_t l_cols = cols[L][d];
 
@@ -198,26 +205,28 @@ kernel void first_step(__global const start_condition* in_starts, /* base of the
         if (new_posib != UINT_FAST32_MAX) {
 #ifdef LOOKAHEAD
             uint_fast32_t lookahead1 = (bit | (new_diagl << (LOOKAHEAD - 2)) | (new_diagr >> (LOOKAHEAD - 2)));
-            uint_fast32_t lookahead2 = (bit | (new_diagl << (LOOKAHEAD - 1)) | (new_diagr >> (LOOKAHEAD - 1)));
-            // the cast to char is needed to handle the signed nature of rest correctly
-            uint_fast8_t allowed1 = (rest & 0xFF) >= 0;
-            uint_fast8_t allowed2 = (rest & 0xFF) > 0;
+            //uint_fast8_t allowed1 =  >= 0;
+            //uint_fast8_t allowed2 = popcount(bit & COL_MASK) < (N-2);
 
 
-            if(allowed1 && (lookahead1 == UINT_FAST32_MAX)) {
+            if(lookahead1 == UINT_FAST32_MAX) {
                 continue;
             }
 
-            if(allowed2 && (lookahead2 == UINT_FAST32_MAX)) {
+#if (PLACED + DEPTH) < (N-2)
+            uint_fast32_t lookahead2 = (bit | (new_diagl << (LOOKAHEAD - 1)) | (new_diagr >> (LOOKAHEAD - 1)));
+            if(lookahead2 == UINT_FAST32_MAX) {
                 continue;
             }
 #endif
+#endif
 
-            if((rest & 0xFF) == STOP_DEPTH) {
+            // high bits are set to 1, add this number
+            if(popcount(bit) == (32 - N + STOP_DEPTH)) {
                 out_starts[OUT_STACK_IDX(l_out_stack_idx)].cols = bit;
 #ifdef DEBUG
-                printf("F|OUT gid: %d, cols: %x, set: %d d: %d posib: %x posibs: %x rest: %v2d\n",
-                             G, bit, popcount(bit&COL_MASK), d, posib, posibs, (rest[L][0], rest[L][1]));
+                printf("F|OUT gid: %d, cols: %x, set: %d d: %d posib: %x posibs: %x\n",
+                             G, bit, popcount(bit&COL_MASK), d, posib, posibs);
 #endif
 #ifdef ASSERT
                 if(popcount(bit&COL_MASK) != (PLACED + DEPTH)) {
@@ -230,9 +239,9 @@ kernel void first_step(__global const start_condition* in_starts, /* base of the
                 continue;
             }
 						
-            rest--;
+            //l_rest--;
             //sub_cnt(&rest);
-#ifdef DEBUG
+#ifdef DEBUG_1
             uint tmp = rest & 0xFF;
             if(tmp != 0 && tmp != 1 && tmp != 2) {
                 printf("[%03d] O_o tmp: %x\n", G, tmp);
@@ -260,7 +269,12 @@ kernel void first_step(__global const start_condition* in_starts, /* base of the
             diagl[L][d] = new_diagl;
             diagr[L][d] = new_diagr;
             //set_nibble(&rest[L], d, l_rest);
-            store_cnt(&rest, d);
+            //store_cnt(&rest, d);
+            /*if(d) {
+                rest_store.s1 = l_rest;
+            } else {
+                rest_store.s0 = l_rest;
+            }*/
             diagl_shifted = new_diagl << 1;
             diagr_shifted = new_diagr >> 1;
         } 
@@ -269,8 +283,13 @@ kernel void first_step(__global const start_condition* in_starts, /* base of the
       d--;
     }
 
+#ifdef DEBUG
+    printf("F|FIN gid: %d\n");
+#endif
     out_stack_idx[G] = l_out_stack_idx;
 }
+
+
 
 #define FULL_RUN
 
@@ -346,20 +365,22 @@ kernel void inter_step(__global const start_condition* in_starts, /* base of the
 #undef LOOKAHEAD
 #define LOOKAHEAD 3
 #ifdef LOOKAHEAD
-#define REST_INIT (N - LOOKAHEAD - PLACED)
-#define STOP_DEPTH (REST_INIT - DEPTH + 1)
+//#define REST_INIT (N - LOOKAHEAD - PLACED)
+//#define STOP_DEPTH (REST_INIT - DEPTH + 1)
 #else
 // this is a backup STOP_DEPTH implementation
 #define REST_INIT DEPTH
-#define STOP_DEPTH 1
 #endif
+
+#define STOP_DEPTH (PLACED + DEPTH)
+
 
     // we're allready two rows into the field here
     //rest[L][d] = REST_INIT;
     //uint rest = REST_INIT;
     //store_cnt(&rest, d);
-    uchar2 rest_store = 0;
-    rest_store.s0 = REST_INIT;
+    //uchar2 rest_store = 0;
+    //rest_store.s0 = REST_INIT;
 
     //  The variable posib contains the bitmask of possibilities we still have
     //  to try in a given row ...
@@ -376,7 +397,7 @@ kernel void inter_step(__global const start_condition* in_starts, /* base of the
       uint_fast32_t diagl_shifted = diagl[L][d] << 1;
       uint_fast32_t diagr_shifted = diagr[L][d] >> 1;
       //int_fast8_t l_rest = rest[L][d];
-      uchar l_rest = d ? rest_store.s1 : rest_store.s0;
+      //uchar l_rest = d ? rest_store.s1 : rest_store.s0;
       //load_cnt(&rest, d);
       uint_fast32_t l_cols = cols[L][d];
 
@@ -392,23 +413,27 @@ kernel void inter_step(__global const start_condition* in_starts, /* base of the
         if (new_posib != UINT_FAST32_MAX) {
 #ifdef LOOKAHEAD
             uint_fast32_t lookahead1 = (bit | (new_diagl << (LOOKAHEAD - 2)) | (new_diagr >> (LOOKAHEAD - 2)));
-            uint_fast32_t lookahead2 = (bit | (new_diagl << (LOOKAHEAD - 1)) | (new_diagr >> (LOOKAHEAD - 1)));
-            uint_fast8_t allowed1 = l_rest >= 0;
-            uint_fast8_t allowed2 = l_rest > 0;
+            //uint_fast32_t lookahead2 = (bit | (new_diagl << (LOOKAHEAD - 1)) | (new_diagr >> (LOOKAHEAD - 1)));
+            //uint_fast8_t allowed1 = l_rest >= 0;
+            //uint_fast8_t allowed2 = l_rest > 0;
 
             //uint_fast8_t allowed1 = (rest & 0xFF) >= 0;
             //uint_fast8_t allowed2 = (rest & 0xFF) > 0;
-
-
-            if(allowed1 && (lookahead1 == UINT_FAST32_MAX)) {
+            if(lookahead1 == UINT_FAST32_MAX) {
                 continue;
             }
 
-            if(allowed2 && (lookahead2 == UINT_FAST32_MAX)) {
+#if (PLACED+DEPTH) < (N-2)
+            uint_fast32_t lookahead2 = (bit | (new_diagl << (LOOKAHEAD - 1)) | (new_diagr >> (LOOKAHEAD - 1)));
+            if(lookahead2 == UINT_FAST32_MAX) {
                 continue;
             }
 #endif
-            if(l_rest == STOP_DEPTH) {
+
+
+
+#endif
+            if(popcount(bit) == (32 - N + STOP_DEPTH)) {
                 out_starts[OUT_STACK_IDX(l_out_stack_idx)].cols = bit;
 #ifdef DEBUG
                 printf("M|OUT G: %d, stack_idx: %d, set: %d, addr: %p\n",
@@ -425,7 +450,7 @@ kernel void inter_step(__global const start_condition* in_starts, /* base of the
                 continue;
             }
 
-            l_rest--;
+            //l_rest--;
 
             // The next two lines save stack depth + backtrack operations
             // when we passed the last possibility in a row.
@@ -448,11 +473,12 @@ kernel void inter_step(__global const start_condition* in_starts, /* base of the
             diagr[L][d] = new_diagr;
             //rest[L][d] = l_rest;
             //store_cnt(&rest, d);
+            /*
             if(d) {
                 rest_store.s1 = l_rest;
             } else {
                 rest_store.s0 = l_rest;
-            }
+            }*/
             diagl_shifted = new_diagl << 1;
             diagr_shifted = new_diagr >> 1;
         }
@@ -463,6 +489,8 @@ kernel void inter_step(__global const start_condition* in_starts, /* base of the
 
     out_stack_idx[G] = l_out_stack_idx;
 }
+
+#undef DEBUG
 
 kernel void final_step(__global const start_condition* in_starts, /* input buffer base */
                        uint buffer_offset,                        /* input buffer number, must be 0 <= x < N_STACKS */
