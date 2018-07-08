@@ -213,7 +213,7 @@ static const uint64_t results[27] = {
     22317699616364044ULL,
     234907967154122528ULL};
 
-constexpr uint32_t THREADS = 4;
+constexpr uint32_t THREADS = 1;
 static uint64_t thread_results[THREADS] = {0};
 
 void thread_worker(ClSolver solver, uint32_t id,

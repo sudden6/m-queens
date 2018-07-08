@@ -35,6 +35,7 @@ private:
         uint8_t depth;          // number of queens placed in this stage
         cl_int buf_threshold;   // limit after which the buffer is emptied
         uint32_t max_fill = 0;  // maximum fill level of the stage/sum buffer
+        uint32_t buf_size = 0;  // size of the stage buffer
     };
 
     struct stage_work_item {
@@ -63,8 +64,9 @@ private:
     uint8_t queens_left();
     bool append_mid_stage();
     bool append_last_stage();
+    void compute_stage_buf_size(sieve_stage &stage);
     void compute_buf_threshold(sieve_stage &stage);
-    void fill_work_queue(cl::CommandQueue &queue, std::list<stage_work_item> &work_queue, sieve_stage &stage, cl_int threshold);
+    void fill_work_queue(std::list<stage_work_item> &work_queue, sieve_stage &stage);
 };
 
 #endif // CLSOLVER_H

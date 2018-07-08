@@ -139,7 +139,7 @@ kernel void first_step(__global const start_condition* in_starts, /* base of the
     //uint rest = 0;
     uint_fast32_t posibs = 0;
     int_fast8_t d = 0; // d is our depth in the backtrack stack
-    uint l_out_stack_idx = out_stack_idx[G];
+    uint l_out_stack_idx = G*STACK_SIZE + out_stack_idx[G];
     // The UINT_FAST32_MAX here is used to fill all 'coloumn' bits after n ...
     cols[L][d] = in_starts[G].cols | (UINT_FAST32_MAX << N);
 #ifdef ASSERT
@@ -154,7 +154,7 @@ kernel void first_step(__global const start_condition* in_starts, /* base of the
     // This places the first two queens
     diagl[L][d] = in_starts[G].diagl;
     diagr[L][d] = in_starts[G].diagr;
-#define LOOKAHEAD 3
+//#define LOOKAHEAD 3
 #ifdef LOOKAHEAD
 //#define REST_INIT (N - LOOKAHEAD - PLACED)
 //#define STOP_DEPTH (REST_INIT - DEPTH + 1)
@@ -223,7 +223,7 @@ kernel void first_step(__global const start_condition* in_starts, /* base of the
 
             // high bits are set to 1, add this number
             if(popcount(bit) == (32 - N + STOP_DEPTH)) {
-                out_starts[OUT_STACK_IDX(l_out_stack_idx)].cols = bit;
+                out_starts[l_out_stack_idx].cols = bit;
 #ifdef DEBUG
                 printf("F|OUT gid: %d, cols: %x, set: %d d: %d posib: %x posibs: %x\n",
                              G, bit, popcount(bit&COL_MASK), d, posib, posibs);
@@ -233,8 +233,8 @@ kernel void first_step(__global const start_condition* in_starts, /* base of the
                     printf("[F] exit: wrong number of bits set: %d\n", popcount(bit&COL_MASK));
                 }
 #endif
-                out_starts[OUT_STACK_IDX(l_out_stack_idx)].diagl = new_diagl;
-                out_starts[OUT_STACK_IDX(l_out_stack_idx)].diagr = new_diagr;
+                out_starts[l_out_stack_idx].diagl = new_diagl;
+                out_starts[l_out_stack_idx].diagr = new_diagr;
                 l_out_stack_idx++;
                 continue;
             }
@@ -286,14 +286,15 @@ kernel void first_step(__global const start_condition* in_starts, /* base of the
 #ifdef DEBUG
     printf("F|FIN gid: %d\n");
 #endif
-    out_stack_idx[G] = l_out_stack_idx;
+    out_stack_idx[G] = l_out_stack_idx - G*STACK_SIZE;
 }
 
 
 
 #define FULL_RUN
+//#define DEBUG
 
-kernel void inter_step(__global const start_condition* in_starts, /* base of the input start conditions, G_SIZE*EXPANSION must not overflow output buffers */
+kernel void inter_step(__global start_condition* in_starts, /* base of the input start conditions, G_SIZE*EXPANSION must not overflow output buffers */
                        uint buffer_offset,                        /* input buffer number, must be 0 <= x < N_STACKS */
                        __global start_condition* out_starts,      /* base of the output start conditions, must be N_STACKS * STACK_SIZE elements */
                        __global int* out_stack_idx,            /* base of the stack indizes, must be N_STACKS elements */
@@ -335,7 +336,7 @@ kernel void inter_step(__global const start_condition* in_starts, /* base of the
     }
 
     uint in_start_idx = buffer_offset * STACK_SIZE + in_stack_item;
-#else
+#elsif 0
     // stack index was already decreased by host, add own Gid here to access
     int stack_element = in_stack_idx[buffer_offset] + G;
 #ifdef ASSERT
@@ -345,6 +346,7 @@ kernel void inter_step(__global const start_condition* in_starts, /* base of the
 #endif
     uint in_start_idx = buffer_offset * STACK_SIZE + stack_element;
 #endif
+    uint in_start_idx = buffer_offset + G;
 
     // The UINT_FAST32_MAX here is used to fill all 'coloumn' bits after n ...
     cols[L][d] = in_starts[in_start_idx].cols | (UINT_FAST32_MAX << N);
@@ -352,6 +354,10 @@ kernel void inter_step(__global const start_condition* in_starts, /* base of the
     // This places the first two queens
     diagl[L][d] = in_starts[in_start_idx].diagl;
     diagr[L][d] = in_starts[in_start_idx].diagr;
+    in_starts[in_start_idx].cols = 0;
+    in_starts[in_start_idx].diagl = 0;
+    in_starts[in_start_idx].diagr = 0;
+
 
 #ifdef ASSERT
     int bitsset = popcount(cols[L][d]&COL_MASK);
@@ -360,7 +366,7 @@ kernel void inter_step(__global const start_condition* in_starts, /* base of the
     }
 #endif
 #ifdef DEBUG
-    printf("M|IN G: %d, lid: %d, cols: %x\n", G, L, cols[L][d]);
+    printf("M|IN G: %d, lid: %d, cols: %x, buf_idx: %d\n", G, L, cols[L][d], buffer_offset);
 #endif
 #undef LOOKAHEAD
 #define LOOKAHEAD 3
@@ -492,7 +498,7 @@ kernel void inter_step(__global const start_condition* in_starts, /* base of the
 
 #undef DEBUG
 
-kernel void final_step(__global const start_condition* in_starts, /* input buffer base */
+kernel void final_step(__global start_condition* in_starts, /* input buffer base */
                        uint buffer_offset,                        /* input buffer number, must be 0 <= x < N_STACKS */
                        __global int* in_stack_idx,                /* base of the stack indizes, will remove G_SIZE elements */
                        __global uint* out_sum                     /* sum buffer base, must be G_SIZE elements */
@@ -537,7 +543,7 @@ kernel void final_step(__global const start_condition* in_starts, /* input buffe
     }
 
     uint in_start_idx = buffer_offset * STACK_SIZE + in_stack_item;
-#else
+#elsif 0
     // stack index was already decreased by host, add own Gid here for access
     int stack_element = in_stack_idx[buffer_offset] + G;
 #ifdef ASSERT
@@ -547,6 +553,7 @@ kernel void final_step(__global const start_condition* in_starts, /* input buffe
 #endif
     uint in_start_idx = buffer_offset * STACK_SIZE + stack_element;
 #endif
+    uint in_start_idx = buffer_offset + G;
 
     // The UINT_FAST32_MAX here is used to fill all 'coloumn' bits after n ...
     cols[L][d] = in_starts[in_start_idx].cols | (UINT_FAST32_MAX << N);
@@ -564,6 +571,10 @@ kernel void final_step(__global const start_condition* in_starts, /* input buffe
     // This places the first two queens
     diagl[L][d] = in_starts[in_start_idx].diagl;
     diagr[L][d] = in_starts[in_start_idx].diagr;
+
+    in_starts[in_start_idx].cols = 0;
+    in_starts[in_start_idx].diagl = 0;
+    in_starts[in_start_idx].diagr = 0;
 
 #ifdef LOOKAHEAD
 //* TODO(sudden6): check if lookahead even works for last 2 steps

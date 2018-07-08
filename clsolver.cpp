@@ -85,9 +85,8 @@ ClSolver::ClSolver()
 constexpr uint_fast8_t MINN = 2;
 constexpr uint_fast8_t MAXN = 29;
 
-constexpr size_t N_STACKS = 1024*4+256; // number of stacks
+constexpr size_t N_STACKS = 2560*3; // number of stacks
 constexpr size_t WORKGROUP_SIZE = 64;   // number of threads that are run in parallel
-constexpr size_t STACK_SIZE = N_STACKS+128;      // number of elements in a stack
 constexpr size_t PLACED_PER_STAGE = 2;  // number of queens placed per sieve stage
 
 /*
@@ -96,7 +95,7 @@ constexpr size_t PLACED_PER_STAGE = 2;  // number of queens placed per sieve sta
  * With a too high GPU_DEPTH, solving a board takes too long and the
  * GPU is detected as "hung" by the driver and reset or the system crashes.
  */
-constexpr uint_fast8_t GPU_DEPTH = 10;
+constexpr uint_fast8_t GPU_DEPTH = 12;
 
 bool ClSolver::init(uint8_t boardsize, uint8_t placed)
 {
@@ -156,7 +155,7 @@ bool ClSolver::build_program(sieve_stage& stage) {
                   << " -D DEPTH=" << std::to_string(stage.depth)
                   << " -D STAGE_IDX=" << std::to_string(stage.index)
                   << " -D EXPANSION=" << std::to_string(stage.expansion)
-                  << " -D STACK_SIZE=" << std::to_string(STACK_SIZE);
+                  << " -D STACK_SIZE=" << std::to_string(stage.buf_size);
 
     std::string options = optionsStream.str();
 
@@ -193,8 +192,13 @@ void ClSolver::compute_expansion(sieve_stage& stage) {
     stage.expansion = expansion;
 }
 
+// +1 is the safety factor
+void ClSolver::compute_stage_buf_size(sieve_stage& stage) {
+    stage.buf_size = N_STACKS + stage.expansion + 1;
+}
+
 void ClSolver::compute_buf_threshold(sieve_stage& stage) {
-    stage.buf_threshold = STACK_SIZE - stage.expansion - 1;
+    stage.buf_threshold = N_STACKS;
 }
 
 bool ClSolver::first_stage() {
@@ -210,6 +214,7 @@ bool ClSolver::first_stage() {
     assert(stage.placed < boardsize);
 
     compute_expansion(stage);
+    compute_stage_buf_size(stage);
     compute_buf_threshold(stage);
 
     std::cout << "Creating first stage" << std::endl;
@@ -226,7 +231,7 @@ bool ClSolver::first_stage() {
 
     // create stage buffer
     stage.clStageBuf = cl::Buffer(context, CL_MEM_READ_WRITE,
-                                  N_STACKS * STACK_SIZE * sizeof(start_condition), nullptr, &err);
+                                  N_STACKS * stage.buf_size * sizeof(start_condition), nullptr, &err);
     if(err != CL_SUCCESS) {
         std::cout << "cl::Buffer clStageBuf failed: " << err << std::endl;
         return false;
@@ -281,6 +286,7 @@ bool ClSolver::append_mid_stage() {
     stage.depth = PLACED_PER_STAGE;
 
     compute_expansion(stage);
+    compute_stage_buf_size(stage);
     compute_buf_threshold(stage);
 
     std::cout << "Creating mid stage " << std::to_string(stage.index) << std::endl;
@@ -297,7 +303,7 @@ bool ClSolver::append_mid_stage() {
 
     // create stage buffer
     stage.clStageBuf = cl::Buffer(context, CL_MEM_READ_WRITE,
-                                  N_STACKS * STACK_SIZE * sizeof(start_condition), nullptr, &err);
+                                  N_STACKS * stage.buf_size * sizeof(start_condition), nullptr, &err);
     if(err != CL_SUCCESS) {
         std::cout << "cl::Buffer clStageBuf failed: " << err << std::endl;
         return false;
@@ -360,7 +366,7 @@ bool ClSolver::append_last_stage() {
     stage.depth = queens_left;
 
     compute_expansion(stage);
-    compute_buf_threshold(stage);
+    stage.buf_threshold = UINT32_MAX / stage.depth - 10;
 
     std::cout << "Creating final stage " << std::to_string(stage.index) << std::endl;
     /*
@@ -374,13 +380,18 @@ bool ClSolver::append_last_stage() {
         return false;
     }
 
-    std::vector<cl_uint> zeroBuffer(N_STACKS, 0);
-
     // Initialize output sum buffer
-    stage.clSum = cl::Buffer(context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR,
-                                  N_STACKS * sizeof(cl_uint), zeroBuffer.data(), &err);
+    stage.clSum = cl::Buffer(context, CL_MEM_READ_WRITE,
+                                  N_STACKS * sizeof(cl_uint), nullptr, &err);
     if(err != CL_SUCCESS) {
         std::cout << "cl::Buffer clSum failed: " << err << std::endl;
+    }
+
+    // zero fill sum buffer
+    err = queue.enqueueFillBuffer<cl_uint>(stage.clSum, 0, 0, N_STACKS * sizeof(cl_uint));
+
+    if(err != CL_SUCCESS) {
+        std::cout << "enqueueFillBuffer failed: " << err << std::endl;
     }
 
     // create device kernel
@@ -412,8 +423,13 @@ typedef cl_uint result_type;
 constexpr size_t NUM_BATCHES = 4;
 constexpr size_t NUM_CMDQUEUES = 2;
 
-void ClSolver::fill_work_queue(cl::CommandQueue& queue, std::list<stage_work_item>& work_queue,
-                               sieve_stage& stage, cl_int threshold) {
+void ClSolver::fill_work_queue(std::list<stage_work_item>& work_queue,
+                               sieve_stage& stage) {
+
+    if(stage.max_fill <= stage.buf_threshold) {
+        return;
+    }
+
     cl_int err = CL_SUCCESS;
 
     // map buffer to host for updating
@@ -424,14 +440,12 @@ void ClSolver::fill_work_queue(cl::CommandQueue& queue, std::list<stage_work_ite
         std::cout << "enqueueMapBuffer failed: " << err << std::endl;
     }
 
-    //assert(mapped_buffer == stage.hostFillCount.get());
-
     cl_int* fill = (cl_int*) mapped_buffer;
     cl_int max_fill = 0;
     for(uint32_t i = 0; i < N_STACKS; i++) {
         if(fill[i] > stage.buf_threshold) {
             cl_int taken = std::min((cl_int)N_STACKS, fill[i]);
-            work_queue.emplace_front(i, stage.index + 1, taken);
+            work_queue.emplace_front(i*stage.buf_size + fill[i] - taken, stage.index + 1, taken);
             fill[i] -= taken;
         }
         max_fill = std::max(fill[i], max_fill);
@@ -448,12 +462,12 @@ void ClSolver::fill_work_queue(cl::CommandQueue& queue, std::list<stage_work_ite
         std::cout << "enqueueUnmapMemObject failed: " << err << std::endl;
     }
 
-    /*
+    //*
     // just ensure our buffers are not modified
     err = queue.enqueueBarrierWithWaitList();
     if(err != CL_SUCCESS) {
         std::cout << "enqueueBarrier failed: " << err << std::endl;
-    }*/
+    }//*/
 }
 
 uint64_t ClSolver::solve_subboard(const std::vector<start_condition>::const_iterator &begin,
@@ -470,6 +484,15 @@ uint64_t ClSolver::solve_subboard(const std::vector<start_condition>::const_iter
     // init presolver
     PreSolver pre(boardsize, placed, presolve_depth, *startIt);
     startIt++;
+
+    uint32_t stage_mem = 0;
+    for(size_t i = 0; i < (stages.size() - 1); i++) {
+        stage_mem += stages.at(i).buf_size;
+    }
+
+    uint32_t mb_needed = (N_STACKS * stage_mem * 12)/(1024 * 1024);
+
+    std::cout << "Memory needed: " << std::to_string(mb_needed) << std::endl;
 
     uint64_t result = 0;
 
@@ -540,9 +563,7 @@ uint64_t ClSolver::solve_subboard(const std::vector<start_condition>::const_iter
 
             stage.max_fill += stage.expansion;
 
-            if(stage.max_fill > stage.buf_threshold) {
-                fill_work_queue(queue, work_queue, stage, stage.buf_threshold);
-            }
+            fill_work_queue(work_queue, stage);
 
             // redo until buffer sufficiently filled
             continue;
@@ -558,9 +579,7 @@ uint64_t ClSolver::solve_subboard(const std::vector<start_condition>::const_iter
                 break;
             }
 
-            if(stage.max_fill > stage.buf_threshold) {
-                fill_work_queue(queue, work_queue, stage, stage.buf_threshold);
-            }
+            fill_work_queue(work_queue, stage);
 
             if(work_queue.empty()) {
                 if(stage.buf_threshold > 0) {
@@ -612,11 +631,12 @@ uint64_t ClSolver::solve_subboard(const std::vector<start_condition>::const_iter
             std::cout << "enqueueNDRangeKernel failed: " << err << std::endl;
         }
 
+        stage.max_fill += stage.expansion;
+
         // Only MID and LAST items can appear here
         // check if last stage
         if(stage.type == STAGE_TYPE::LAST) {
-            const uint32_t runs_threshold = UINT32_MAX / stage.depth - 10;
-            if(stage.max_fill > runs_threshold) {
+            if(stage.max_fill > stage.buf_threshold) {
                 // read back sum buffer
                 std::cout << "reading sum buffer" << std::endl;
                 err = queue.enqueueReadBuffer(stage.clSum, CL_TRUE, 0,
@@ -643,18 +663,21 @@ uint64_t ClSolver::solve_subboard(const std::vector<start_condition>::const_iter
                 stage.max_fill = 0;
             } else {
                 // just ensure our buffers are not modified
-                /*err = queue.enqueueBarrierWithWaitList();
+                /*
+                err = queue.enqueueBarrierWithWaitList();
                 if(err != CL_SUCCESS) {
                     std::cout << "enqueueBarrier failed: " << err << std::endl;
-                }*/
-                stage.max_fill += stage.expansion;
+                }//*/
             }
         } else {
-            stage.max_fill += stage.expansion;
-            if(stage.max_fill > stage.buf_threshold) {
-                fill_work_queue(queue, work_queue, stage, stage.buf_threshold);
-            }
+            fill_work_queue(work_queue, stage);
         }
+        // just ensure our buffers are not modified
+        //*
+        err = queue.enqueueBarrierWithWaitList();
+        if(err != CL_SUCCESS) {
+            std::cout << "enqueueBarrier failed: " << err << std::endl;
+        }//*/
     }
 
     std::cout << "reading sum buffer" << std::endl;
