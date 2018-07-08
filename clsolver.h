@@ -27,7 +27,6 @@ private:
         cl::Buffer clFillCount; // buffer that holds the fill status
         cl::Buffer clSum;       // buffer for the sum at the last stage
         cl::Event clStageDone;  // event when this stage is complete
-        //std::unique_ptr<cl_int> hostFillCount = nullptr;
         STAGE_TYPE type;        // type of the current stage
         uint8_t index;          // index of the current stage, mainly for debugging
         uint8_t placed;         // number of queens at the beginning of this stage
@@ -36,16 +35,16 @@ private:
         cl_int buf_threshold;   // limit after which the buffer is emptied
         uint32_t max_fill = 0;  // maximum fill level of the stage/sum buffer
         uint32_t buf_size = 0;  // size of the stage buffer
+        uint32_t in_buf_size = 0;   // size of the input stack
+        uint32_t max_runs = 1;
     };
 
     struct stage_work_item {
-        cl_uint bufferIdx;      // must be 32 Bit, to match OpenCL kernel
         uint32_t stageIdx;
-        cl_int taken;           // amount of items marked as taken, but not yet removed from buffer
-        stage_work_item(cl_uint bufferIdx, uint32_t stageIdx, cl_int taken)
-            : bufferIdx{bufferIdx}
-            , stageIdx{stageIdx}
-            , taken{taken}
+        cl_uint max_runs;        // maximum number of input start conditions
+        stage_work_item(uint32_t stageIdx, cl_uint max_runs)
+            : stageIdx{stageIdx}
+            , max_runs{max_runs}
         {}
     };
 

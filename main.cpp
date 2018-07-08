@@ -18,7 +18,7 @@
 //#define TESTSUITE
 
 #ifndef N
-#define N 18
+#define N 16
 #endif
 #define MAXN 29
 
@@ -226,7 +226,7 @@ void thread_worker(ClSolver solver, uint32_t id,
 int main(int argc, char **argv) {
 
 #ifdef TESTSUITE
-  int i = 15;
+  int i = 6;
 #else
   int i = N;
 #endif

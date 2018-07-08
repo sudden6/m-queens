@@ -31,7 +31,8 @@ ClSolver::ClSolver()
 
     std::vector<cl::Device> devices;
 
-    err = platform.getDevices(CL_DEVICE_TYPE_GPU|CL_DEVICE_TYPE_CPU, &devices);
+    err = platform.getDevices(/*CL_DEVICE_TYPE_GPU|*/
+                              CL_DEVICE_TYPE_CPU, &devices);
     if(err != CL_SUCCESS) {
         std::cout << "getDevices failed" << std::endl;
         return;
@@ -85,7 +86,7 @@ ClSolver::ClSolver()
 constexpr uint_fast8_t MINN = 2;
 constexpr uint_fast8_t MAXN = 29;
 
-constexpr size_t N_STACKS = 2560*3; // number of stacks
+constexpr size_t N_STACKS = 128; // number of stacks
 constexpr size_t WORKGROUP_SIZE = 64;   // number of threads that are run in parallel
 constexpr size_t PLACED_PER_STAGE = 2;  // number of queens placed per sieve stage
 
@@ -155,7 +156,8 @@ bool ClSolver::build_program(sieve_stage& stage) {
                   << " -D DEPTH=" << std::to_string(stage.depth)
                   << " -D STAGE_IDX=" << std::to_string(stage.index)
                   << " -D EXPANSION=" << std::to_string(stage.expansion)
-                  << " -D STACK_SIZE=" << std::to_string(stage.buf_size);
+                  << " -D IN_STACK_SIZE=" << std::to_string(stage.in_buf_size)
+                  << " -D OUT_STACK_SIZE=" << std::to_string(stage.buf_size);
 
     std::string options = optionsStream.str();
 
@@ -194,11 +196,13 @@ void ClSolver::compute_expansion(sieve_stage& stage) {
 
 // +1 is the safety factor
 void ClSolver::compute_stage_buf_size(sieve_stage& stage) {
-    stage.buf_size = N_STACKS + stage.expansion + 1;
+    // TODO(sudden6): refine this
+    stage.buf_size = stage.max_runs * stage.expansion;
 }
 
 void ClSolver::compute_buf_threshold(sieve_stage& stage) {
-    stage.buf_threshold = N_STACKS;
+    // TODO(sudden6): refine this
+    stage.buf_threshold = 0;
 }
 
 bool ClSolver::first_stage() {
@@ -237,19 +241,16 @@ bool ClSolver::first_stage() {
         return false;
     }
 
-    // host fill count buffer
-    //stage.hostFillCount = std::unique_ptr<cl_int>(new cl_int[N_STACKS]());
-
     // Initialize stage buffer element count to zero
     stage.clFillCount = cl::Buffer(context, CL_MEM_READ_WRITE | CL_MEM_ALLOC_HOST_PTR,
-                                  N_STACKS * sizeof(cl_int), nullptr, &err);
+                                  N_STACKS * sizeof(cl_uint), nullptr, &err);
     if(err != CL_SUCCESS) {
         std::cout << "cl::Buffer clFillCount failed: " << err << std::endl;
         return false;
     }
 
     // zero fill count buffer
-    err = queue.enqueueFillBuffer<cl_int>(stage.clFillCount, 0, 0, N_STACKS * sizeof(cl_int));
+    err = queue.enqueueFillBuffer<cl_int>(stage.clFillCount, 0, 0, N_STACKS * sizeof(cl_uint));
 
     if(err != CL_SUCCESS) {
         std::cout << "enqueueFillBuffer failed: " << err << std::endl;
@@ -284,6 +285,7 @@ bool ClSolver::append_mid_stage() {
     stage.placed = prev_stage.placed + prev_stage.depth;
     stage.index = stages.size();
     stage.depth = PLACED_PER_STAGE;
+    stage.in_buf_size = prev_stage.buf_size;
 
     compute_expansion(stage);
     compute_stage_buf_size(stage);
@@ -309,19 +311,16 @@ bool ClSolver::append_mid_stage() {
         return false;
     }
 
-    // host fill count buffer
-    //stage.hostFillCount = std::unique_ptr<cl_int>(new cl_int[N_STACKS]());
-
     // Initialize stage buffer element count to zero
     stage.clFillCount = cl::Buffer(context, CL_MEM_READ_WRITE | CL_MEM_ALLOC_HOST_PTR,
-                                  N_STACKS * sizeof(cl_int), nullptr, &err);
+                                  N_STACKS * sizeof(cl_uint), nullptr, &err);
     if(err != CL_SUCCESS) {
         std::cout << "cl::Buffer clFillCount failed: " << err << std::endl;
         return false;
     }
 
     // zero fill count buffer
-    err = queue.enqueueFillBuffer<cl_int>(stage.clFillCount, 0, 0, N_STACKS * sizeof(cl_int));
+    err = queue.enqueueFillBuffer<cl_uint>(stage.clFillCount, 0, 0, N_STACKS * sizeof(cl_uint));
 
     if(err != CL_SUCCESS) {
         std::cout << "enqueueFillBuffer failed: " << err << std::endl;
@@ -334,8 +333,9 @@ bool ClSolver::append_mid_stage() {
     }
     // input buffer
     stage.clKernel.setArg(0, prev_stage.clStageBuf);
-    // offset
-    // arg 1 set later
+    // TODO(sudden6): refine this
+    // max_runs
+    stage.clKernel.setArg(1, 1);
     // output buffer
     stage.clKernel.setArg(2, stage.clStageBuf);
     // output buffer fill status
@@ -364,6 +364,7 @@ bool ClSolver::append_last_stage() {
     stage.placed = prev_stage.placed + prev_stage.depth;
     stage.index = stages.size();
     stage.depth = queens_left;
+    stage.in_buf_size = prev_stage.buf_size;
 
     compute_expansion(stage);
     stage.buf_threshold = UINT32_MAX / stage.depth - 10;
@@ -401,12 +402,10 @@ bool ClSolver::append_last_stage() {
     }
     // input buffer
     stage.clKernel.setArg(0, prev_stage.clStageBuf);
-    // offset
-    // arg 1 set later
     // input buffer fill status
-    stage.clKernel.setArg(2, prev_stage.clFillCount);
+    stage.clKernel.setArg(1, prev_stage.clFillCount);
     // output sum buffer
-    stage.clKernel.setArg(3, stage.clSum);
+    stage.clKernel.setArg(2, stage.clSum);
 
     // insert into stages list
     stages.push_back(std::move(stage));
@@ -434,21 +433,21 @@ void ClSolver::fill_work_queue(std::list<stage_work_item>& work_queue,
 
     // map buffer to host for updating
     void * mapped_buffer = queue.enqueueMapBuffer(stage.clFillCount, CL_TRUE, CL_MAP_READ | CL_MAP_WRITE,
-                                 0, N_STACKS * sizeof(cl_int),
+                                 0, N_STACKS * sizeof(cl_uint),
                                  nullptr, nullptr, &err);
     if(err != CL_SUCCESS) {
         std::cout << "enqueueMapBuffer failed: " << err << std::endl;
     }
 
-    cl_int* fill = (cl_int*) mapped_buffer;
-    cl_int max_fill = 0;
+    cl_uint* fill = (cl_uint*) mapped_buffer;
+    cl_uint max_fill = 0;
+    // TODO(sudden6): do this in an OpenCL kernel?
     for(uint32_t i = 0; i < N_STACKS; i++) {
-        if(fill[i] > stage.buf_threshold) {
-            cl_int taken = std::min((cl_int)N_STACKS, fill[i]);
-            work_queue.emplace_front(i*stage.buf_size + fill[i] - taken, stage.index + 1, taken);
-            fill[i] -= taken;
-        }
         max_fill = std::max(fill[i], max_fill);
+    }
+
+    for(size_t i = 0; i < max_fill; i++) {
+        work_queue.emplace_front(stage.index + 1, 1);
     }
 
     assert(max_fill <= stage.max_fill);
@@ -590,6 +589,7 @@ uint64_t ClSolver::solve_subboard(const std::vector<start_condition>::const_iter
                               << " buf threshold to: " << std::to_string(stage.buf_threshold)
                               << std::endl;
                 } else {
+                    assert(stage.max_fill == 0);
                     std::cout << "Removing stage " << std::to_string(stage.index) << std::endl;
                     // remove first stage since it's empty and unused now
                     stages = std::move(std::vector<sieve_stage>(
@@ -611,20 +611,17 @@ uint64_t ClSolver::solve_subboard(const std::vector<start_condition>::const_iter
             }
         }
         auto& stage = stages.at(curStageIdx);
-        assert(item.taken > 0);
-        size_t g_work_size = item.taken;
+        assert(item.max_runs > 0);
 
-        // select buffer
-        stage.clKernel.setArg(1, item.bufferIdx);
-
-        size_t local_size = WORKGROUP_SIZE;
-        while(g_work_size % local_size != 0) {
-            local_size /= 2;
+        if(stage.type == STAGE_TYPE::MID) {
+            // set max_runs
+            stage.clKernel.setArg(1, stage.max_runs);
         }
+
 
         // Launch kernel on the compute device.
         err = queue.enqueueNDRangeKernel(stage.clKernel, cl::NullRange,
-                                         cl::NDRange{g_work_size}, cl::NDRange{local_size},
+                                         cl::NDRange{N_STACKS}, cl::NDRange{WORKGROUP_SIZE},
                                          nullptr, &stage.clStageDone);
 
         if(err != CL_SUCCESS) {
