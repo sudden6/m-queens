@@ -31,7 +31,7 @@ ClSolver::ClSolver()
 
     std::vector<cl::Device> devices;
 
-    err = platform.getDevices(/*CL_DEVICE_TYPE_GPU|*/
+    err = platform.getDevices(CL_DEVICE_TYPE_GPU|
                               CL_DEVICE_TYPE_CPU, &devices);
     if(err != CL_SUCCESS) {
         std::cout << "getDevices failed" << std::endl;
@@ -86,7 +86,7 @@ ClSolver::ClSolver()
 constexpr uint_fast8_t MINN = 2;
 constexpr uint_fast8_t MAXN = 29;
 
-constexpr size_t N_STACKS = 128; // number of stacks
+constexpr size_t N_STACKS = 64; // number of stacks
 constexpr size_t WORKGROUP_SIZE = 64;   // number of threads that are run in parallel
 constexpr size_t PLACED_PER_STAGE = 2;  // number of queens placed per sieve stage
 
@@ -96,7 +96,7 @@ constexpr size_t PLACED_PER_STAGE = 2;  // number of queens placed per sieve sta
  * With a too high GPU_DEPTH, solving a board takes too long and the
  * GPU is detected as "hung" by the driver and reset or the system crashes.
  */
-constexpr uint_fast8_t GPU_DEPTH = 12;
+constexpr uint_fast8_t GPU_DEPTH = 10;
 
 bool ClSolver::init(uint8_t boardsize, uint8_t placed)
 {
@@ -422,8 +422,7 @@ typedef cl_uint result_type;
 constexpr size_t NUM_BATCHES = 4;
 constexpr size_t NUM_CMDQUEUES = 2;
 
-void ClSolver::fill_work_queue(std::list<stage_work_item>& work_queue,
-                               sieve_stage& stage) {
+void ClSolver::fill_work_queue(sieve_stage& stage, int& next_stage) {
 
     if(stage.max_fill <= stage.buf_threshold) {
         return;
@@ -441,18 +440,21 @@ void ClSolver::fill_work_queue(std::list<stage_work_item>& work_queue,
 
     cl_uint* fill = (cl_uint*) mapped_buffer;
     cl_uint max_fill = 0;
+    cl_uint min_fill = UINT32_MAX;
     // TODO(sudden6): do this in an OpenCL kernel?
     for(uint32_t i = 0; i < N_STACKS; i++) {
         max_fill = std::max(fill[i], max_fill);
+        min_fill = std::min(fill[i], min_fill);
     }
 
-    for(size_t i = 0; i < max_fill; i++) {
-        work_queue.emplace_front(stage.index + 1, 1);
+    if(max_fill > stage.buf_threshold) {
+        next_stage++;
     }
 
     assert(max_fill <= stage.max_fill);
 
     stage.max_fill = max_fill;
+    stage.min_fill = min_fill;
 
     // map buffer to device for working
     err = queue.enqueueUnmapMemObject(stage.clFillCount, mapped_buffer,
@@ -495,17 +497,17 @@ uint64_t ClSolver::solve_subboard(const std::vector<start_condition>::const_iter
 
     uint64_t result = 0;
 
-    std::list<stage_work_item> work_queue{};
     cl::Buffer clInputBuf;
     std::vector<start_condition> hostStartBuf{N_STACKS};
     std::vector<cl_uint> hostOutputBuf(N_STACKS, 0);     // store the result of the last stage
+    int next_stage = 0;
 
     std::cout << "Entering crunch stage" << std::endl;
 
     // exit when all items in the buffers are removed
     while(true) {
         // fill step
-        if(work_queue.empty() && !pre.empty()) {
+        if(next_stage == 0 && !pre.empty()) {
             // insert new material at first sieve stage
             auto& stage = stages.at(0);
             // fill buffer
@@ -562,13 +564,13 @@ uint64_t ClSolver::solve_subboard(const std::vector<start_condition>::const_iter
 
             stage.max_fill += stage.expansion;
 
-            fill_work_queue(work_queue, stage);
+            fill_work_queue(stage, next_stage);
 
             // redo until buffer sufficiently filled
             continue;
         }
         // process remaining start conditions in OpenCL device buffers
-        if(work_queue.empty()) {
+        if(next_stage == 0) {
             // select first stage
             auto& stage = stages.at(0);
 
@@ -578,9 +580,9 @@ uint64_t ClSolver::solve_subboard(const std::vector<start_condition>::const_iter
                 break;
             }
 
-            fill_work_queue(work_queue, stage);
+            fill_work_queue(stage, next_stage);
 
-            if(work_queue.empty()) {
+            if(next_stage == 0) {
                 if(stage.buf_threshold > 0) {
                     stage.buf_threshold /= 2;
                     // ensure multiple of workgroup size
@@ -601,17 +603,14 @@ uint64_t ClSolver::solve_subboard(const std::vector<start_condition>::const_iter
             continue;
         }
 
-        // get work item from queue
-        auto item = work_queue.front();
-        work_queue.pop_front();
-        uint32_t curStageIdx;
-        for(curStageIdx = 0; curStageIdx < stages.size(); curStageIdx++) {
-            if(stages.at(curStageIdx).index == item.stageIdx) {
-                break;
-            }
+
+        auto& stage = stages.at(next_stage);
+        auto& prev_stage = stages.at(next_stage - 1);
+        assert(stage.max_runs > 0);
+        if(prev_stage.max_fill == 0) {
+            next_stage--;
+            continue;
         }
-        auto& stage = stages.at(curStageIdx);
-        assert(item.max_runs > 0);
 
         if(stage.type == STAGE_TYPE::MID) {
             // set max_runs
@@ -629,6 +628,7 @@ uint64_t ClSolver::solve_subboard(const std::vector<start_condition>::const_iter
         }
 
         stage.max_fill += stage.expansion;
+        prev_stage.max_fill -= stage.max_runs;
 
         // Only MID and LAST items can appear here
         // check if last stage
@@ -667,7 +667,7 @@ uint64_t ClSolver::solve_subboard(const std::vector<start_condition>::const_iter
                 }//*/
             }
         } else {
-            fill_work_queue(work_queue, stage);
+            fill_work_queue(stage, next_stage);
         }
         // just ensure our buffers are not modified
         //*

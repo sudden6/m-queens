@@ -146,11 +146,13 @@ kernel void first_step(__global const start_condition* in_starts, /* base of the
 
         if (new_posib != UINT_FAST32_MAX) {
 #ifdef LOOKAHEAD
+#if (PLACED + DEPTH) < (N-1)
             uint_fast32_t lookahead1 = (bit | (new_diagl << (LOOKAHEAD - 2)) | (new_diagr >> (LOOKAHEAD - 2)));
 
             if(lookahead1 == UINT_FAST32_MAX) {
                 continue;
             }
+#endif
 
 #if (PLACED + DEPTH) < (N-2)
             uint_fast32_t lookahead2 = (bit | (new_diagl << (LOOKAHEAD - 1)) | (new_diagr >> (LOOKAHEAD - 1)));
@@ -236,7 +238,7 @@ kernel void inter_step(__global start_condition* in_starts,     /* base of the i
     uint l_out_stack_idx = OUT_STACK_SIZE*G + out_stack_idx[G];
     uint l_in_stack_idx = IN_STACK_SIZE*G + in_stack_idx[G] - 1;
 
-    for(size_t run = 0; run < max_runs; run++) {
+    /*for(size_t run = 0; run < max_runs; run++) */{
         // The UINT_FAST32_MAX here is used to fill all 'coloumn' bits after n ...
         cols[L][d] = in_starts[l_in_stack_idx].cols | (UINT_FAST32_MAX << N);
 
@@ -287,10 +289,12 @@ kernel void inter_step(__global start_condition* in_starts,     /* base of the i
 
             if (new_posib != UINT_FAST32_MAX) {
 #ifdef LOOKAHEAD
+#if (PLACED + DEPTH) < (N-1)
                 uint_fast32_t lookahead1 = (bit | (new_diagl << (LOOKAHEAD - 2)) | (new_diagr >> (LOOKAHEAD - 2)));
                 if(lookahead1 == UINT_FAST32_MAX) {
                     continue;
                 }
+#endif
 
 #if (PLACED+DEPTH) < (N-2)
                 uint_fast32_t lookahead2 = (bit | (new_diagl << (LOOKAHEAD - 1)) | (new_diagr >> (LOOKAHEAD - 1)));
