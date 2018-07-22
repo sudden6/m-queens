@@ -86,7 +86,7 @@ ClSolver::ClSolver()
 constexpr uint_fast8_t MINN = 2;
 constexpr uint_fast8_t MAXN = 29;
 
-constexpr size_t N_STACKS = 64; // number of stacks
+constexpr size_t N_STACKS = 2560; // number of stacks
 constexpr size_t WORKGROUP_SIZE = 64;   // number of threads that are run in parallel
 constexpr size_t PLACED_PER_STAGE = 2;  // number of queens placed per sieve stage
 
@@ -197,12 +197,12 @@ void ClSolver::compute_expansion(sieve_stage& stage) {
 // +1 is the safety factor
 void ClSolver::compute_stage_buf_size(sieve_stage& stage) {
     // TODO(sudden6): refine this
-    stage.buf_size = stage.max_runs * stage.expansion;
+    stage.buf_size = 64 * stage.expansion;//stage.max_runs * stage.expansion;
 }
 
 void ClSolver::compute_buf_threshold(sieve_stage& stage) {
     // TODO(sudden6): refine this
-    stage.buf_threshold = 0;
+    stage.buf_threshold = stage.buf_size - 2*stage.expansion;
 }
 
 bool ClSolver::first_stage() {
@@ -243,14 +243,14 @@ bool ClSolver::first_stage() {
 
     // Initialize stage buffer element count to zero
     stage.clFillCount = cl::Buffer(context, CL_MEM_READ_WRITE | CL_MEM_ALLOC_HOST_PTR,
-                                  N_STACKS * sizeof(cl_uint), nullptr, &err);
+                                  N_STACKS * sizeof(cl_ushort), nullptr, &err);
     if(err != CL_SUCCESS) {
         std::cout << "cl::Buffer clFillCount failed: " << err << std::endl;
         return false;
     }
 
     // zero fill count buffer
-    err = queue.enqueueFillBuffer<cl_int>(stage.clFillCount, 0, 0, N_STACKS * sizeof(cl_uint));
+    err = queue.enqueueFillBuffer<cl_ushort>(stage.clFillCount, 0, 0, N_STACKS * sizeof(cl_ushort));
 
     if(err != CL_SUCCESS) {
         std::cout << "enqueueFillBuffer failed: " << err << std::endl;
@@ -313,14 +313,14 @@ bool ClSolver::append_mid_stage() {
 
     // Initialize stage buffer element count to zero
     stage.clFillCount = cl::Buffer(context, CL_MEM_READ_WRITE | CL_MEM_ALLOC_HOST_PTR,
-                                  N_STACKS * sizeof(cl_uint), nullptr, &err);
+                                  N_STACKS * sizeof(cl_ushort), nullptr, &err);
     if(err != CL_SUCCESS) {
         std::cout << "cl::Buffer clFillCount failed: " << err << std::endl;
         return false;
     }
 
     // zero fill count buffer
-    err = queue.enqueueFillBuffer<cl_uint>(stage.clFillCount, 0, 0, N_STACKS * sizeof(cl_uint));
+    err = queue.enqueueFillBuffer<cl_ushort>(stage.clFillCount, 0, 0, N_STACKS * sizeof(cl_ushort));
 
     if(err != CL_SUCCESS) {
         std::cout << "enqueueFillBuffer failed: " << err << std::endl;
@@ -432,15 +432,15 @@ void ClSolver::fill_work_queue(sieve_stage& stage, int& next_stage) {
 
     // map buffer to host for updating
     void * mapped_buffer = queue.enqueueMapBuffer(stage.clFillCount, CL_TRUE, CL_MAP_READ | CL_MAP_WRITE,
-                                 0, N_STACKS * sizeof(cl_uint),
+                                 0, N_STACKS * sizeof(cl_ushort),
                                  nullptr, nullptr, &err);
     if(err != CL_SUCCESS) {
         std::cout << "enqueueMapBuffer failed: " << err << std::endl;
     }
 
-    cl_uint* fill = (cl_uint*) mapped_buffer;
-    cl_uint max_fill = 0;
-    cl_uint min_fill = UINT32_MAX;
+    cl_ushort* fill = (cl_ushort*) mapped_buffer;
+    cl_ushort max_fill = 0;
+    cl_ushort min_fill = UINT32_MAX;
     // TODO(sudden6): do this in an OpenCL kernel?
     for(uint32_t i = 0; i < N_STACKS; i++) {
         max_fill = std::max(fill[i], max_fill);
@@ -451,6 +451,9 @@ void ClSolver::fill_work_queue(sieve_stage& stage, int& next_stage) {
         next_stage++;
     }
 
+    if(max_fill > stage.max_fill) {
+        std::cout << "max_fill violation: " << std::to_string(max_fill) << std::endl;
+    }
     assert(max_fill <= stage.max_fill);
 
     stage.max_fill = max_fill;
@@ -606,6 +609,9 @@ uint64_t ClSolver::solve_subboard(const std::vector<start_condition>::const_iter
 
         auto& stage = stages.at(next_stage);
         auto& prev_stage = stages.at(next_stage - 1);
+        if(stage.max_runs == 0) {
+            std::cout << "test" << std::endl;
+        }
         assert(stage.max_runs > 0);
         if(prev_stage.max_fill == 0) {
             next_stage--;
@@ -613,6 +619,10 @@ uint64_t ClSolver::solve_subboard(const std::vector<start_condition>::const_iter
         }
 
         if(stage.type == STAGE_TYPE::MID) {
+            size_t free_stack = stage.buf_size - stage.max_fill;
+            stage.max_runs = free_stack / stage.expansion;
+            stage.max_runs = std::min(stage.max_runs, prev_stage.max_fill);
+
             // set max_runs
             stage.clKernel.setArg(1, stage.max_runs);
         }
@@ -627,12 +637,13 @@ uint64_t ClSolver::solve_subboard(const std::vector<start_condition>::const_iter
             std::cout << "enqueueNDRangeKernel failed: " << err << std::endl;
         }
 
-        stage.max_fill += stage.expansion;
+        stage.max_fill += stage.expansion*stage.max_runs;
         prev_stage.max_fill -= stage.max_runs;
 
         // Only MID and LAST items can appear here
         // check if last stage
         if(stage.type == STAGE_TYPE::LAST) {
+            prev_stage.max_fill = 0;
             if(stage.max_fill > stage.buf_threshold) {
                 // read back sum buffer
                 std::cout << "reading sum buffer" << std::endl;

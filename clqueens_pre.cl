@@ -87,12 +87,12 @@ typedef ulong uint_fast64_t;
 
 #define OUT_STACK_IDX(x) (G*STACK_SIZE + (x))
 
-#define ASSERT
+//#define ASSERT
 //#define DEBUG
 
 kernel void first_step(__global const start_condition* in_starts, /* base of the input start conditions, G_SIZE*EXPANSION must not overflow output buffers */
                        __global start_condition* out_starts,      /* base of the output start conditions, must be N_STACKS * STACK_SIZE elements */
-                       __global uint* out_stack_idx                /* base of the stack indizes, must be N_STACKS elements */
+                       __global ushort* out_stack_idx                /* base of the stack indizes, must be N_STACKS elements */
 											 ) {
 
     __local uint_fast32_t cols[WORKGROUP_SIZE][DEPTH]; // Our backtracking 'stack'
@@ -223,8 +223,8 @@ kernel void first_step(__global const start_condition* in_starts, /* base of the
 kernel void inter_step(__global start_condition* in_starts,     /* base of the input start conditions, will work on elements at IN_STACK_SIZE*G */
                        uint max_runs,                           /* maximum amount of elements to take from input buffer */
                        __global start_condition* out_starts,    /* base of the output start conditions */
-                       __global uint* out_stack_idx,             /* base of the stack indizes, must be N_STACKS elements */
-                       __global uint* in_stack_idx               /* base of the stack indizes, must be N_STACKS elements, will remove at most max_runs elements */
+                       __global ushort* out_stack_idx,             /* base of the stack indizes, must be N_STACKS elements */
+                       __global ushort* in_stack_idx               /* base of the stack indizes, must be N_STACKS elements, will remove at most max_runs elements */
                       )
 {
 
@@ -233,12 +233,16 @@ kernel void inter_step(__global start_condition* in_starts,     /* base of the i
     }
     __local uint_fast32_t cols[WORKGROUP_SIZE][DEPTH]; // Our backtracking 'stack'
     __local uint_fast32_t diagl[WORKGROUP_SIZE][DEPTH], diagr[WORKGROUP_SIZE][DEPTH];
-    uint_fast32_t posibs;
-    int_fast8_t d = 0; // d is our depth in the backtrack stack
-    uint l_out_stack_idx = OUT_STACK_SIZE*G + out_stack_idx[G];
-    uint l_in_stack_idx = IN_STACK_SIZE*G + in_stack_idx[G] - 1;
 
-    /*for(size_t run = 0; run < max_runs; run++) */{
+    uint l_out_stack_idx = OUT_STACK_SIZE*G + out_stack_idx[G];
+    uint l_in_stack_idx = IN_STACK_SIZE*G + in_stack_idx[G];
+
+    for(size_t run = 0; run < max_runs; run++) {
+
+        l_in_stack_idx--;
+
+        uint_fast32_t posibs;
+        int_fast8_t d = 0; // d is our depth in the backtrack stack
         // The UINT_FAST32_MAX here is used to fill all 'coloumn' bits after n ...
         cols[L][d] = in_starts[l_in_stack_idx].cols | (UINT_FAST32_MAX << N);
 
@@ -347,6 +351,9 @@ kernel void inter_step(__global start_condition* in_starts,     /* base of the i
           posib = posibs; // backtrack ...
           d--;
         }
+        if(l_in_stack_idx == G*IN_STACK_SIZE) {
+            break;
+        }
     }
 
     in_stack_idx[G] = l_in_stack_idx - G*IN_STACK_SIZE;
@@ -354,7 +361,7 @@ kernel void inter_step(__global start_condition* in_starts,     /* base of the i
 }
 
 kernel void final_step(__global start_condition* in_starts, /* input buffer base */
-                       __global uint* in_stack_idx,                /* base of the stack indizes, will remove G_SIZE elements */
+                       __global ushort* in_stack_idx,                /* base of the stack indizes, will remove G_SIZE elements */
                        __global uint* out_sum                     /* sum buffer base, must be G_SIZE elements */
                        ) {
 
@@ -364,8 +371,6 @@ kernel void final_step(__global start_condition* in_starts, /* input buffer base
     __local uint_fast32_t diagl[WORKGROUP_SIZE][DEPTH], diagr[WORKGROUP_SIZE][DEPTH];
 
     uint_fast32_t num = 0;
-    uint_fast32_t posibs;
-    int_fast8_t d = 0; // d is our depth in the backtrack stack
 
     if(in_stack_idx[G] == 0) {
         return;
@@ -374,9 +379,13 @@ kernel void final_step(__global start_condition* in_starts, /* input buffer base
     uint l_in_stack_idx = IN_STACK_SIZE*G + in_stack_idx[G];
 
 
-    //while(l_in_stack_idx > G*IN_STACK_SIZE)
+    while(l_in_stack_idx > G*IN_STACK_SIZE)
     {
         l_in_stack_idx--;
+
+        uint_fast32_t posibs;
+        int_fast8_t d = 0; // d is our depth in the backtrack stack
+
         // The UINT_FAST32_MAX here is used to fill all 'coloumn' bits after n ...
         cols[L][d] = in_starts[l_in_stack_idx].cols | (UINT_FAST32_MAX << N);
 
