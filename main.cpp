@@ -18,7 +18,7 @@
 //#define TESTSUITE
 
 #ifndef N
-#define N 8
+#define N 18
 #endif
 #define MAXN 29
 
@@ -213,7 +213,7 @@ static const uint64_t results[27] = {
     22317699616364044ULL,
     234907967154122528ULL};
 
-constexpr uint32_t THREADS = 1;
+constexpr uint32_t THREADS = 2;
 static uint64_t thread_results[THREADS] = {0};
 
 void thread_worker(ClSolver solver, uint32_t id,

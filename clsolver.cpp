@@ -86,9 +86,9 @@ ClSolver::ClSolver()
 constexpr uint_fast8_t MINN = 2;
 constexpr uint_fast8_t MAXN = 29;
 
-constexpr size_t N_STACKS = 16; // number of stacks
-constexpr size_t WORKGROUP_SIZE = 1;   // number of threads that are run in parallel
-constexpr size_t PLACED_PER_STAGE = 3;  // number of queens placed per sieve stage
+constexpr size_t N_STACKS = 1024; // number of stacks
+constexpr size_t WORKGROUP_SIZE = 24;   // number of threads that are run in parallel
+constexpr size_t PLACED_PER_STAGE = 4;  // number of queens placed per sieve stage
 
 /*
  * GPU_DEPTH defines how many rows should be left for the GPU to solve,
@@ -96,7 +96,7 @@ constexpr size_t PLACED_PER_STAGE = 3;  // number of queens placed per sieve sta
  * With a too high GPU_DEPTH, solving a board takes too long and the
  * GPU is detected as "hung" by the driver and reset or the system crashes.
  */
-constexpr uint_fast8_t GPU_DEPTH = 9;
+constexpr uint_fast8_t GPU_DEPTH = 8;
 
 bool ClSolver::init(uint8_t boardsize, uint8_t placed)
 {
@@ -197,7 +197,7 @@ void ClSolver::compute_expansion(sieve_stage& stage) {
 // +1 is the safety factor
 void ClSolver::compute_stage_buf_size(sieve_stage& stage) {
     // TODO(sudden6): refine this
-    stage.buf_size = 64 * stage.expansion;//stage.max_runs * stage.expansion;
+    stage.buf_size = 32 * stage.expansion;//stage.max_runs * stage.expansion;
 }
 
 void ClSolver::compute_buf_threshold(sieve_stage& stage) {

@@ -221,7 +221,7 @@ kernel void first_step(__global const start_condition* in_starts, /* base of the
 
 #define FULL_RUN
 //#define DEBUG
-#if 1
+#if 0
 kernel void inter_step(__global start_condition* in_starts,     /* base of the input start conditions, will work on elements at IN_STACK_SIZE*G */
                        uint max_runs,                           /* maximum amount of elements to take from input buffer */
                        __global start_condition* out_starts,    /* base of the output start conditions */
@@ -230,9 +230,7 @@ kernel void inter_step(__global start_condition* in_starts,     /* base of the i
                       )
 {
 
-    if(in_stack_idx[G] == 0) {
-        return;
-    }
+
     __local uint_fast32_t cols[WORKGROUP_SIZE][DEPTH]; // Our backtracking 'stack'
     __local uint_fast32_t diagl[WORKGROUP_SIZE][DEPTH];
     __local uint_fast32_t diagr[WORKGROUP_SIZE][DEPTH];
@@ -240,6 +238,10 @@ kernel void inter_step(__global start_condition* in_starts,     /* base of the i
 
     uint l_out_stack_idx = OUT_STACK_SIZE*G + out_stack_idx[G];
     uint l_in_stack_idx = IN_STACK_SIZE*G + in_stack_idx[G];
+
+    if(in_stack_idx[G] == 0) {
+        return;
+    }
 
     for(size_t run = 0; run < max_runs; run++) {
 
