@@ -86,9 +86,9 @@ ClSolver::ClSolver()
 constexpr uint_fast8_t MINN = 2;
 constexpr uint_fast8_t MAXN = 29;
 
-constexpr size_t N_STACKS = 2560; // number of stacks
-constexpr size_t WORKGROUP_SIZE = 64;   // number of threads that are run in parallel
-constexpr size_t PLACED_PER_STAGE = 2;  // number of queens placed per sieve stage
+constexpr size_t N_STACKS = 16; // number of stacks
+constexpr size_t WORKGROUP_SIZE = 1;   // number of threads that are run in parallel
+constexpr size_t PLACED_PER_STAGE = 3;  // number of queens placed per sieve stage
 
 /*
  * GPU_DEPTH defines how many rows should be left for the GPU to solve,
@@ -96,7 +96,7 @@ constexpr size_t PLACED_PER_STAGE = 2;  // number of queens placed per sieve sta
  * With a too high GPU_DEPTH, solving a board takes too long and the
  * GPU is detected as "hung" by the driver and reset or the system crashes.
  */
-constexpr uint_fast8_t GPU_DEPTH = 10;
+constexpr uint_fast8_t GPU_DEPTH = 9;
 
 bool ClSolver::init(uint8_t boardsize, uint8_t placed)
 {
@@ -356,7 +356,7 @@ bool ClSolver::append_last_stage() {
     const int queens_left = boardsize - (prev_stage.placed + prev_stage.depth);
 
     assert(queens_left > 0);
-    assert(queens_left < 3);
+    assert(queens_left <= PLACED_PER_STAGE);
 
     sieve_stage stage;
 
@@ -418,9 +418,6 @@ uint8_t ClSolver::queens_left() {
 }
 
 typedef cl_uint result_type;
-
-constexpr size_t NUM_BATCHES = 4;
-constexpr size_t NUM_CMDQUEUES = 2;
 
 void ClSolver::fill_work_queue(sieve_stage& stage, int& next_stage) {
 

@@ -87,7 +87,7 @@ typedef ulong uint_fast64_t;
 
 #define OUT_STACK_IDX(x) (G*STACK_SIZE + (x))
 
-//#define ASSERT
+#define ASSERT
 //#define DEBUG
 
 kernel void first_step(__global const start_condition* in_starts, /* base of the input start conditions, G_SIZE*EXPANSION must not overflow output buffers */
@@ -96,9 +96,11 @@ kernel void first_step(__global const start_condition* in_starts, /* base of the
 											 ) {
 
     __local uint_fast32_t cols[WORKGROUP_SIZE][DEPTH]; // Our backtracking 'stack'
-    __local uint_fast32_t diagl[WORKGROUP_SIZE][DEPTH], diagr[WORKGROUP_SIZE][DEPTH];
+    __local uint_fast32_t diagl[WORKGROUP_SIZE][DEPTH];
+    __local uint_fast32_t diagr[WORKGROUP_SIZE][DEPTH];
+    __local uint_fast32_t posibs[WORKGROUP_SIZE][DEPTH];
 
-    uint_fast32_t posibs = 0;
+    //uint_fast32_t posibs = 0;
     int_fast8_t d = 0; // d is our depth in the backtrack stack
     uint l_out_stack_idx = G*OUT_STACK_SIZE + out_stack_idx[G];
     // The UINT_FAST32_MAX here is used to fill all 'coloumn' bits after n ...
@@ -115,7 +117,7 @@ kernel void first_step(__global const start_condition* in_starts, /* base of the
     // This places the first two queens
     diagl[L][d] = in_starts[G].diagl;
     diagr[L][d] = in_starts[G].diagr;
-#define LOOKAHEAD 3
+//#define LOOKAHEAD 3
 #define STOP_DEPTH (PLACED + DEPTH)
 
     //  The variable posib contains the bitmask of possibilities we still have
@@ -184,7 +186,7 @@ kernel void first_step(__global const start_condition* in_starts, /* base of the
             // when we passed the last possibility in a row.
             // Go lower in the stack, avoid branching by writing above the current
             // position
-            posibs = posib;
+            posibs[L][d + 1] = posib;
             d += posib != UINT_FAST32_MAX; // avoid branching with this trick
 
 #ifdef ASSERT
@@ -205,7 +207,7 @@ kernel void first_step(__global const start_condition* in_starts, /* base of the
             diagr_shifted = new_diagr >> 1;
         } 
       }
-      posib = posibs; // backtrack ...
+      posib = posibs[L][d]; // backtrack ...
       d--;
     }
 
@@ -219,7 +221,7 @@ kernel void first_step(__global const start_condition* in_starts, /* base of the
 
 #define FULL_RUN
 //#define DEBUG
-
+#if 1
 kernel void inter_step(__global start_condition* in_starts,     /* base of the input start conditions, will work on elements at IN_STACK_SIZE*G */
                        uint max_runs,                           /* maximum amount of elements to take from input buffer */
                        __global start_condition* out_starts,    /* base of the output start conditions */
@@ -232,7 +234,9 @@ kernel void inter_step(__global start_condition* in_starts,     /* base of the i
         return;
     }
     __local uint_fast32_t cols[WORKGROUP_SIZE][DEPTH]; // Our backtracking 'stack'
-    __local uint_fast32_t diagl[WORKGROUP_SIZE][DEPTH], diagr[WORKGROUP_SIZE][DEPTH];
+    __local uint_fast32_t diagl[WORKGROUP_SIZE][DEPTH];
+    __local uint_fast32_t diagr[WORKGROUP_SIZE][DEPTH];
+    __local uint_fast32_t posibs[WORKGROUP_SIZE][DEPTH];
 
     uint l_out_stack_idx = OUT_STACK_SIZE*G + out_stack_idx[G];
     uint l_in_stack_idx = IN_STACK_SIZE*G + in_stack_idx[G];
@@ -241,7 +245,6 @@ kernel void inter_step(__global start_condition* in_starts,     /* base of the i
 
         l_in_stack_idx--;
 
-        uint_fast32_t posibs;
         int_fast8_t d = 0; // d is our depth in the backtrack stack
         // The UINT_FAST32_MAX here is used to fill all 'coloumn' bits after n ...
         cols[L][d] = in_starts[l_in_stack_idx].cols | (UINT_FAST32_MAX << N);
@@ -329,7 +332,7 @@ kernel void inter_step(__global start_condition* in_starts,     /* base of the i
                 // when we passed the last possibility in a row.
                 // Go lower in the stack, avoid branching by writing above the current
                 // position
-                posibs = posib;
+                posibs[L][d + 1] = posib;
                 d += posib != UINT_FAST32_MAX; // avoid branching with this trick
                 posib = new_posib;
 
@@ -348,7 +351,7 @@ kernel void inter_step(__global start_condition* in_starts,     /* base of the i
                 diagr_shifted = new_diagr >> 1;
             }
           }
-          posib = posibs; // backtrack ...
+          posib = posibs[L][d]; // backtrack ...
           d--;
         }
         if(l_in_stack_idx == G*IN_STACK_SIZE) {
@@ -360,6 +363,8 @@ kernel void inter_step(__global start_condition* in_starts,     /* base of the i
     out_stack_idx[G] = l_out_stack_idx - G*OUT_STACK_SIZE;
 }
 
+#endif
+
 kernel void final_step(__global start_condition* in_starts, /* input buffer base */
                        __global ushort* in_stack_idx,                /* base of the stack indizes, will remove G_SIZE elements */
                        __global uint* out_sum                     /* sum buffer base, must be G_SIZE elements */
@@ -368,7 +373,9 @@ kernel void final_step(__global start_condition* in_starts, /* input buffer base
 #undef LOOKAHEAD
 
     __local uint_fast32_t cols[WORKGROUP_SIZE][DEPTH]; // Our backtracking 'stack'
-    __local uint_fast32_t diagl[WORKGROUP_SIZE][DEPTH], diagr[WORKGROUP_SIZE][DEPTH];
+    __local uint_fast32_t diagl[WORKGROUP_SIZE][DEPTH];
+    __local uint_fast32_t diagr[WORKGROUP_SIZE][DEPTH];
+    __local uint_fast32_t posibs[WORKGROUP_SIZE][DEPTH];
 
     uint_fast32_t num = 0;
 
@@ -383,7 +390,6 @@ kernel void final_step(__global start_condition* in_starts, /* input buffer base
     {
         l_in_stack_idx--;
 
-        uint_fast32_t posibs;
         int_fast8_t d = 0; // d is our depth in the backtrack stack
 
         // The UINT_FAST32_MAX here is used to fill all 'coloumn' bits after n ...
@@ -399,8 +405,7 @@ kernel void final_step(__global start_condition* in_starts, /* input buffer base
 
 #ifdef ASSERT
         uint bitsset = popcount(cols[L][d]&COL_MASK);
-        if((bitsset != (N-1))
-        && (bitsset != (N-2))) {
+        if(bitsset != PLACED) {
             printf("[L] entry: wrong number of bits set: %d\n", bitsset);
         }
 #endif
@@ -439,7 +444,7 @@ kernel void final_step(__global start_condition* in_starts, /* input buffer base
                 // when we passed the last possibility in a row.
                 // Go lower in the stack, avoid branching by writing above the current
                 // position
-                posibs = posib;
+                posibs[L][d + 1] = posib;
                 d += posib != UINT_FAST32_MAX; // avoid branching with this trick
                 posib = new_posib;
 #ifdef ASSERT
@@ -466,7 +471,7 @@ kernel void final_step(__global start_condition* in_starts, /* input buffer base
 #endif
             }
           }
-          posib = posibs; // backtrack ...
+          posib = posibs[L][d]; // backtrack ...
           d--;
         }
     }
