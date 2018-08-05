@@ -88,8 +88,8 @@ constexpr uint_fast8_t MAXN = 29;
  * With a too high GPU_DEPTH, solving a board takes too long and the
  * GPU is detected as "hung" by the driver and reset or the system crashes.
  */
-constexpr uint_fast8_t GPU_DEPTH = 7;
-constexpr size_t WORKGROUP_SIZE = 13;
+constexpr uint_fast8_t GPU_DEPTH = 8;
+constexpr size_t WORKGROUP_SIZE = 12;
 
 bool ClSolver::init(uint8_t boardsize, uint8_t placed)
 {
@@ -141,7 +141,7 @@ bool ClSolver::init(uint8_t boardsize, uint8_t placed)
 // should be a multiple of 64 at least for AMD GPUs
 // ideally would be CL_KERNEL_PREFERRED_WORK_GROUP_SIZE_MULTIPLE
 // bigger BATCH_SIZE means higher memory usage
-constexpr size_t BATCH_SIZE = WORKGROUP_SIZE*(1 << 19);
+constexpr size_t BATCH_SIZE = WORKGROUP_SIZE*(1 << 18);
 typedef cl_ulong result_type;
 
 typedef struct {
