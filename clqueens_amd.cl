@@ -23,6 +23,10 @@ typedef ulong uint_fast64_t;
 #error "Depth to high, risk of overflow in result counter"
 #endif
 
+// for convenience
+#define L (get_local_id(0))
+#define G (get_global_id(0))
+
 kernel void solve_subboard(__global const start_condition* in_starts, __global ulong* out_cnt) {
     size_t id = get_global_id(0);
 
@@ -31,30 +35,30 @@ kernel void solve_subboard(__global const start_condition* in_starts, __global u
 
     // 32 bits are sufficient if the rest depth is <= 13
     uint_fast32_t num = 0;
-    __private uint_fast32_t cols[MAXD], posibs[MAXD]; // Our backtracking 'stack'
-    __private uint_fast32_t diagl[MAXD], diagr[MAXD];
-    __private int_fast8_t rest[MAXD]; // number of rows left
+    __local uint_fast32_t cols[WG_SIZE][DEPTH], posibs[WG_SIZE][DEPTH]; // Our backtracking 'stack'
+    __local uint_fast32_t diagl[WG_SIZE][DEPTH], diagr[WG_SIZE][DEPTH];
+    __private int_fast8_t rest[DEPTH]; // number of rows left
     int_fast16_t d = 0; // d is our depth in the backtrack stack
     // The UINT_FAST32_MAX here is used to fill all 'coloumn' bits after n ...
-    cols[d] = in_starts[id].cols | (UINT_FAST32_MAX << N);
+    cols[L][d] = in_starts[id].cols | (UINT_FAST32_MAX << N);
     // This places the first two queens
-    diagl[d] = in_starts[id].diagl;
-    diagr[d] = in_starts[id].diagr;
+    diagl[L][d] = in_starts[id].diagl;
+    diagr[L][d] = in_starts[id].diagr;
     #define LOOKAHEAD 3
     // we're allready two rows into the field here
     rest[d] = N - LOOKAHEAD - PLACED;//in_starts[id].placed;
 
     //  The variable posib contains the bitmask of possibilities we still have
     //  to try in a given row ...
-    uint_fast32_t posib = (cols[d] | diagl[d] | diagr[d]);
+    uint_fast32_t posib = (cols[L][d] | diagl[L][d] | diagr[L][d]);
 
     while (d >= 0) {
       // moving the two shifts out of the inner loop slightly improves
       // performance
-      uint_fast32_t diagl_shifted = diagl[d] << 1;
-      uint_fast32_t diagr_shifted = diagr[d] >> 1;
+      uint_fast32_t diagl_shifted = diagl[L][d] << 1;
+      uint_fast32_t diagr_shifted = diagr[L][d] >> 1;
       int_fast8_t l_rest = rest[d];
-      uint_fast32_t l_cols = cols[d];
+      uint_fast32_t l_cols = cols[L][d];
 
 
       while (posib != UINT_FAST32_MAX) {
@@ -85,7 +89,7 @@ kernel void solve_subboard(__global const start_condition* in_starts, __global u
             // when we passed the last possibility in a row.
             // Go lower in the stack, avoid branching by writing above the current
             // position
-            posibs[d + 1] = posib;
+            posibs[L][d + 1] = posib;
             d += posib != UINT_FAST32_MAX; // avoid branching with this trick
             posib = new_posib;
 
@@ -95,9 +99,9 @@ kernel void solve_subboard(__global const start_condition* in_starts, __global u
 
             // make values current
             l_cols = bit;
-            cols[d] = bit;
-            diagl[d] = new_diagl;
-            diagr[d] = new_diagr;
+            cols[L][d] = bit;
+            diagl[L][d] = new_diagl;
+            diagr[L][d] = new_diagr;
             rest[d] = l_rest;
             diagl_shifted = new_diagl << 1;
             diagr_shifted = new_diagr >> 1;
@@ -106,7 +110,7 @@ kernel void solve_subboard(__global const start_condition* in_starts, __global u
             num += bit == UINT_FAST32_MAX;
         }
       }
-      posib = posibs[d]; // backtrack ...
+      posib = posibs[L][d]; // backtrack ...
       d--;
     }
 

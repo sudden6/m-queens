@@ -88,7 +88,8 @@ constexpr uint_fast8_t MAXN = 29;
  * With a too high GPU_DEPTH, solving a board takes too long and the
  * GPU is detected as "hung" by the driver and reset or the system crashes.
  */
-constexpr uint_fast8_t GPU_DEPTH = 9;
+constexpr uint_fast8_t GPU_DEPTH = 7;
+constexpr size_t WORKGROUP_SIZE = 13;
 
 bool ClSolver::init(uint8_t boardsize, uint8_t placed)
 {
@@ -114,8 +115,12 @@ bool ClSolver::init(uint8_t boardsize, uint8_t placed)
 
     std::ostringstream optionsStream;
     optionsStream << "-D N=" << std::to_string(boardsize)
-                  << " -D PLACED=" <<std::to_string(boardsize - gpu_depth);
+                  << " -D PLACED=" <<std::to_string(boardsize - gpu_depth)
+                  << " -D DEPTH=" <<std::to_string(GPU_DEPTH)
+                  << " -D WG_SIZE=" <<std::to_string(WORKGROUP_SIZE);
     std::string options = optionsStream.str();
+
+    std::cout << "OPITIONS: " << options << std::endl;
 
     cl_int builderr = program.build(options.c_str());
     if(builderr != CL_SUCCESS) {
@@ -136,7 +141,7 @@ bool ClSolver::init(uint8_t boardsize, uint8_t placed)
 // should be a multiple of 64 at least for AMD GPUs
 // ideally would be CL_KERNEL_PREFERRED_WORK_GROUP_SIZE_MULTIPLE
 // bigger BATCH_SIZE means higher memory usage
-constexpr size_t BATCH_SIZE = 1 << 22;
+constexpr size_t BATCH_SIZE = WORKGROUP_SIZE*(1 << 19);
 typedef cl_ulong result_type;
 
 typedef struct {
@@ -269,9 +274,15 @@ uint64_t ClSolver::solve_subboard(const std::vector<start_condition> &start)
             std::cout << "Failed to transfer start buffer: " << err << std::endl;
         }
 
+        // calculate local size
+        size_t local_size = WORKGROUP_SIZE;
+                    while(batchSize % local_size != 0) {
+                        local_size /= 2;
+        }
+
         // Launch kernel on the compute device.
         err = cmdQueue->enqueueNDRangeKernel(b.clKernel, cl::NullRange,
-                                            cl::NDRange{batchSize}, cl::NullRange,
+                                            cl::NDRange{batchSize}, cl::NDRange{local_size},
                                             &b.clStartKernel, &b.clReadResult[0]);
         if(err != CL_SUCCESS) {
             std::cout << "enqueueNDRangeKernel failed: " << err << std::endl;

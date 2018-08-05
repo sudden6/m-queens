@@ -4,6 +4,8 @@
 #include <stdlib.h>
 #include <sys/time.h>
 #include <iostream>
+#include <iterator>
+#include <thread>
 #include <time.h>
 #include "clsolver.h"
 #include "cpusolver.h"
@@ -13,10 +15,10 @@
 #include <vector>
 
 // uncomment to start with n=2 and compare to known results
-#define TESTSUITE
+//#define TESTSUITE
 
 #ifndef N
-#define N 20
+#define N 18
 #endif
 #define MAXN 29
 
@@ -211,10 +213,23 @@ static const uint64_t results[27] = {
     22317699616364044ULL,
     234907967154122528ULL};
 
+constexpr uint32_t THREADS = 1;
+static uint64_t thread_results[THREADS] = {0};
+
+void thread_worker(ClSolver solver, uint32_t id,
+                   std::vector<start_condition>::iterator begin,
+                   std::vector<start_condition>::iterator end) {
+    std::cout << "Starting thread: " << std::to_string(id) << std::endl;
+
+    std::vector<start_condition> thread_batch(begin, end);
+
+    thread_results[id] = solver.solve_subboard(thread_batch);
+}
+
 int main(int argc, char **argv) {
 
 #ifdef TESTSUITE
-  int i = 2;
+  int i = 8;
 #else
   int i = N;
 #endif
@@ -232,12 +247,46 @@ int main(int argc, char **argv) {
   for (; i <= N; i++) {
     double time_diff, time_start; // for measuring calculation time
     cpu.init(i, 2);
-    ocl.init(i, 2);
+    ClSolver ocl[THREADS] = {};
+    std::thread* threads[THREADS] = {nullptr};
+
+    cpu.init(i, 2);
+    for(uint32_t t = 0; t < THREADS; t++) {
+        ocl[t].init(i, 2);
+    }
     uint64_t result = 0;
     time_start = get_time();
     std::vector<start_condition> st = create_preplacement(i);
 
-    result = ocl.solve_subboard(st);
+    // round up
+    const size_t block_size = (st.size() + THREADS - 1)/THREADS;
+
+    auto block_start = st.begin();
+
+    for(uint32_t t = 0; t < THREADS; t++) {
+        auto end = block_start;
+        size_t remaining(std::distance(end, st.end()));
+        size_t step = block_size;
+        if (remaining < step)
+        {
+          step = remaining;
+        }
+        std::advance(end, step);
+        threads[t] = new std::thread(thread_worker, std::move(ocl[t]), t, block_start, end);
+        block_start = end;
+    }
+
+    //result = ocl.solve_subboard(st);
+
+    result = 0;
+    for(uint32_t t = 0; t < THREADS; t++) {
+        threads[t]->join();
+        result += thread_results[t];
+    }
+
+    for(uint32_t t = 0; t < THREADS; t++) {
+        delete threads[t];
+    }
     /*
     size_t st_size = st.size();
     for(size_t j = 0; j < st_size; j++) {
@@ -261,5 +310,7 @@ int main(int argc, char **argv) {
     std::cout << "N " << i << ", Solutions " << result << ", Expected " << results[i - 1] <<
            ", Time " << time_diff << " , Solutions/s " << result/time_diff << std::endl;
   }
+
+  std::cout << "DONE" << std::endl;
   return 0;
 }
