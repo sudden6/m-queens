@@ -1,4 +1,5 @@
 #include "clsolver.h"
+#include <ctime>
 #include <ios>
 #include <iostream>
 #include <iterator>
@@ -120,7 +121,7 @@ bool ClSolver::init(uint8_t boardsize, uint8_t placed)
                   << " -D WG_SIZE=" <<std::to_string(WORKGROUP_SIZE);
     std::string options = optionsStream.str();
 
-    std::cout << "OPITIONS: " << options << std::endl;
+    std::cout << "OPTIONS: " << options << std::endl;
 
     cl_int builderr = program.build(options.c_str());
     if(builderr != CL_SUCCESS) {
@@ -142,7 +143,7 @@ bool ClSolver::init(uint8_t boardsize, uint8_t placed)
 // ideally would be CL_KERNEL_PREFERRED_WORK_GROUP_SIZE_MULTIPLE
 // bigger BATCH_SIZE means higher memory usage
 constexpr size_t BATCH_SIZE = WORKGROUP_SIZE*(1 << 18);
-typedef cl_ulong result_type;
+typedef cl_uint result_type;
 
 typedef struct {
     cl::Kernel clKernel;
@@ -150,52 +151,27 @@ typedef struct {
     cl::Buffer clOutputBuf;
     cl::Event clBatchDone;
     std::vector<cl::Event> clStartKernel = {cl::Event()};
+    std::vector<cl::Event> clTmpResult = {cl::Event()};
     std::vector<cl::Event> clReadResult = {cl::Event()};
-    std::vector<start_condition> hostStartBuf;
+    //std::vector<start_condition> hostStartBuf;
     std::vector<result_type> hostOutputBuf;
     size_t size = 0;
     size_t used = 0;
     cl::CommandQueue* cmdQueue;
 } batch;
 
-constexpr size_t NUM_BATCHES = 4;
-constexpr size_t NUM_CMDQUEUES = 2;
+constexpr size_t NUM_BATCHES = 1;
 
-uint64_t ClSolver::solve_subboard(const std::vector<start_condition> &start)
+void ClSolver::threadWorker(uint32_t id, std::mutex& pre_lock)
 {
     cl_int err = CL_SUCCESS;
-
-    if(start.empty()) {
-        return 0;
-    }
-
-    auto startIt = start.begin();
-
-    // init presolver
-    PreSolver pre(boardsize, placed, presolve_depth, *startIt);
-    startIt++;
-
-    cl::CommandQueue queues[NUM_CMDQUEUES];
-    for(size_t i = 0; i < NUM_CMDQUEUES; i++) {
-        auto& cmdQueue = queues[i];
-        // Create command queue.
-        cmdQueue = cl::CommandQueue(context, device, CL_QUEUE_OUT_OF_ORDER_EXEC_MODE_ENABLE, &err);
-        if(err != CL_SUCCESS) {
-            std::cout << "CommandQueue failed, probably out-of-order-exec not supported: " << err << std::endl;
-            cmdQueue = cl::CommandQueue(context, device, 0, &err);
-            if(err != CL_SUCCESS) {
-                std::cout << "failed to create command queue: " << err << std::endl;
-            }
-        }
-    }
-
 
     // buffer
     batch batches[NUM_BATCHES];
     std::list<size_t> running;
     std::list<size_t> complete;
 
-    for(int i = 0; i < NUM_BATCHES; i++) {
+    for(size_t i = 0; i < NUM_BATCHES; i++) {
         batch& b = batches[i];
         // add this slot to the free queue
         complete.push_back(i);
@@ -205,10 +181,10 @@ uint64_t ClSolver::solve_subboard(const std::vector<start_condition> &start)
             std::cout << "cl::Kernel failed: " << err << std::endl;
         }
         // Allocate start condition buffer on host
-        b.hostStartBuf.resize(BATCH_SIZE);
+        //b.hostStartBuf.resize(BATCH_SIZE);
 
         // Allocate start condition buffer on device
-        b.clStartBuf = cl::Buffer(context, CL_MEM_READ_ONLY | CL_MEM_HOST_WRITE_ONLY,
+        b.clStartBuf = cl::Buffer(context, CL_MEM_READ_ONLY | CL_MEM_HOST_WRITE_ONLY | CL_MEM_ALLOC_HOST_PTR,
             BATCH_SIZE * sizeof(start_condition), nullptr, &err);
         if(err != CL_SUCCESS) {
             std::cout << "cl::Buffer start_buf failed: " << err << std::endl;
@@ -236,10 +212,13 @@ uint64_t ClSolver::solve_subboard(const std::vector<start_condition> &start)
             std::cout << "solve_subboard.setArg(1 failed: " << err << std::endl;
         }
 
-        b.cmdQueue = &queues[i % NUM_CMDQUEUES];
+        b.cmdQueue = &queues[id];
     }
 
     uint64_t result = 0;
+
+    auto pre = nextPre(pre_lock);
+    auto start_time = std::time(nullptr);
 
     while (!pre.empty()) {
         // move idx from free queue to busy queue
@@ -249,46 +228,64 @@ uint64_t ClSolver::solve_subboard(const std::vector<start_condition> &start)
         auto& b = batches[cur];
         auto& cmdQueue = b.cmdQueue;
 
+        void* clStart = cmdQueue->enqueueMapBuffer(b.clStartBuf, TRUE, CL_MAP_WRITE, 0, BATCH_SIZE);
+        start_condition * curIt = static_cast<start_condition*>(clStart);
+        const start_condition * beginIt = curIt;
+        const start_condition * endIt = beginIt + BATCH_SIZE;
+
         // TODO(sudden6): cleanup
-        auto hostBufIt = b.hostStartBuf.begin();
-        while(hostBufIt != b.hostStartBuf.end()) {
-            hostBufIt = pre.getNext(hostBufIt, b.hostStartBuf.cend());
-            if(pre.empty() && (startIt == start.end())) {
-                break;
-            }
+        //auto hostBufIt = b.hostStartBuf.begin();
+        while(curIt != endIt) {
+            curIt = pre.getNext(curIt, endIt);
             if(pre.empty()) {
-                pre = PreSolver(boardsize, placed, presolve_depth, *startIt);
-                startIt++;
+                auto end_time = std::time(nullptr);
+                std::cout << "pre block took " << difftime(end_time, start_time) << "s" << std::endl;
+                start_time = end_time;
+                pre = nextPre(pre_lock);
+                if(pre.empty()) {
+                    break;
+                }
             }
         }
-        b.size = std::distance(b.hostStartBuf.begin(), hostBufIt);
+        b.size = curIt - beginIt;
         const auto& batchSize = b.size;
         b.used = std::max(batchSize, b.used);
 
-        // Transfer start buffer to device
-        err = cmdQueue->enqueueWriteBuffer(b.clStartBuf, CL_FALSE, 0,
-                                          batchSize * sizeof(start_condition), b.hostStartBuf.data(),
-                                          nullptr, &b.clStartKernel[0]);
+
 
         if(err != CL_SUCCESS) {
             std::cout << "Failed to transfer start buffer: " << err << std::endl;
         }
 
-        // calculate local size
-        size_t local_size = WORKGROUP_SIZE;
-                    while(batchSize % local_size != 0) {
-                        local_size /= 2;
+        size_t rest = batchSize % WORKGROUP_SIZE;
+        size_t whole = batchSize - rest;
+
+        // Transfer start buffer to device
+        //err = cmdQueue->enqueueWriteBuffer(b.clStartBuf, CL_FALSE, 0,
+        //                                  batchSize * sizeof(start_condition), b.hostStartBuf.data(),
+        //                                 nullptr, &b.clStartKernel[0]);
+
+        cmdQueue->enqueueUnmapMemObject(b.clStartBuf, clStart);
+
+        if(whole > 0) {
+            // Launch kernel on the compute device.
+            err = cmdQueue->enqueueNDRangeKernel(b.clKernel, cl::NullRange,
+                                                cl::NDRange{whole}, cl::NDRange{WORKGROUP_SIZE},
+                                                nullptr, rest ? &b.clTmpResult[0] : &b.clReadResult[0]);
+            if(err != CL_SUCCESS) {
+                std::cout << "enqueueNDRangeKernel failed: " << err << std::endl;
+            }
         }
 
-        // Launch kernel on the compute device.
-        err = cmdQueue->enqueueNDRangeKernel(b.clKernel, cl::NullRange,
-                                            cl::NDRange{batchSize}, cl::NDRange{local_size},
-                                            &b.clStartKernel, &b.clReadResult[0]);
-        if(err != CL_SUCCESS) {
-            std::cout << "enqueueNDRangeKernel failed: " << err << std::endl;
+        if(rest > 0) {
+            // Launch kernel on the compute device.
+            err = cmdQueue->enqueueNDRangeKernel(b.clKernel, cl::NDRange{whole},
+                                                cl::NDRange{rest}, cl::NDRange{1},
+                                                whole ? &b.clTmpResult : nullptr, &b.clReadResult[0]);
+            if(err != CL_SUCCESS) {
+                std::cout << "enqueueNDRangeKernel failed: " << err << std::endl;
+            }
         }
-
-        //cmdQueue.flush();
 
         // wait for free slot
         auto it = running.begin();
@@ -296,7 +293,7 @@ uint64_t ClSolver::solve_subboard(const std::vector<start_condition> &start)
             // loop endless over running batches
             if(it == running.end()) {
                 it = running.begin();
-                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                std::this_thread::sleep_for(std::chrono::milliseconds(80));
             }
 
             size_t idx = *it;
@@ -310,7 +307,6 @@ uint64_t ClSolver::solve_subboard(const std::vector<start_condition> &start)
             }
         }
     }
-
 
     running.clear();
     for(size_t i = 0; i < NUM_BATCHES; i++) {
@@ -327,7 +323,6 @@ uint64_t ClSolver::solve_subboard(const std::vector<start_condition> &start)
         }
         running.push_back(i);
     }
-
 
     auto it = running.begin();
     while (!running.empty()) {
@@ -348,6 +343,61 @@ uint64_t ClSolver::solve_subboard(const std::vector<start_condition> &start)
             // remove from running batches
             it = running.erase(it);
         }
+    }
+
+    results[id] = result;
+}
+
+PreSolver ClSolver::nextPre(std::mutex& pre_lock)
+{
+    auto result = PreSolver();
+    std::lock_guard<std::mutex> lock(pre_lock);
+    if(solved < start.size()) {
+        std::cout << "Solving: " << solved << "/" << start.size() << std::endl;
+        result = PreSolver(boardsize, placed, presolve_depth, start[solved]);
+        solved++;
+    }
+
+    return result;
+}
+
+uint64_t ClSolver::solve_subboard(const std::vector<start_condition> &start)
+{
+    cl_int err = CL_SUCCESS;
+
+    this->start = start;
+    solved = 0;
+
+    if(start.empty()) {
+        return 0;
+    }
+
+    std::thread* threads[NUM_CMDQUEUES] = {nullptr};
+    std::mutex pre_lock;
+
+    for(size_t i = 0; i < NUM_CMDQUEUES; i++) {
+        auto& cmdQueue = queues[i];
+        // Create command queue.
+        cmdQueue = cl::CommandQueue(context, device, CL_QUEUE_OUT_OF_ORDER_EXEC_MODE_ENABLE, &err);
+        if(err != CL_SUCCESS) {
+            std::cout << "CommandQueue failed, probably out-of-order-exec not supported: " << err << std::endl;
+            cmdQueue = cl::CommandQueue(context, device, 0, &err);
+            if(err != CL_SUCCESS) {
+                std::cout << "failed to create command queue: " << err << std::endl;
+            }
+        }
+
+        // init result
+        results.push_back(0);
+
+        threads[i] = new std::thread(&ClSolver::threadWorker, this, i, std::ref(pre_lock));
+    }
+
+    uint64_t result = 0;
+    for(size_t i = 0; i < NUM_CMDQUEUES; i++) {
+        threads[i]->join();
+        result += results[i];
+        delete threads[i];
     }
 
     return result * 2;

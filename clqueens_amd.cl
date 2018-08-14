@@ -27,7 +27,7 @@ typedef ulong uint_fast64_t;
 #define L (get_local_id(0))
 #define G (get_global_id(0))
 
-kernel void solve_subboard(__global const start_condition* in_starts, __global ulong* out_cnt) {
+kernel void solve_subboard(__global const start_condition* in_starts, __global uint* out_cnt) {
     size_t id = get_global_id(0);
 
     // counter for the number of solutions
