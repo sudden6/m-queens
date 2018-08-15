@@ -17,9 +17,9 @@ public:
     uint64_t solve_subboard(const std::vector<start_condition>& start);
 
 private:
-    void threadWorker(uint32_t id, std::mutex& pre_lock);
-    static constexpr size_t NUM_CMDQUEUES = 8;
-    PreSolver nextPre(std::mutex &pre_lock);
+    void threadWorker(uint32_t id, std::mutex *pre_lock);
+    static constexpr size_t NUM_CMDQUEUES = 1;
+    PreSolver nextPre(std::mutex *pre_lock);
 
     std::vector<start_condition> start;
     size_t solved = 0;

@@ -153,35 +153,29 @@ typedef struct {
     std::vector<cl::Event> clStartKernel = {cl::Event()};
     std::vector<cl::Event> clTmpResult = {cl::Event()};
     std::vector<cl::Event> clReadResult = {cl::Event()};
-    //std::vector<start_condition> hostStartBuf;
     std::vector<result_type> hostOutputBuf;
     size_t size = 0;
-    size_t used = 0;
     cl::CommandQueue* cmdQueue;
 } batch;
 
 constexpr size_t NUM_BATCHES = 1;
 
-void ClSolver::threadWorker(uint32_t id, std::mutex& pre_lock)
+void ClSolver::threadWorker(uint32_t id, std::mutex* pre_lock)
 {
     cl_int err = CL_SUCCESS;
 
     // buffer
     batch batches[NUM_BATCHES];
-    std::list<size_t> running;
-    std::list<size_t> complete;
 
     for(size_t i = 0; i < NUM_BATCHES; i++) {
         batch& b = batches[i];
-        // add this slot to the free queue
-        complete.push_back(i);
+        b.cmdQueue = &queues[id];
+
         // create device kernel
         b.clKernel = cl::Kernel(program, "solve_subboard", &err);
         if(err != CL_SUCCESS) {
             std::cout << "cl::Kernel failed: " << err << std::endl;
         }
-        // Allocate start condition buffer on host
-        //b.hostStartBuf.resize(BATCH_SIZE);
 
         // Allocate start condition buffer on device
         b.clStartBuf = cl::Buffer(context, CL_MEM_READ_ONLY | CL_MEM_HOST_WRITE_ONLY | CL_MEM_ALLOC_HOST_PTR,
@@ -211,31 +205,33 @@ void ClSolver::threadWorker(uint32_t id, std::mutex& pre_lock)
         if(err != CL_SUCCESS) {
             std::cout << "solve_subboard.setArg(1 failed: " << err << std::endl;
         }
-
-        b.cmdQueue = &queues[id];
     }
-
-    uint64_t result = 0;
 
     auto pre = nextPre(pre_lock);
     auto start_time = std::time(nullptr);
 
     while (!pre.empty()) {
-        // move idx from free queue to busy queue
-        size_t cur = complete.front();
-        complete.pop_front();
-        running.push_back(cur);
-        auto& b = batches[cur];
-        auto& cmdQueue = b.cmdQueue;
+        auto& b = batches[0];
+        auto cmdQueue = &queues[id];
+        if(!cmdQueue) {
+            std::cout << "Unuexpected NULL ptr" << std::endl;
+            return;
+        }
 
-        void* clStart = cmdQueue->enqueueMapBuffer(b.clStartBuf, TRUE, CL_MAP_WRITE, 0, BATCH_SIZE);
+        void* clStart = cmdQueue->enqueueMapBuffer(b.clStartBuf, TRUE, CL_MAP_WRITE, 0, BATCH_SIZE, nullptr, nullptr, &err);
+        if(err != CL_SUCCESS) {
+            std::cout << "Failed to map start buffer: " << err << std::endl;
+        }
+
+        if(!clStart) {
+            std::cout << "Unexpected NULL pointer" << std::endl;
+        }
         start_condition * curIt = static_cast<start_condition*>(clStart);
         const start_condition * beginIt = curIt;
         const start_condition * endIt = beginIt + BATCH_SIZE;
 
         // TODO(sudden6): cleanup
-        //auto hostBufIt = b.hostStartBuf.begin();
-        while(curIt != endIt) {
+        while(curIt < endIt) {
             curIt = pre.getNext(curIt, endIt);
             if(pre.empty()) {
                 auto end_time = std::time(nullptr);
@@ -247,31 +243,23 @@ void ClSolver::threadWorker(uint32_t id, std::mutex& pre_lock)
                 }
             }
         }
+
         b.size = curIt - beginIt;
         const auto& batchSize = b.size;
-        b.used = std::max(batchSize, b.used);
-
-
-
-        if(err != CL_SUCCESS) {
-            std::cout << "Failed to transfer start buffer: " << err << std::endl;
-        }
 
         size_t rest = batchSize % WORKGROUP_SIZE;
         size_t whole = batchSize - rest;
 
-        // Transfer start buffer to device
-        //err = cmdQueue->enqueueWriteBuffer(b.clStartBuf, CL_FALSE, 0,
-        //                                  batchSize * sizeof(start_condition), b.hostStartBuf.data(),
-        //                                 nullptr, &b.clStartKernel[0]);
-
-        cmdQueue->enqueueUnmapMemObject(b.clStartBuf, clStart);
+        err = cmdQueue->enqueueUnmapMemObject(b.clStartBuf, clStart, nullptr, &b.clStartKernel[0]);
+        if(err != CL_SUCCESS) {
+            std::cout << "Failed to unmap start buffer: " << err << std::endl;
+        }
 
         if(whole > 0) {
             // Launch kernel on the compute device.
             err = cmdQueue->enqueueNDRangeKernel(b.clKernel, cl::NullRange,
                                                 cl::NDRange{whole}, cl::NDRange{WORKGROUP_SIZE},
-                                                nullptr, rest ? &b.clTmpResult[0] : &b.clReadResult[0]);
+                                                &b.clStartKernel, rest ? &b.clTmpResult[0] : &b.clReadResult[0]);
             if(err != CL_SUCCESS) {
                 std::cout << "enqueueNDRangeKernel failed: " << err << std::endl;
             }
@@ -281,83 +269,59 @@ void ClSolver::threadWorker(uint32_t id, std::mutex& pre_lock)
             // Launch kernel on the compute device.
             err = cmdQueue->enqueueNDRangeKernel(b.clKernel, cl::NDRange{whole},
                                                 cl::NDRange{rest}, cl::NDRange{1},
-                                                whole ? &b.clTmpResult : nullptr, &b.clReadResult[0]);
+                                                whole ? &b.clTmpResult : &b.clStartKernel, &b.clReadResult[0]);
             if(err != CL_SUCCESS) {
                 std::cout << "enqueueNDRangeKernel failed: " << err << std::endl;
             }
         }
 
         // wait for free slot
-        auto it = running.begin();
-        while (complete.empty()) {
-            // loop endless over running batches
-            if(it == running.end()) {
-                it = running.begin();
-                std::this_thread::sleep_for(std::chrono::milliseconds(80));
-            }
+        err = b.clReadResult[0].wait();
 
-            size_t idx = *it;
-            batch& c = batches[idx];
-            // check if batch finished
-            if(c.clReadResult[0].getInfo<CL_EVENT_COMMAND_EXECUTION_STATUS>() == CL_COMPLETE) {
-                // remove from running batches
-                running.erase(it);
-                // add to completed batches
-                complete.push_back(idx);
-            }
+        if(err != CL_SUCCESS) {
+            std::cout << "wait failed: " << err << std::endl;
         }
     }
 
-    running.clear();
     for(size_t i = 0; i < NUM_BATCHES; i++) {
         batch& b = batches[i];
         auto& cmdQueue = b.cmdQueue;
-        if(b.used == 0) {
-            continue;
-        }
+
         err = cmdQueue->enqueueReadBuffer(b.clOutputBuf, CL_FALSE, 0,
-                                         b.used * sizeof(result_type), b.hostOutputBuf.data(),
-                                         &b.clReadResult, &b.clBatchDone);
+                                         BATCH_SIZE * sizeof(result_type), b.hostOutputBuf.data(),
+                                         &b.clReadResult, nullptr);
         if(err != CL_SUCCESS) {
             std::cout << "enqueueReadBuffer failed: " << err << std::endl;
         }
-        running.push_back(i);
     }
 
-    auto it = running.begin();
-    while (!running.empty()) {
-        // loop endless over running batches
-        if(it == running.end()) {
-            it = running.begin();
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
-        }
+    uint64_t result = 0;
 
-        size_t idx = *it;
-        batch& c = batches[idx];
-        // check if batch finished
-        if(c.clBatchDone.getInfo<CL_EVENT_COMMAND_EXECUTION_STATUS>() == CL_COMPLETE) {
-            // get data from completed batch
-            for(size_t i = 0; i < c.used; i++) {
-                result += c.hostOutputBuf[i];
-            }
-            // remove from running batches
-            it = running.erase(it);
+    queues[id].finish();
+
+    for(size_t i = 0; i < NUM_BATCHES; i++) {
+        batch& b = batches[i];
+
+        // get data from completed batch
+        for(size_t i = 0; i < BATCH_SIZE; i++) {
+            result += b.hostOutputBuf[i];
         }
     }
 
     results[id] = result;
 }
 
-PreSolver ClSolver::nextPre(std::mutex& pre_lock)
+PreSolver ClSolver::nextPre(std::mutex* pre_lock)
 {
     auto result = PreSolver();
-    std::lock_guard<std::mutex> lock(pre_lock);
+    pre_lock->lock();
     if(solved < start.size()) {
         std::cout << "Solving: " << solved << "/" << start.size() << std::endl;
         result = PreSolver(boardsize, placed, presolve_depth, start[solved]);
         solved++;
     }
 
+    pre_lock->unlock();
     return result;
 }
 
@@ -373,7 +337,10 @@ uint64_t ClSolver::solve_subboard(const std::vector<start_condition> &start)
     }
 
     std::thread* threads[NUM_CMDQUEUES] = {nullptr};
-    std::mutex pre_lock;
+    std::mutex* pre_lock = new std::mutex();
+
+    std::cout << "Number of Threads: " << NUM_CMDQUEUES << std::endl;
+    std::cout << "Buffer per Thread: " << BATCH_SIZE * sizeof(start_condition)/(1024*1024) << "MB" << std::endl;
 
     for(size_t i = 0; i < NUM_CMDQUEUES; i++) {
         auto& cmdQueue = queues[i];
@@ -390,7 +357,7 @@ uint64_t ClSolver::solve_subboard(const std::vector<start_condition> &start)
         // init result
         results.push_back(0);
 
-        threads[i] = new std::thread(&ClSolver::threadWorker, this, i, std::ref(pre_lock));
+        threads[i] = new std::thread(&ClSolver::threadWorker, this, i, pre_lock);
     }
 
     uint64_t result = 0;
@@ -399,6 +366,8 @@ uint64_t ClSolver::solve_subboard(const std::vector<start_condition> &start)
         result += results[i];
         delete threads[i];
     }
+
+    delete pre_lock;
 
     return result * 2;
 }

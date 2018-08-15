@@ -233,7 +233,7 @@ std::vector<start_condition>::iterator PreSolver::getNext(std::vector<start_cond
 start_condition* PreSolver::getNext(start_condition* it,
                         const start_condition* end)
 {
-    if(it == end) {
+    if(it >= end) {
         return it;
     }
 
@@ -283,7 +283,7 @@ start_condition* PreSolver::getNext(start_condition* it,
                 it->diagl = static_cast<uint32_t> (new_diagl);
                 it->diagr = static_cast<uint32_t>(new_diagr);
                 it++;
-                if(it != end) {
+                if(it < end) {
                     continue;
                 } else {
                     return it;
