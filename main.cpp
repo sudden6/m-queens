@@ -18,7 +18,7 @@
 //#define TESTSUITE
 
 #ifndef N
-#define N 18
+#define N 19
 #endif
 #define MAXN 29
 
@@ -180,8 +180,6 @@ std::vector<start_condition> create_subboards(uint_fast8_t n, uint_fast8_t place
     result.resize(res_cnt); // shrink
     return result;
 }
-
-
 
 // expected results from https://oeis.org/A000170
 static const uint64_t results[27] = {

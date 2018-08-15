@@ -35,25 +35,26 @@ kernel void solve_subboard(__global const start_condition* in_starts, __global u
 
     // 32 bits are sufficient if the rest depth is <= 13
     uint_fast32_t num = 0;
-    __local uint_fast32_t cols[WG_SIZE][DEPTH], posibs[WG_SIZE][DEPTH]; // Our backtracking 'stack'
-    __local uint_fast32_t diagl[WG_SIZE][DEPTH], diagr[WG_SIZE][DEPTH];
+    __local uint_fast32_t cols[WG_SIZE][DEPTH];
+    __local uint_fast32_t posibs[WG_SIZE][DEPTH]; // Our backtracking 'stack'
+    __private uint_fast32_t diagl[DEPTH], diagr[DEPTH];
     int_fast16_t d = 0; // d is our depth in the backtrack stack
     // The UINT_FAST32_MAX here is used to fill all 'coloumn' bits after n ...
     cols[L][d] = in_starts[id].cols | (UINT_FAST32_MAX << N);
     // This places the first two queens
-    diagl[L][d] = in_starts[id].diagl;
-    diagr[L][d] = in_starts[id].diagr;
+    diagl[d] = in_starts[id].diagl;
+    diagr[d] = in_starts[id].diagr;
     #define LOOKAHEAD 3
 
     //  The variable posib contains the bitmask of possibilities we still have
     //  to try in a given row ...
-    uint_fast32_t posib = (cols[L][d] | diagl[L][d] | diagr[L][d]);
+    uint_fast32_t posib = (cols[L][d] | diagl[d] | diagr[d]);
 
     while (d >= 0) {
       // moving the two shifts out of the inner loop slightly improves
       // performance
-      uint_fast32_t diagl_shifted = diagl[L][d] << 1;
-      uint_fast32_t diagr_shifted = diagr[L][d] >> 1;
+      uint_fast32_t diagl_shifted = diagl[d] << 1;
+      uint_fast32_t diagr_shifted = diagr[d] >> 1;
       uint_fast32_t l_cols = cols[L][d];
 
 
@@ -96,8 +97,8 @@ kernel void solve_subboard(__global const start_condition* in_starts, __global u
             // make values current
             l_cols = bit;
             cols[L][d] = bit;
-            diagl[L][d] = new_diagl;
-            diagr[L][d] = new_diagr;
+            diagl[d] = new_diagl;
+            diagr[d] = new_diagr;
             diagl_shifted = new_diagl << 1;
             diagr_shifted = new_diagr >> 1;
         } else {

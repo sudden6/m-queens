@@ -12,6 +12,7 @@
 #include <thread>
 #include "presolver.h"
 #include "cpusolver.h"
+#include <CL/cl.h>
 #include <CL/cl.hpp>
 
 ClSolver::ClSolver()
@@ -91,7 +92,7 @@ constexpr uint_fast8_t MAXN = 29;
  * GPU is detected as "hung" by the driver and reset or the system crashes.
  */
 constexpr uint_fast8_t GPU_DEPTH = 8;
-constexpr size_t WORKGROUP_SIZE = 12;
+constexpr size_t WORKGROUP_SIZE = 64;
 
 bool ClSolver::init(uint8_t boardsize, uint8_t placed)
 {
@@ -143,7 +144,7 @@ bool ClSolver::init(uint8_t boardsize, uint8_t placed)
 // should be a multiple of 64 at least for AMD GPUs
 // ideally would be CL_KERNEL_PREFERRED_WORK_GROUP_SIZE_MULTIPLE
 // bigger BATCH_SIZE means higher memory usage
-constexpr size_t BATCH_SIZE = WORKGROUP_SIZE*(1 << 18);
+constexpr size_t BATCH_SIZE = WORKGROUP_SIZE*(1 << 15);
 typedef cl_uint result_type;
 
 typedef struct {
@@ -160,7 +161,7 @@ typedef struct {
 
 constexpr size_t NUM_BATCHES = 1;
 
-void ClSolver::threadWorker(uint32_t id, std::mutex* pre_lock)
+void ClSolver::threadWorker(uint32_t id, std::mutex &pre_lock)
 {
     cl_int err = CL_SUCCESS;
 
@@ -288,12 +289,14 @@ void ClSolver::threadWorker(uint32_t id, std::mutex* pre_lock)
         }
     }
 
+    cmdQueue.finish();
+
     for(size_t i = 0; i < NUM_BATCHES; i++) {
         batch& b = batches[i];
 
         err = cmdQueue.enqueueReadBuffer(b.clOutputBuf, CL_FALSE, 0,
                                          BATCH_SIZE * sizeof(result_type), b.hostOutputBuf.data(),
-                                         &b.clReadResult, nullptr);
+                                         nullptr, nullptr);
         if(err != CL_SUCCESS) {
             std::cout << "enqueueReadBuffer failed: " << err << std::endl;
         }
@@ -315,17 +318,17 @@ void ClSolver::threadWorker(uint32_t id, std::mutex* pre_lock)
     results[id] = result;
 }
 
-PreSolver ClSolver::nextPre(std::mutex* pre_lock)
+PreSolver ClSolver::nextPre(std::mutex& pre_lock)
 {
     auto result = PreSolver();
-    pre_lock->lock();
+    std::lock_guard<std::mutex> guard(pre_lock);
+
     if(solved < start.size()) {
         std::cout << "Solving: " << solved << "/" << start.size() << std::endl;
         result = PreSolver(boardsize, placed, presolve_depth, start[solved]);
         solved++;
     }
 
-    pre_lock->unlock();
     return result;
 }
 
@@ -339,7 +342,7 @@ uint64_t ClSolver::solve_subboard(const std::vector<start_condition> &start)
     }
 
     std::thread* threads[NUM_CMDQUEUES] = {nullptr};
-    std::mutex* pre_lock = new std::mutex();
+    std::mutex pre_lock{};
 
     std::cout << "Number of Threads: " << NUM_CMDQUEUES << std::endl;
     std::cout << "Buffer per Thread: " << BATCH_SIZE * sizeof(start_condition)/(1024*1024) << "MB" << std::endl;
@@ -348,7 +351,7 @@ uint64_t ClSolver::solve_subboard(const std::vector<start_condition> &start)
         // init result
         results.push_back(0);
 
-        threads[i] = new std::thread(&ClSolver::threadWorker, this, i, pre_lock);
+        threads[i] = new std::thread(&ClSolver::threadWorker, this, i, std::ref(pre_lock));
     }
 
     uint64_t result = 0;
@@ -357,8 +360,6 @@ uint64_t ClSolver::solve_subboard(const std::vector<start_condition> &start)
         result += results[i];
         delete threads[i];
     }
-
-    delete pre_lock;
 
     return result * 2;
 }
