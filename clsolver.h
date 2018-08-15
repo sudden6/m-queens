@@ -18,7 +18,7 @@ public:
 
 private:
     void threadWorker(uint32_t id, std::mutex *pre_lock);
-    static constexpr size_t NUM_CMDQUEUES = 1;
+    static constexpr size_t NUM_CMDQUEUES = 16;
     PreSolver nextPre(std::mutex *pre_lock);
 
     std::vector<start_condition> start;
@@ -30,7 +30,6 @@ private:
     cl::Context context;
     cl::Device device;
     cl::Program program;
-    cl::CommandQueue queues[NUM_CMDQUEUES];
     std::vector<uint64_t> results;
 };
 
