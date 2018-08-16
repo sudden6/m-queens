@@ -164,19 +164,20 @@ constexpr size_t NUM_BATCHES = 1;
 void ClSolver::threadWorker(uint32_t id, std::mutex &pre_lock)
 {
     cl_int err = CL_SUCCESS;
+    auto pre = nextPre(pre_lock);
+
+    if(pre.empty()) {
+        return;
+    }
 
     // buffer
     batch batches[NUM_BATCHES];
     cl::CommandQueue cmdQueue;
     // Create command queue.
-    cmdQueue = cl::CommandQueue(context, device, CL_QUEUE_OUT_OF_ORDER_EXEC_MODE_ENABLE, &err);
+    cmdQueue = cl::CommandQueue(context, device, 0, &err);
     if(err != CL_SUCCESS) {
-        std::cout << "CommandQueue failed, probably out-of-order-exec not supported: " << err << std::endl;
-        cmdQueue = cl::CommandQueue(context, device, 0, &err);
-        if(err != CL_SUCCESS) {
-            std::cout << "failed to create command queue: " << err << std::endl;
-            return;
-        }
+        std::cout << "failed to create command queue: " << err << std::endl;
+        return;
     }
 
     for(size_t i = 0; i < NUM_BATCHES; i++) {
@@ -200,10 +201,19 @@ void ClSolver::threadWorker(uint32_t id, std::mutex &pre_lock)
         b.hostOutputBuf = std::vector<result_type>(BATCH_SIZE, 0);
 
         // Allocate result buffer on device
-        b.clOutputBuf = cl::Buffer(context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR,
-            BATCH_SIZE * sizeof(result_type), b.hostOutputBuf.data(), &err);
+        b.clOutputBuf = cl::Buffer(context, CL_MEM_READ_WRITE | CL_MEM_HOST_READ_ONLY,
+            BATCH_SIZE * sizeof(result_type), nullptr, &err);
         if(err != CL_SUCCESS) {
             std::cout << "cl::Buffer results_buf failed: " << err << std::endl;
+        }
+
+        // zero the result buffer
+        result_type pattern = 0;
+        err = cmdQueue.enqueueFillBuffer(b.clOutputBuf, pattern,
+                                         0, BATCH_SIZE * sizeof(result_type),
+                                         nullptr, nullptr);
+        if(err != CL_SUCCESS) {
+            std::cout << "fillBuffer results_buf failed: " << err << std::endl;
         }
 
         // Set kernel parameters.
@@ -218,13 +228,14 @@ void ClSolver::threadWorker(uint32_t id, std::mutex &pre_lock)
         }
     }
 
-    auto pre = nextPre(pre_lock);
+
     auto start_time = std::time(nullptr);
 
     while (!pre.empty()) {
         auto& b = batches[0];
 
-        void* clStart = cmdQueue.enqueueMapBuffer(b.clStartBuf, TRUE, CL_MAP_WRITE, 0, BATCH_SIZE, nullptr, nullptr, &err);
+        void* clStart = cmdQueue.enqueueMapBuffer(b.clStartBuf, CL_TRUE, CL_MAP_WRITE_INVALIDATE_REGION,
+                                                  0, BATCH_SIZE * sizeof(start_condition), nullptr, nullptr, &err);
         if(err != CL_SUCCESS) {
             std::cout << "Failed to map start buffer: " << err << std::endl;
         }
@@ -256,7 +267,7 @@ void ClSolver::threadWorker(uint32_t id, std::mutex &pre_lock)
         size_t rest = batchSize % WORKGROUP_SIZE;
         size_t whole = batchSize - rest;
 
-        err = cmdQueue.enqueueUnmapMemObject(b.clStartBuf, clStart, nullptr, &b.clStartKernel[0]);
+        err = cmdQueue.enqueueUnmapMemObject(b.clStartBuf, clStart, nullptr, nullptr);
         if(err != CL_SUCCESS) {
             std::cout << "Failed to unmap start buffer: " << err << std::endl;
         }
@@ -265,7 +276,7 @@ void ClSolver::threadWorker(uint32_t id, std::mutex &pre_lock)
             // Launch kernel on the compute device.
             err = cmdQueue.enqueueNDRangeKernel(b.clKernel, cl::NullRange,
                                                 cl::NDRange{whole}, cl::NDRange{WORKGROUP_SIZE},
-                                                &b.clStartKernel, rest ? &b.clTmpResult[0] : &b.clReadResult[0]);
+                                                nullptr, nullptr);
             if(err != CL_SUCCESS) {
                 std::cout << "enqueueNDRangeKernel failed: " << err << std::endl;
             }
@@ -275,21 +286,20 @@ void ClSolver::threadWorker(uint32_t id, std::mutex &pre_lock)
             // Launch kernel on the compute device.
             err = cmdQueue.enqueueNDRangeKernel(b.clKernel, cl::NDRange{whole},
                                                 cl::NDRange{rest}, cl::NDRange{1},
-                                                whole ? &b.clTmpResult : &b.clStartKernel, &b.clReadResult[0]);
+                                                nullptr, nullptr);
             if(err != CL_SUCCESS) {
                 std::cout << "enqueueNDRangeKernel failed: " << err << std::endl;
             }
         }
 
+        /*
         // wait for free slot
         err = b.clReadResult[0].wait();
 
         if(err != CL_SUCCESS) {
             std::cout << "wait failed: " << err << std::endl;
-        }
+        }*/
     }
-
-    cmdQueue.finish();
 
     for(size_t i = 0; i < NUM_BATCHES; i++) {
         batch& b = batches[i];
