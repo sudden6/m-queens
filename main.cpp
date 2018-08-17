@@ -2,7 +2,6 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <sys/time.h>
 #include <iostream>
 #include <iterator>
 #include <thread>
@@ -18,7 +17,7 @@
 //#define TESTSUITE
 
 #ifndef N
-#define N 19
+#define N 22
 #endif
 #define MAXN 29
 
@@ -30,12 +29,23 @@
 #error "N too small"
 #endif
 
+
+#ifdef _MSC_VER
+double get_time() {
+    return GetTickCount64() / 1000.0;
+}
+
+#else
+#include <sys/time.h>
+
 // get the current wall clock time in seconds
 double get_time() {
   struct timeval tp;
   gettimeofday(&tp, nullptr);
   return tp.tv_sec + tp.tv_usec / 1000000.0;
 }
+
+#endif
 
 std::vector<start_condition> create_preplacement(uint_fast8_t n) {
     std::vector<start_condition> result;

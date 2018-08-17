@@ -159,7 +159,7 @@ typedef struct {
     size_t size = 0;
 } batch;
 
-constexpr size_t NUM_BATCHES = 1;
+constexpr size_t NUM_BATCHES = 2;
 
 void ClSolver::threadWorker(uint32_t id, std::mutex &pre_lock)
 {
@@ -231,8 +231,12 @@ void ClSolver::threadWorker(uint32_t id, std::mutex &pre_lock)
 
     auto start_time = std::time(nullptr);
 
+    size_t cur_batch = 0;
+
     while (!pre.empty()) {
-        auto& b = batches[0];
+        auto& b = batches[cur_batch];
+        cur_batch++;
+        cur_batch %= NUM_BATCHES;
 
         void* clStart = cmdQueue.enqueueMapBuffer(b.clStartBuf, CL_TRUE, CL_MAP_WRITE_INVALIDATE_REGION,
                                                   0, BATCH_SIZE * sizeof(start_condition), nullptr, nullptr, &err);
@@ -291,14 +295,6 @@ void ClSolver::threadWorker(uint32_t id, std::mutex &pre_lock)
                 std::cout << "enqueueNDRangeKernel failed: " << err << std::endl;
             }
         }
-
-        /*
-        // wait for free slot
-        err = b.clReadResult[0].wait();
-
-        if(err != CL_SUCCESS) {
-            std::cout << "wait failed: " << err << std::endl;
-        }*/
     }
 
     for(size_t i = 0; i < NUM_BATCHES; i++) {
