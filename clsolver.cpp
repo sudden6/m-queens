@@ -144,19 +144,14 @@ bool ClSolver::init(uint8_t boardsize, uint8_t placed)
 // should be a multiple of 64 at least for AMD GPUs
 // ideally would be CL_KERNEL_PREFERRED_WORK_GROUP_SIZE_MULTIPLE
 // bigger BATCH_SIZE means higher memory usage
-constexpr size_t BATCH_SIZE = WORKGROUP_SIZE*(1 << 15);
+constexpr size_t BATCH_SIZE = WORKGROUP_SIZE*(1 << 13);
 typedef cl_uint result_type;
 
 typedef struct {
     cl::Kernel clKernel;
     cl::Buffer clStartBuf;
     cl::Buffer clOutputBuf;
-    cl::Event clBatchDone;
-    std::vector<cl::Event> clStartKernel = {cl::Event()};
-    std::vector<cl::Event> clTmpResult = {cl::Event()};
-    std::vector<cl::Event> clReadResult = {cl::Event()};
     std::vector<result_type> hostOutputBuf;
-    size_t size = 0;
 } batch;
 
 constexpr size_t NUM_BATCHES = 1;
@@ -276,8 +271,7 @@ void ClSolver::threadWorker(uint32_t id, std::mutex &pre_lock)
             }
         }
 
-        b.size = curIt - beginIt;
-        const auto& batchSize = b.size;
+        const size_t batchSize = curIt - beginIt;
 
         size_t rest = batchSize % WORKGROUP_SIZE;
         size_t whole = batchSize - rest;
