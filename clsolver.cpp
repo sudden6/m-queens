@@ -91,7 +91,7 @@ constexpr uint_fast8_t MAXN = 29;
  * With a too high GPU_DEPTH, solving a board takes too long and the
  * GPU is detected as "hung" by the driver and reset or the system crashes.
  */
-constexpr uint_fast8_t GPU_DEPTH = 8;
+constexpr uint_fast8_t GPU_DEPTH = 10;
 constexpr size_t WORKGROUP_SIZE = 64;
 
 bool ClSolver::init(uint8_t boardsize, uint8_t placed)
@@ -159,7 +159,7 @@ typedef struct {
     size_t size = 0;
 } batch;
 
-constexpr size_t NUM_BATCHES = 2;
+constexpr size_t NUM_BATCHES = 1;
 
 void ClSolver::threadWorker(uint32_t id, std::mutex &pre_lock)
 {
@@ -200,6 +200,8 @@ void ClSolver::threadWorker(uint32_t id, std::mutex &pre_lock)
         // Allocate result buffer on host
         b.hostOutputBuf = std::vector<result_type>(BATCH_SIZE, 0);
 
+#if 0
+        // Needs OpenCL 1.2
         // Allocate result buffer on device
         b.clOutputBuf = cl::Buffer(context, CL_MEM_READ_WRITE | CL_MEM_HOST_READ_ONLY,
             BATCH_SIZE * sizeof(result_type), nullptr, &err);
@@ -215,6 +217,15 @@ void ClSolver::threadWorker(uint32_t id, std::mutex &pre_lock)
         if(err != CL_SUCCESS) {
             std::cout << "fillBuffer results_buf failed: " << err << std::endl;
         }
+#else
+        // Allocate result buffer on device
+        b.clOutputBuf = cl::Buffer(context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR,
+            BATCH_SIZE * sizeof(result_type), b.hostOutputBuf.data(), &err);
+        if(err != CL_SUCCESS) {
+            std::cout << "cl::Buffer results_buf failed: " << err << std::endl;
+        }
+#endif
+
 
         // Set kernel parameters.
         err = b.clKernel.setArg(0, b.clStartBuf);
@@ -295,6 +306,8 @@ void ClSolver::threadWorker(uint32_t id, std::mutex &pre_lock)
                 std::cout << "enqueueNDRangeKernel failed: " << err << std::endl;
             }
         }
+        // don't flood the device with commands
+        cmdQueue.flush();
     }
 
     for(size_t i = 0; i < NUM_BATCHES; i++) {
