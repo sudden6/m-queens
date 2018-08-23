@@ -14,10 +14,10 @@
 #include <vector>
 
 // uncomment to start with n=2 and compare to known results
-//#define TESTSUITE
+#define TESTSUITE
 
 #ifndef N
-#define N 22
+#define N 18
 #endif
 #define MAXN 29
 
@@ -237,7 +237,7 @@ void thread_worker(ClSolver solver, uint32_t id,
 int main(int argc, char **argv) {
 
 #ifdef TESTSUITE
-  int i = 8;
+  int i = 5;
 #else
   int i = N;
 #endif
@@ -251,67 +251,17 @@ int main(int argc, char **argv) {
   cpuSolver cpu;
   ClSolver ocl;
 
-
   for (; i <= N; i++) {
     double time_diff, time_start; // for measuring calculation time
-    cpu.init(i, 2);
-    ClSolver ocl[THREADS] = {};
-    std::thread* threads[THREADS] = {nullptr};
 
     cpu.init(i, 2);
-    for(uint32_t t = 0; t < THREADS; t++) {
-        ocl[t].init(i, 2);
-    }
+    ocl.init(i, 2);
+
     uint64_t result = 0;
     time_start = get_time();
     std::vector<start_condition> st = create_preplacement(i);
 
-    // round up
-    const size_t block_size = (st.size() + THREADS - 1)/THREADS;
-
-    auto block_start = st.begin();
-
-    for(uint32_t t = 0; t < THREADS; t++) {
-        auto end = block_start;
-        size_t remaining(std::distance(end, st.end()));
-        size_t step = block_size;
-        if (remaining < step)
-        {
-          step = remaining;
-        }
-        std::advance(end, step);
-        threads[t] = new std::thread(thread_worker, std::move(ocl[t]), t, block_start, end);
-        block_start = end;
-    }
-
-    //result = ocl.solve_subboard(st);
-
-    result = 0;
-    for(uint32_t t = 0; t < THREADS; t++) {
-        threads[t]->join();
-        result += thread_results[t];
-    }
-
-    for(uint32_t t = 0; t < THREADS; t++) {
-        delete threads[t];
-    }
-    /*
-    size_t st_size = st.size();
-    for(size_t j = 0; j < st_size; j++) {
-        //std::cout << j << " of " << st_size;
-        //std::vector<start_condition> second = create_subboards(i, 2, depth, st[j]);
-
-        uint64_t ocl_res;
-        std::vector<start_condition> second = {st[j]};
-        //uint64_t cpu_res = cpu.solve_subboard(second);
-        ocl_res = ocl.solve_subboard(second);
-        //std::cout << " subboards: " << second.size() << " DONE" << std::endl;
-        /*
-        if(cpu_res != ocl_res) {
-            std::cout << "Result mismatch" << std::endl;
-        }//
-        result += ocl_res;
-    }*/
+    result = ocl.solve_subboard(st);
 
     time_diff = (get_time() - time_start); // calculating time difference
     result == results[i - 1] ? printf("PASS ") : printf("FAIL ");
