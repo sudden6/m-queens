@@ -74,12 +74,12 @@ uint64_t nqueens(uint_fast8_t n) {
         bit |= cols[d];
 
         if (new_posib != UINT_FAST32_MAX) {
-            uint_fast32_t lookahead = (bit | (new_diagl << (LOOKAHEAD - 2)) | (new_diagr >> (LOOKAHEAD - 2)));
+            uint_fast32_t lookahead1 = (bit | (new_diagl << (LOOKAHEAD - 2)) | (new_diagr >> (LOOKAHEAD - 2)));
             uint_fast32_t lookahead2 = (bit | (new_diagl << (LOOKAHEAD - 1)) | (new_diagr >> (LOOKAHEAD - 1)));
             uint_fast32_t allowed1 = l_rest >= 0;
             uint_fast32_t allowed2 = l_rest > 0;
 
-            if(allowed1 && (lookahead == UINT_FAST32_MAX)) {
+            if(allowed1 && (lookahead1 == UINT_FAST32_MAX)) {
                 continue;
             }
 
@@ -91,7 +91,7 @@ uint64_t nqueens(uint_fast8_t n) {
           // when we passed the last possibility in a row.
           // Go lower in the stack, avoid branching by writing above the current
           // position
-          posibs[d + 1] = posib;
+          posibs[d] = posib;
           d += posib != UINT_FAST32_MAX; // avoid branching with this trick
           posib = new_posib;
 
@@ -109,8 +109,8 @@ uint64_t nqueens(uint_fast8_t n) {
           num += bit == UINT_FAST32_MAX;
         }
       }
-      posib = posibs[d]; // backtrack ...
       d--;
+      posib = posibs[d]; // backtrack ...
     }
   }
   return num * 2;
