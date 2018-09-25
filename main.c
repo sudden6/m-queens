@@ -67,11 +67,11 @@ uint64_t nqueens(uint_fast8_t n) {
       while (posib != UINT_FAST32_MAX) {
         // The standard trick for getting the rightmost bit in the mask
         uint_fast32_t bit = ~posib & (posib + 1);
+        posib ^= bit; // Eliminate the tried possibility.
         uint_fast32_t new_diagl = (bit << 1) | diagl_shifted;
         uint_fast32_t new_diagr = (bit >> 1) | diagr_shifted;
-        uint_fast32_t new_posib = (cols[d] | bit | new_diagl | new_diagr);
-        posib ^= bit; // Eliminate the tried possibility.
         bit |= cols[d];
+        uint_fast32_t new_posib = (bit | new_diagl | new_diagr);
 
         if (new_posib != UINT_FAST32_MAX) {
             uint_fast32_t lookahead1 = (bit | (new_diagl << (LOOKAHEAD - 2)) | (new_diagr >> (LOOKAHEAD - 2)));
