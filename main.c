@@ -40,7 +40,7 @@ uint64_t nqueens(uint_fast8_t n) {
   for (uint_fast16_t cnt = 0; cnt < start_cnt; cnt++) {
     uint_fast32_t cols[MAXN], posibs[MAXN]; // Our backtracking 'stack'
     uint_fast32_t diagl[MAXN], diagr[MAXN];
-    int_fast32_t rest[MAXN]; // number of rows left
+    int8_t rest[MAXN]; // number of rows left
     uint_fast32_t bit0 = start_queens[cnt][0]; // The first queen placed
     uint_fast32_t bit1 = start_queens[cnt][1]; // The second queen placed
     int_fast16_t d = 1; // d is our depth in the backtrack stack
@@ -62,7 +62,7 @@ uint64_t nqueens(uint_fast8_t n) {
       // performance
       uint_fast32_t diagl_shifted = diagl[d] << 1;
       uint_fast32_t diagr_shifted = diagr[d] >> 1;
-      int_fast32_t l_rest = rest[d];
+      int8_t l_rest = rest[d];
 
       while (posib != UINT_FAST32_MAX) {
         // The standard trick for getting the rightmost bit in the mask
@@ -76,8 +76,8 @@ uint64_t nqueens(uint_fast8_t n) {
         if (new_posib != UINT_FAST32_MAX) {
             uint_fast32_t lookahead1 = (bit | (new_diagl << (LOOKAHEAD - 2)) | (new_diagr >> (LOOKAHEAD - 2)));
             uint_fast32_t lookahead2 = (bit | (new_diagl << (LOOKAHEAD - 1)) | (new_diagr >> (LOOKAHEAD - 1)));
-            uint_fast32_t allowed1 = l_rest >= 0;
-            uint_fast32_t allowed2 = l_rest > 0;
+            uint_fast32_t allowed1 = l_rest >= (int8_t)0;
+            uint_fast32_t allowed2 = l_rest > (int8_t)0;
 
             if(allowed1 && (lookahead1 == UINT_FAST32_MAX)) {
                 continue;
