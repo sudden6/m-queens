@@ -377,5 +377,13 @@ uint64_t ClSolver::solve_subboard(const std::vector<start_condition> &start)
     return result * 2;
 }
 
+/*
+ * @brief Enumerates all available OpenCL devices
+ */
+void ClSolver::enumerate_devices()
+{
+    std::cout << "test" << std::endl;
+}
+
 
 

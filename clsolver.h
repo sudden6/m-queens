@@ -15,6 +15,7 @@ public:
     ClSolver();
     bool init(uint8_t boardsize, uint8_t placed);
     uint64_t solve_subboard(const std::vector<start_condition>& start);
+    static void enumerate_devices();
 
 private:
     void threadWorker(uint32_t id, std::mutex &pre_lock);

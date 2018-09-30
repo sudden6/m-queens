@@ -1,3 +1,4 @@
+#include <climits>
 #include <inttypes.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -10,6 +11,7 @@
 #include "cpusolver.h"
 #include "solverstructs.h"
 #include "presolver.h"
+#include "cxxopts.hpp"
 
 #include <vector>
 
@@ -234,24 +236,89 @@ void thread_worker(ClSolver solver, uint32_t id,
     thread_results[id] = solver.solve_subboard(thread_batch);
 }
 
-int main(int argc, char **argv) {
+enum class SolverType {CPU, OCL};
 
-#ifdef TESTSUITE
-  int i = 5;
-#else
-  int i = N;
-#endif
-  if (argc == 2) {
-    i = atoi(argv[1]);
-    if (i < 1 || i > MAXN) {
-      printf("n must be between 2 and %d!\n", MAXN);
+int main(int argc, char **argv) {
+    long start = 0;
+    long end = 0;
+    bool solve_range = false;
+    SolverType solver = SolverType::OCL;
+    bool list_opencl = false;
+    bool help = false;
+    std::string solver_string = "";
+    try
+    {
+      cxxopts::Options options("m-queens2", " - a CPU and GPU solver for the N queens problem");
+      options.add_options()
+        ("s,start", "[4..29] start value for N", cxxopts::value(start))
+        ("e,end", "[OPTIONAL] end value to solve a range of N values", cxxopts::value(end))
+        ("l,list", "list and enumerate available OpenCL devices, must be the only option passed", cxxopts::value(list_opencl))
+        ("c,cpu", "solve in cpu mode instead of OpenCL mode", cxxopts::value(solver_string)->default_value("ocl"))
+        ("h,help", "Print this infromation", cxxopts::value(solver_string))
+        ;
+
+      auto result = options.parse(argc, argv);
+
+      if (help)
+      {
+        options.help();
+        exit(0);
+      }
+
+      if (list_opencl)
+      {
+        std::cout << "The following OpenCL devices are available:" << std::endl;
+        ClSolver::enumerate_devices();
+        exit(0);
+      }
+
+      if (!result.count("start"))
+      {
+        std::cout << options.help() << std::endl;
+        exit(1);
+      }
+
+      if (result.count("end"))
+      {
+        solve_range = true;
+      }
+
+    } catch (const cxxopts::OptionException& e)
+    {
+      std::cout << "error parsing options: " << e.what() << std::endl;
+      exit(1);
     }
-  }
+
+    if(start <= 4 || start > MAXN) {
+      std::cout << "[start] must be greater 4 and smaller than " << std::to_string(MAXN) << std::endl;
+      exit(1);
+    }
+
+    if(solve_range) {
+      if(end < start || start > MAXN) {
+        std::cout << "[end] must be equal or greater [start] and smaller than " << std::to_string(MAXN) << std::endl;
+        exit(1);
+      }
+    } else {
+        end = start;
+    }
+
+    if(solver_string == "CPU" || solver_string == "cpu") {
+        solver = SolverType::CPU;
+    } else if(solver_string == "OCL" || solver_string == "ocl") {
+        solver = SolverType::OCL;
+    } else {
+        std::cout << "[type] must be either CPU or OCL" << std::endl;
+        exit(1);
+    }
 
   cpuSolver cpu;
   ClSolver ocl;
 
-  for (; i <= N; i++) {
+  uint8_t u8_start = static_cast<uint8_t>(start);
+  uint8_t u8_end = static_cast<uint8_t>(end);
+
+  for (uint8_t i = u8_start; i <= u8_end; i++) {
     double time_diff, time_start; // for measuring calculation time
 
     cpu.init(i, 2);
