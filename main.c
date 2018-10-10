@@ -36,8 +36,18 @@ uint64_t nqueens(uint_fast8_t n) {
     }
   }
 
-#pragma omp parallel for reduction(+ : num) schedule(dynamic)
+  // maximum number of queens present at row 3
+  #define START_LEVEL3 ((MAXN - 3) * (MAXN - 2) * (MAXN - 1))
+  // store the state at level3 as cols, diagl, diagr
+  uint_fast32_t start_level3[START_LEVEL3][3];
+
+    uint_fast32_t start_level3_cnt = 0;
+#define START_LEVEL4 (MAXN - 4)
+
+#pragma omp parallel for schedule(dynamic)
   for (uint_fast16_t cnt = 0; cnt < start_cnt; cnt++) {
+    uint_fast32_t start_level4[START_LEVEL4][3];
+    uint_fast32_t level4_cnt = 0;
     uint_fast32_t cols[MAXN], posibs[MAXN]; // Our backtracking 'stack'
     uint_fast32_t diagl[MAXN], diagr[MAXN];
     int8_t rest[MAXN]; // number of rows left
@@ -52,6 +62,93 @@ uint64_t nqueens(uint_fast8_t n) {
 #define LOOKAHEAD 3
     // we're allready two rows into the field here
     rest[d] = n - 2 - LOOKAHEAD;
+
+#define STORE_LEVEL (n - 2 - LOOKAHEAD - 1)
+
+    //  The variable posib contains the bitmask of possibilities we still have
+    //  to try in a given row ...
+    uint_fast32_t posib = (cols[d] | diagl[d] | diagr[d]);
+
+    while (d > 0) {
+      // moving the two shifts out of the inner loop slightly improves
+      // performance
+      uint_fast32_t diagl_shifted = diagl[d] << 1;
+      uint_fast32_t diagr_shifted = diagr[d] >> 1;
+      int8_t l_rest = rest[d];
+
+      while (posib != UINT_FAST32_MAX) {
+        // The standard trick for getting the rightmost bit in the mask
+        uint_fast32_t bit = ~posib & (posib + 1);
+        posib ^= bit; // Eliminate the tried possibility.
+        uint_fast32_t new_diagl = (bit << 1) | diagl_shifted;
+        uint_fast32_t new_diagr = (bit >> 1) | diagr_shifted;
+        bit |= cols[d];
+        uint_fast32_t new_posib = (bit | new_diagl | new_diagr);
+
+        if (new_posib != UINT_FAST32_MAX) {
+            uint_fast32_t lookahead1 = (bit | (new_diagl << (LOOKAHEAD - 2)) | (new_diagr >> (LOOKAHEAD - 2)));
+            uint_fast32_t lookahead2 = (bit | (new_diagl << (LOOKAHEAD - 1)) | (new_diagr >> (LOOKAHEAD - 1)));
+            uint_fast32_t allowed2 = l_rest > (int8_t)0;
+
+            if(allowed2 && ((lookahead2 == UINT_FAST32_MAX) || (lookahead1 == UINT_FAST32_MAX))) {
+                continue;
+            }
+
+
+          if(l_rest == (STORE_LEVEL + 1)) {
+            start_level4[level4_cnt][0] = bit;   // cols
+            start_level4[level4_cnt][1] = new_diagl; // diagl
+            start_level4[level4_cnt][2] = new_diagr; // diagr
+            level4_cnt++;
+            continue;
+          }
+
+          l_rest--;
+
+          // The next two lines save stack depth + backtrack operations
+          // when we passed the last possibility in a row.
+          // Go lower in the stack, avoid branching by writing above the current
+          // position
+          posibs[d] = posib;
+          d += posib != UINT_FAST32_MAX; // avoid branching with this trick
+          posib = new_posib;
+
+
+          // make values current
+          cols[d] = bit;
+          diagl[d] = new_diagl;
+          diagr[d] = new_diagr;
+          rest[d] = l_rest;
+          diagl_shifted = new_diagl << 1;
+          diagr_shifted = new_diagr >> 1;
+        }
+      }
+      d--;
+      posib = posibs[d]; // backtrack ...
+    }
+
+    // copy the results into global memory
+    uint_fast32_t old_idx;
+    // fetch_and_add in OpenMP
+#pragma omp atomic capture
+    { old_idx = start_level3_cnt; start_level3_cnt += level4_cnt; } // atomically update start_level3_cnt, but capture original value of start_level3_cnt in old_idx
+    memcpy(&start_level3[old_idx][0], &start_level4[0][0], level4_cnt*3*sizeof(uint_fast32_t));
+  }
+
+#pragma omp parallel for reduction(+ : num) schedule(dynamic)
+  for (uint_fast32_t cnt = 0; cnt < start_level3_cnt; cnt++) {
+    uint_fast32_t cols[MAXN], posibs[MAXN]; // Our backtracking 'stack'
+    uint_fast32_t diagl[MAXN], diagr[MAXN];
+    int8_t rest[MAXN]; // number of rows left
+    int_fast16_t d = 1; // d is our depth in the backtrack stack
+    // The UINT_FAST32_MAX here is used to fill all 'coloumn' bits after n ...
+    cols[d] = start_level3[cnt][0];
+    // This places the first two queens
+    diagl[d] = start_level3[cnt][1];
+    diagr[d] = start_level3[cnt][2];
+#define LOOKAHEAD 3
+    // we're allready two rows into the field here
+    rest[d] = STORE_LEVEL;
 
     //  The variable posib contains the bitmask of possibilities we still have
     //  to try in a given row ...
