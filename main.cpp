@@ -254,7 +254,7 @@ int main(int argc, char **argv) {
         ("e,end", "[OPTIONAL] end value to solve a range of N values", cxxopts::value(end))
         ("l,list", "list and enumerate available OpenCL devices, must be the only option passed", cxxopts::value(list_opencl))
         ("c,cpu", "solve in cpu mode instead of OpenCL mode", cxxopts::value(solver_string)->default_value("ocl"))
-        ("h,help", "Print this infromation", cxxopts::value(solver_string))
+        ("h,help", "Print this information")
         ;
 
       auto result = options.parse(argc, argv);

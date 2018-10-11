@@ -382,7 +382,56 @@ uint64_t ClSolver::solve_subboard(const std::vector<start_condition> &start)
  */
 void ClSolver::enumerate_devices()
 {
-    std::cout << "test" << std::endl;
+    cl_int err = 0;
+    std::vector<cl::Platform> platforms;
+    cl::Platform::get(&platforms);
+    if(platforms.empty()) {
+        std::cout << "No OpenCL platforms found" << std::endl;
+        return;
+    }
+
+    for(size_t platform_idx = 0; platform_idx < platforms.size(); platform_idx++) {
+
+        const auto& platform = platforms[platform_idx];
+
+        const std::string platform_str = "Platform[" + std::to_string(platform_idx) + "]";
+
+        std::cout << platform_str << " name: " << platform.getInfo<CL_PLATFORM_NAME>() << std::endl;
+        std::cout << platform_str << " version: " << platform.getInfo<CL_PLATFORM_VERSION>() << std::endl;
+
+        std::vector<cl::Device> devices;
+
+        err = platform.getDevices(CL_DEVICE_TYPE_ALL, &devices);
+        if(err != CL_SUCCESS) {
+            std::cout << "getDevices failed" << std::endl;
+            continue;
+        }
+
+        for(size_t device_idx = 0; device_idx < devices.size(); device_idx++) {
+            const std::string device_str = platform_str + " Device[" + std::to_string(device_idx) + "]";
+            const auto& device = devices[device_idx];
+            if (device.getInfo<CL_DEVICE_AVAILABLE>(&err)) {
+                std::string name = device.getInfo<CL_DEVICE_NAME>(&err);
+                if(err != CL_SUCCESS) {
+                    name = "N/A";
+                }
+
+                std::string version = device.getInfo<CL_DEVICE_VERSION>();
+
+                if(err != CL_SUCCESS) {
+                    version = "N/A";
+                }
+
+                std::cout << device_str << " name: " << name << std::endl;
+                std::cout << device_str << " version: " << version << std::endl;
+
+            }
+            if(err != CL_SUCCESS) {
+                std::cout << "getInfo<CL_DEVICE_AVAILABLE> failed" << std::endl;
+                continue;
+            }
+        }
+    }
 }
 
 
