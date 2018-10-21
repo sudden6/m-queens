@@ -6,10 +6,11 @@
 #include <mutex>
 #include "solverstructs.h"
 #include "presolver.h"
+#include "isolver.h"
 #include <CL/cl.h>
 #include <CL/cl.hpp>
 
-class ClSolver
+class ClSolver : public ISolver
 {
 public:
     ClSolver();

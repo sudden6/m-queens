@@ -1,12 +1,9 @@
 #ifndef CPUSOLVER_H
 #define CPUSOLVER_H
 
-#include <cstdint>
-#include <vector>
-#include "solverstructs.h"
+#include "isolver.h"
 
-
-class cpuSolver
+class cpuSolver : public ISolver
 {
 public:
     cpuSolver();

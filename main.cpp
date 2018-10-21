@@ -67,12 +67,11 @@ std::vector<start_condition> create_preplacement(uint_fast8_t n) {
     #pragma omp simd
     for (uint_fast8_t q0 = 0; q0 < n - 2; q0++) {
       for (uint_fast8_t q1 = q0 + 2; q1 < n; q1++) {
-        uint_fast32_t bit0 = 1 << q0;
-        uint_fast32_t bit1 = 1 << q1;
-        result[start_cnt].cols = bit0 | bit1;
-        result[start_cnt].diagl = (bit0 << 2) | (bit1 << 1);
-        result[start_cnt].diagr = (bit0 >> 2) | (bit1 >> 1);
-        //result[start_cnt].placed = 2;
+        uint_fast32_t bit0 = UINT32_C(1) << q0;
+        uint_fast32_t bit1 = UINT32_C(1) << q1;
+        result[start_cnt].cols = static_cast<uint32_t>(bit0 | bit1);
+        result[start_cnt].diagl = static_cast<uint32_t>((bit0 << 2) | (bit1 << 1));
+        result[start_cnt].diagr = static_cast<uint32_t>((bit0 >> 2) | (bit1 >> 1));
         start_cnt++;
       }
     }
@@ -92,20 +91,19 @@ std::vector<start_condition> create_subboards(uint_fast8_t n, uint_fast8_t place
         return  result;
     }
 
-    // compute maximum size needed for storing all results
-    uint_fast32_t num_starts = 1;
-    //uint_fast8_t new_depth = start.placed + depth;
-    int_fast8_t start_placed = n - placed;
     // ensure we don't preplace all rows
-    if(start_placed - depth < 1) {
+    if((placed + depth) >= n) {
         result.push_back(start);
         return result;
     }
 
-    for(int i = 0; i < depth; i++) {
+    // compute maximum size needed for storing all results
+    uint_fast32_t num_starts = 1;
+    uint_fast8_t start_placed = n - placed;
+
+    for(uint8_t i = 0; i < depth; i++) {
         num_starts *= start_placed - i;
     }
-
 
     uint_fast32_t res_cnt = 0;
     result.resize(num_starts);         // preallocate memory
@@ -121,7 +119,7 @@ std::vector<start_condition> create_subboards(uint_fast8_t n, uint_fast8_t place
     diagr[d] = start.diagr;
 #define LOOKAHEAD 3
     // we're allready two rows into the field here
-    rest[d] = n - LOOKAHEAD - placed;
+    rest[d] = static_cast<int_fast8_t>(n - LOOKAHEAD - placed);
     const int_fast8_t max_depth = rest[d] - depth + 1;  // save result at this depth
 
     //  The variable posib contains the bitmask of possibilities we still have
@@ -236,13 +234,10 @@ void thread_worker(ClSolver solver, uint32_t id,
     thread_results[id] = solver.solve_subboard(thread_batch);
 }
 
-enum class SolverType {CPU, OCL};
-
 int main(int argc, char **argv) {
     long start = 0;
     long end = 0;
     bool solve_range = false;
-    SolverType solver = SolverType::OCL;
     bool list_opencl = false;
     bool help = false;
     std::string solver_string = "";
@@ -253,7 +248,7 @@ int main(int argc, char **argv) {
         ("s,start", "[4..29] start value for N", cxxopts::value(start))
         ("e,end", "[OPTIONAL] end value to solve a range of N values", cxxopts::value(end))
         ("l,list", "list and enumerate available OpenCL devices, must be the only option passed", cxxopts::value(list_opencl))
-        ("c,cpu", "solve in cpu mode instead of OpenCL mode", cxxopts::value(solver_string)->default_value("ocl"))
+        ("m,mode", "solve on [cpu] or OpenCL [ocl] mode", cxxopts::value(solver_string)->default_value("ocl"))
         ("h,help", "Print this information")
         ;
 
@@ -303,17 +298,16 @@ int main(int argc, char **argv) {
         end = start;
     }
 
+    ISolver* solver = nullptr;
+
     if(solver_string == "CPU" || solver_string == "cpu") {
-        solver = SolverType::CPU;
+        solver = new cpuSolver();
     } else if(solver_string == "OCL" || solver_string == "ocl") {
-        solver = SolverType::OCL;
+        solver = new ClSolver();
     } else {
         std::cout << "[type] must be either CPU or OCL" << std::endl;
         exit(1);
     }
-
-  cpuSolver cpu;
-  ClSolver ocl;
 
   uint8_t u8_start = static_cast<uint8_t>(start);
   uint8_t u8_end = static_cast<uint8_t>(end);
@@ -321,14 +315,13 @@ int main(int argc, char **argv) {
   for (uint8_t i = u8_start; i <= u8_end; i++) {
     double time_diff, time_start; // for measuring calculation time
 
-    cpu.init(i, 2);
-    ocl.init(i, 2);
+    solver->init(i, 2);
 
     uint64_t result = 0;
     time_start = get_time();
     std::vector<start_condition> st = create_preplacement(i);
 
-    result = ocl.solve_subboard(st);
+    result = solver->solve_subboard(st);
 
     time_diff = (get_time() - time_start); // calculating time difference
     result == results[i - 1] ? printf("PASS ") : printf("FAIL ");
