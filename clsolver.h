@@ -13,12 +13,14 @@
 class ClSolver : public ISolver
 {
 public:
-    ClSolver();
     bool init(uint8_t boardsize, uint8_t placed);
     uint64_t solve_subboard(const std::vector<start_condition>& start);
     static void enumerate_devices();
 
+    static ClSolver* makeClSolver(unsigned int platform, unsigned int device);
+
 private:
+    ClSolver();
     void threadWorker(uint32_t id, std::mutex &pre_lock);
     static constexpr size_t NUM_CMDQUEUES = 16;
     PreSolver nextPre(std::mutex &pre_lock);

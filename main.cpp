@@ -240,6 +240,8 @@ int main(int argc, char **argv) {
     bool solve_range = false;
     bool list_opencl = false;
     bool help = false;
+    unsigned int ocl_platform = 0;
+    unsigned int ocl_device = 0;
     std::string solver_string = "";
     try
     {
@@ -249,6 +251,8 @@ int main(int argc, char **argv) {
         ("e,end", "[OPTIONAL] end value to solve a range of N values", cxxopts::value(end))
         ("l,list", "list and enumerate available OpenCL devices, must be the only option passed", cxxopts::value(list_opencl))
         ("m,mode", "solve on [cpu] or OpenCL [ocl] mode", cxxopts::value(solver_string)->default_value("ocl"))
+        ("p,platform", "OpenCL platform to use", cxxopts::value(ocl_platform)->default_value("0"))
+        ("d,device", "OpenCL device to use", cxxopts::value(ocl_device)->default_value("0"))
         ("h,help", "Print this information")
         ;
 
@@ -303,7 +307,10 @@ int main(int argc, char **argv) {
     if(solver_string == "CPU" || solver_string == "cpu") {
         solver = new cpuSolver();
     } else if(solver_string == "OCL" || solver_string == "ocl") {
-        solver = new ClSolver();
+        solver = ClSolver::makeClSolver(ocl_platform, ocl_device);
+        if(!solver) {
+            exit(1);
+        }
     } else {
         std::cout << "[type] must be either CPU or OCL" << std::endl;
         exit(1);
