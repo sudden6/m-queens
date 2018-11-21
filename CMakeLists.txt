@@ -24,6 +24,8 @@ set(${PROJECT_NAME}_SOURCES
   clsolver.h
   cpusolver.h
   cpusolver.cpp
+  filereader.cpp
+  filereader.h
   isolver.h
   presolver.cpp
   presolver.h

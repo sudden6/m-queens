@@ -9,6 +9,7 @@
 #include <time.h>
 #include "clsolver.h"
 #include "cpusolver.h"
+#include "filereader.h"
 #include "solverstructs.h"
 #include "presolver.h"
 #include "cxxopts.hpp"
@@ -235,6 +236,15 @@ void thread_worker(ClSolver solver, uint32_t id,
 }
 
 int main(int argc, char **argv) {
+    /* Test Code
+    std::string filename{"./N_5_NONE.dat"};
+    FileReader file(filename);
+
+    bool is_open = file.is_open();
+
+    auto result = file.getNext(3);
+    */
+
     long start = 0;
     long end = 0;
     bool solve_range = false;
