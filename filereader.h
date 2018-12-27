@@ -14,9 +14,9 @@ public:
     FileReader(const std::string &filename);
     bool is_open();
 
-    std::vector<Record> getNext(size_t count = 1);
-
-
+    std::vector<Preplacement> getNext(size_t count = 1);
+    static constexpr size_t record_size = 8;
+    static constexpr uint8_t empty = 0xFF;
 };
 
 #endif // FILEREADER_H

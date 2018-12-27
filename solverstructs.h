@@ -30,6 +30,24 @@ struct Record {
     uint32_t vert;
 };
 
+struct pre_named {
+    uint8_t col_A;
+    uint8_t col_B;
+    uint8_t col_C;
+    uint8_t col_D;
+    uint8_t row_E;
+    uint8_t row_F;
+    uint8_t row_G;
+    uint8_t row_H;
+};
+
+struct Preplacement {
+    union {
+        uint8_t raw[8];
+        struct pre_named named;
+    };
+};
+
 typedef struct start_condition_t start_condition;
 
 #endif // SOLVERSTRUCTS_H

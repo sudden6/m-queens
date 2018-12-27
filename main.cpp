@@ -124,17 +124,16 @@ void thread_worker(ClSolver solver, uint32_t id,
 }
 
 int main(int argc, char **argv) {
-    std::string filename{"./N_5_NONE.dat"};
-    FileReader file(filename);
-
-    bool is_open = file.is_open();
-
-    auto result = file.getNext(3);
+    std::string filename_none{"./N_5_NONE.dat2"};
+    std::string filename_rot{"./N_5_ROTATE.dat2"};
+    FileReader file_none(filename_none);
+    FileReader file_rot(filename_none);
 
     cpuSolver testSolver;
     testSolver.init(5, 0);
 
-    uint64_t res_cnt = testSolver.solve_subboard(result);
+    uint64_t res_cnt = testSolver.solve_subboard(file_none.getNext(2)) * 8;
+    res_cnt += testSolver.solve_subboard(file_rot.getNext(1)) * 2;
 
     long start = 0;
     long end = 0;

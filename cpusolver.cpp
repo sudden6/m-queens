@@ -118,7 +118,49 @@ uint64_t cpuSolver::solve_subboard(const std::vector<start_condition>& starts) {
   return num * 2;
 }
 
-uint64_t cpuSolver::solve_subboard(const std::vector<Record> &starts)
+void place_queen(uint_fast32_t& rows, uint_fast32_t& cols, uint_fast64_t& diags_u, uint_fast64_t& diags_d, uint8_t x, uint8_t y, uint8_t N) {
+    if(x == 0xFF || y == 0xFF) {
+        // no queen at this coordinates
+        return;
+    }
+
+    rows |= UINT32_C(1) << y;
+    cols |= UINT32_C(1) << x;
+    diags_u |= UINT64_C(1) << (N - 1 + x - y);
+    diags_d |= UINT64_C(1) << (x + y);
+}
+
+void load_preplacement(uint_fast32_t& rows, uint_fast32_t& cols, uint_fast64_t& diags_u, uint_fast64_t& diags_d, const Preplacement& pre, uint8_t N) {
+    uint8_t col_i[4] = {0, 1, static_cast<uint8_t>(N - 1), static_cast<uint8_t>(N - 2)};
+    uint8_t row_i[4] = {0, 1, static_cast<uint8_t>(N - 1), static_cast<uint8_t>(N - 2)};
+
+    for(uint8_t i = 0; i < 4; i++) {
+        // columns A, B, C, D
+        place_queen(rows, cols, diags_u, diags_d, col_i[i], pre.raw[i], N);
+        // rows E, F, G, H
+        place_queen(rows, cols, diags_u, diags_d, pre.raw[i + 4], row_i[i], N);
+    }
+}
+
+void go_up(uint_fast32_t& rows, uint_fast64_t& diags_u, uint_fast64_t& diags_d, uint8_t steps) {
+    rows >>= steps;
+    diags_d >>= steps;
+    diags_u <<= steps;
+}
+
+void skip_preplaced(uint_fast32_t& rows, uint_fast64_t& diags_u, uint_fast64_t& diags_d) {
+    if((0b1111 & rows) == 0b1111) {
+        go_up(rows, diags_u, diags_d, 4);
+    } else if((0b111 & rows) == 0b111) {
+        go_up(rows, diags_u, diags_d, 3);
+    } else if((0b11 & rows) == 0b11) {
+        go_up(rows, diags_u, diags_d, 2);
+    } else if((0b1 & rows) == 0b1) {
+        go_up(rows, diags_u, diags_d, 1);
+    }
+}
+
+uint64_t cpuSolver::solve_subboard(const std::vector<Preplacement> &starts)
 {
     // counter for the number of solutions
     // sufficient until n=29
@@ -128,78 +170,72 @@ uint64_t cpuSolver::solve_subboard(const std::vector<Record> &starts)
   #pragma omp parallel for reduction(+ : num) schedule(dynamic)
     for (size_t cnt = 0; cnt < start_cnt; cnt++) {
         uint_fast64_t l_num = 0;
-        uint_fast32_t cols[MAXN], rows[MAXN], posibs[MAXN]; // Our backtracking 'stack'
-        uint_fast64_t diagu[MAXN], diagd[MAXN];
+        uint_fast32_t cols[MAXN] = {0}, rows[MAXN] = {0}, posibs[MAXN] = {0}; // Our backtracking 'stack'
+        uint_fast64_t diagu[MAXN] = {0}, diagd[MAXN] = {0};
         int_fast16_t d = 1; // d is our depth in the backtrack stack
-        uint_fast16_t row_idx = 0;
         // The UINT_FAST32_MAX here is used to fill all 'coloumn' bits after n ...
-        const uint8_t N = boardsize;
-        cols[d] = ((((starts[cnt].hor>>2)|(UINT64_MAX<<(N-4)))+1)<<(N-5))-1; // TODO(chr): decipher this, copied from q27 source
-        rows[d] = starts[cnt].vert >> 2;
-        diagu[d] = starts[cnt].diag_up >> 4;
-        diagd[d] = (starts[cnt].diag_down >> 4) << (N - 5);
 
-        auto new_cols = cols[d] + 1;
+        load_preplacement(rows[d], cols[d], diagu[d], diagd[d], starts[cnt], boardsize);
 
-        // found a solution
-        if(new_cols == 0) {
-            l_num++;
+        // check if preplacement is already full
+        if(cols[d] == ((UINT32_C(1) << boardsize) - 1)) {
+            num++;
             continue;
         }
 
-        // skip already placed rows
-        while((rows[d] & 1) != 0) {
-            rows[d] >>= 1;
-            row_idx++;
-            diagu[d] <<= 1;
-            diagd[d] >>= 1;
+        // E and F columns are always occupied, skip them
+        if((0b11 & rows[d]) != 0b11) {
+            std::cout << "Error, E and F not occupied" << std::endl;
         }
-        rows[d] >>= 1;
-        row_idx++;
+        go_up(rows[d], diagu[d], diagd[d], 2);
 
-        uint_fast32_t posib = ~(cols[d] | diagu[d] | diagd[d]);
-        posibs[d] = posib;
+        skip_preplaced(rows[d], diagu[d], diagd[d]);
+
+        // set unused high bits to 1, needed for possibility check
+        cols[d] |= ~((UINT32_C(1) << boardsize) - 1);
+
+        //  The variable posib contains the bitmask of possibilities we still have
+        //  to try in a given row
+        uint32_t posib = ~(cols[d] | diagu[d] | diagd[d]);
 
         while(d > 0) {
+            while(posib) {
+                uint_fast32_t bit = posib & (~posib + 1);
+                posib ^= bit; // Eliminate the tried possibility.
 
-            while (posib != 0) {
-                uint_fast32_t bit = posib & -posib;
+                uint_fast64_t new_diagu = (diagu[d] | (bit >> (boardsize - 1))) >> 1;
+                uint_fast64_t new_diagd = (diagd[d] | bit) << 1;
+                uint_fast32_t new_cols = cols[d] | bit;
+                uint_fast32_t new_posib = ~(new_cols | new_diagu | new_diagd);
 
-                uint_fast32_t new_col = cols[d] | bit;
-                uint_fast64_t new_diagu = (diagu[d] | bit) << 1;
-                uint_fast64_t new_diagd = (diagd[d] | bit) >> 1;
-                posib ^= bit;
-                posibs[d] = posib;
+                if(new_posib) {
+                    uint_fast32_t new_rows = cols[d] | 1;
+                    skip_preplaced(new_rows, new_diagu, new_diagd);
+                    new_posib = ~(new_cols | new_diagu | new_diagd);
+                    if(!new_posib) {
+                        continue;
+                    }
 
-                d++;
+                    posibs[d] = posib;
 
-                cols[d] = new_col;
-                diagu[d] = new_diagu;
-                diagd[d] = new_diagd;
-                rows[d] = rows[d - 1];
+                    d += posib != 0; // avoid branching with this trick
+                    posib = new_posib;
 
-                // skip already placed rows
-                while((rows[d] & 1) != 0) {
-                    rows[d] >>= 1;
-                    row_idx++;
-                    diagu[d] <<= 1;
-                    diagd[d] >>= 1;
+                    // make values current
+                    cols[d] = bit;
+                    diagu[d] = new_diagu;
+                    diagd[d] = new_diagd;
+
+                } else {
+                    l_num += (new_cols == ((UINT32_C(1) << boardsize) - 1));
                 }
-
-                // found a solution
-                if((cols[d] + 1) == 0) {
-                    l_num++;
-                    continue;
-                }
-
-                posib = ~(cols[d] | diagu[d] | diagd[d]);
             }
-
             d--;
-            posib = posibs[d];
-
+            posib = posibs[d]; // backtrack ...
         }
 
         num += l_num;
     }
+
+    return num;
 }

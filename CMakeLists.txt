@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 2.8)
 
 project(m-queens)
-set (CMAKE_CXX_STANDARD 11)
+set (CMAKE_CXX_STANDARD 14)
 
 find_package(OpenCL REQUIRED)
 
@@ -9,7 +9,7 @@ find_package(OpenCL REQUIRED)
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads REQUIRED)
 
-find_package(OpenMP)
+#find_package(OpenMP)
 if (OPENMP_FOUND AND False)
     set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS}")
     set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS}")
