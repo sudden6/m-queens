@@ -124,17 +124,6 @@ void thread_worker(ClSolver solver, uint32_t id,
 }
 
 int main(int argc, char **argv) {
-    std::string filename_none{"./N_5_NONE.dat2"};
-    std::string filename_rot{"./N_5_ROTATE.dat2"};
-    FileReader file_none(filename_none);
-    FileReader file_rot(filename_none);
-
-    cpuSolver testSolver;
-    testSolver.init(5, 0);
-
-    uint64_t res_cnt = testSolver.solve_subboard(file_none.getNext(2)) * 8;
-    res_cnt += testSolver.solve_subboard(file_rot.getNext(1)) * 2;
-
     long start = 0;
     long end = 0;
     bool solve_range = false;
@@ -147,10 +136,10 @@ int main(int argc, char **argv) {
     {
       cxxopts::Options options("m-queens2", " - a CPU and GPU solver for the N queens problem");
       options.add_options()
-        ("s,start", "[4..29] start value for N", cxxopts::value(start))
+        ("s,start", "[5..29] start value for N", cxxopts::value(start))
         ("e,end", "[OPTIONAL] end value to solve a range of N values", cxxopts::value(end))
         ("l,list", "list and enumerate available OpenCL devices, must be the only option passed", cxxopts::value(list_opencl))
-        ("m,mode", "solve on [cpu] or OpenCL [ocl] mode", cxxopts::value(solver_string)->default_value("ocl"))
+        ("m,mode", "solve on [cpu] or OpenCL [ocl] mode", cxxopts::value(solver_string)->default_value("cpu"))
         ("p,platform", "OpenCL platform to use", cxxopts::value(ocl_platform)->default_value("0"))
         ("d,device", "OpenCL device to use", cxxopts::value(ocl_device)->default_value("0"))
         ("h,help", "Print this information")
@@ -219,21 +208,41 @@ int main(int argc, char **argv) {
   uint8_t u8_start = static_cast<uint8_t>(start);
   uint8_t u8_end = static_cast<uint8_t>(end);
 
-  for (uint8_t i = u8_start; i <= u8_end; i++) {
+  for (uint8_t n = u8_start; n <= u8_end; n++) {
     double time_diff, time_start; // for measuring calculation time
 
-    solver->init(i, 2);
+    solver->init(n, 2);
 
     uint64_t result = 0;
     time_start = get_time();
-    std::vector<start_condition> st = create_preplacement(i);
 
-    result = solver->solve_subboard(st);
+    std::array<std::string, 3> files {"ROTATE", "POINT", "NONE"};
+    std::array<uint64_t, 3> multiplicators {2, 4, 8};
+
+    for(size_t i = 0; i < 3; i++) {
+        const std::string filename = "./N_" + std::to_string(n) + "_" + files[i] + ".dat2";
+        FileReader file(filename);
+        if(!file.is_open()) {
+            std::cout << "Error loading file: " << filename << std::endl;
+            return -1;
+        }
+
+
+        constexpr size_t chunk_size = 1024;
+        bool has_data = true;
+
+        while(has_data) {
+            auto preplacements = file.getNext(chunk_size);
+            has_data = preplacements.size() == chunk_size;
+
+            result += solver->solve_subboard(preplacements) * multiplicators[i];
+        }
+    }
 
     time_diff = (get_time() - time_start); // calculating time difference
-    result == results[i - 1] ? printf("PASS ") : printf("FAIL ");
-    std::cout << "N " << i << ", Solutions " << result << ", Expected " << results[i - 1] <<
-           ", Time " << time_diff << " , Solutions/s " << result/time_diff << std::endl;
+    result == results[n - 1] ? printf("PASS ") : printf("FAIL ");
+    std::cout << "N " << std::to_string(n) << ", Solutions " << std::to_string(result) << ", Expected " << std::to_string(results[n - 1]) <<
+           ", Time " << std::to_string(time_diff) << " , Solutions/s " << std::to_string(result/time_diff) << std::endl;
   }
 
   std::cout << "DONE" << std::endl;

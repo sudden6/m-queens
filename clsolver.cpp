@@ -313,6 +313,11 @@ uint64_t ClSolver::solve_subboard(const std::vector<start_condition> &start)
     return result * 2;
 }
 
+uint64_t ClSolver::solve_subboard(const std::vector<Preplacement> &starts)
+{
+    return 0;
+}
+
 /*
  * @brief Enumerates all available OpenCL devices
  */

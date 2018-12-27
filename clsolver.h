@@ -15,6 +15,8 @@ class ClSolver : public ISolver
 public:
     bool init(uint8_t boardsize, uint8_t placed);
     uint64_t solve_subboard(const std::vector<start_condition>& start);
+    uint64_t solve_subboard(const std::vector<Preplacement> &starts);
+
     static void enumerate_devices();
 
     static ClSolver* makeClSolver(unsigned int platform, unsigned int device);
