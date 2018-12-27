@@ -131,8 +131,8 @@ void place_queen(uint_fast32_t& rows, uint_fast32_t& cols, uint_fast64_t& diags_
 }
 
 void load_preplacement(uint_fast32_t& rows, uint_fast32_t& cols, uint_fast64_t& diags_u, uint_fast64_t& diags_d, const Preplacement& pre, uint8_t N) {
-    uint8_t col_i[4] = {0, 1, static_cast<uint8_t>(N - 1), static_cast<uint8_t>(N - 2)};
-    uint8_t row_i[4] = {0, 1, static_cast<uint8_t>(N - 1), static_cast<uint8_t>(N - 2)};
+    uint8_t col_i[4] = {0, 1, static_cast<uint8_t>(N - 2), static_cast<uint8_t>(N - 1)};
+    uint8_t row_i[4] = {0, 1, static_cast<uint8_t>(N - 2), static_cast<uint8_t>(N - 1)};
 
     for(uint8_t i = 0; i < 4; i++) {
         // columns A, B, C, D
@@ -167,6 +167,8 @@ uint64_t cpuSolver::solve_subboard(const std::vector<Preplacement> &starts)
     uint_fast64_t num = 0;
     size_t start_cnt = starts.size();
 
+    const uint64_t board_mask = (UINT32_C(1) << boardsize) - 1;
+
   #pragma omp parallel for reduction(+ : num) schedule(dynamic)
     for (size_t cnt = 0; cnt < start_cnt; cnt++) {
         uint_fast64_t l_num = 0;
@@ -178,7 +180,7 @@ uint64_t cpuSolver::solve_subboard(const std::vector<Preplacement> &starts)
         load_preplacement(rows[d], cols[d], diagu[d], diagd[d], starts[cnt], boardsize);
 
         // check if preplacement is already full
-        if(cols[d] == ((UINT32_C(1) << boardsize) - 1)) {
+        if(cols[d] == board_mask) {
             num++;
             continue;
         }
@@ -192,26 +194,27 @@ uint64_t cpuSolver::solve_subboard(const std::vector<Preplacement> &starts)
         skip_preplaced(rows[d], diagu[d], diagd[d]);
 
         // set unused high bits to 1, needed for possibility check
-        cols[d] |= ~((UINT32_C(1) << boardsize) - 1);
+        cols[d] |= UINT_FAST32_MAX & ~board_mask;
 
         //  The variable posib contains the bitmask of possibilities we still have
         //  to try in a given row
-        uint32_t posib = ~(cols[d] | diagu[d] | diagd[d]);
+        uint_fast32_t posib = ~(cols[d] | diagu[d] >> (boardsize - 1) | diagd[d]);
 
         while(d > 0) {
             while(posib) {
                 uint_fast32_t bit = posib & (~posib + 1);
                 posib ^= bit; // Eliminate the tried possibility.
 
-                uint_fast64_t new_diagu = (diagu[d] | (bit >> (boardsize - 1))) >> 1;
-                uint_fast64_t new_diagd = (diagd[d] | bit) << 1;
+                uint_fast64_t new_diagu = (diagu[d] | bit << (boardsize - 1)) << 1;
+                uint_fast64_t new_diagd = (diagd[d] | bit) >> 1;
                 uint_fast32_t new_cols = cols[d] | bit;
-                uint_fast32_t new_posib = ~(new_cols | new_diagu | new_diagd);
+                uint_fast32_t new_posib = ~(new_cols | new_diagu  >> (boardsize - 1)| new_diagd);
 
                 if(new_posib) {
-                    uint_fast32_t new_rows = cols[d] | 1;
-                    skip_preplaced(new_rows, new_diagu, new_diagd);
-                    new_posib = ~(new_cols | new_diagu | new_diagd);
+                    uint_fast32_t new_rows = rows[d] | 1;
+                    uint_fast32_t new_rows_shifted = new_rows >> 1;
+                    skip_preplaced(new_rows_shifted, new_diagu, new_diagd);
+                    new_posib = ~(new_cols | new_diagu  >> (boardsize - 1)| new_diagd);
                     if(!new_posib) {
                         continue;
                     }
@@ -222,12 +225,13 @@ uint64_t cpuSolver::solve_subboard(const std::vector<Preplacement> &starts)
                     posib = new_posib;
 
                     // make values current
-                    cols[d] = bit;
+                    rows[d] = new_rows;
+                    cols[d] = new_cols;
                     diagu[d] = new_diagu;
                     diagd[d] = new_diagd;
 
                 } else {
-                    l_num += (new_cols == ((UINT32_C(1) << boardsize) - 1));
+                    l_num += (new_cols == UINT_FAST32_MAX);
                 }
             }
             d--;
