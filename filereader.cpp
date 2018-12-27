@@ -11,7 +11,7 @@ bool FileReader::is_open()
     return file.is_open();
 }
 
-std::vector<FileReader::Record> FileReader::getNext(size_t count)
+std::vector<Record> FileReader::getNext(size_t count)
 {
     std::vector<Record> result;
     result.resize(count);

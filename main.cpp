@@ -124,14 +124,17 @@ void thread_worker(ClSolver solver, uint32_t id,
 }
 
 int main(int argc, char **argv) {
-    /* Test Code
     std::string filename{"./N_5_NONE.dat"};
     FileReader file(filename);
 
     bool is_open = file.is_open();
 
     auto result = file.getNext(3);
-    */
+
+    cpuSolver testSolver;
+    testSolver.init(5, 0);
+
+    uint64_t res_cnt = testSolver.solve_subboard(result);
 
     long start = 0;
     long end = 0;

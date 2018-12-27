@@ -5,17 +5,12 @@
 #include <string>
 #include <vector>
 
+#include "solverstructs.h"
+
 class FileReader
 {
     std::ifstream file;
 public:
-    struct Record {
-        uint64_t diag_up;
-        uint64_t diag_down;
-        uint32_t hor;
-        uint32_t vert;
-    };
-
     FileReader(const std::string &filename);
     bool is_open();
 

@@ -23,6 +23,13 @@ struct __attribute__ ((packed)) start_condition_t {
 
 #endif
 
+struct Record {
+    uint64_t diag_up;
+    uint64_t diag_down;
+    uint32_t hor;
+    uint32_t vert;
+};
+
 typedef struct start_condition_t start_condition;
 
 #endif // SOLVERSTRUCTS_H

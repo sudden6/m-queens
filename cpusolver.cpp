@@ -1,5 +1,7 @@
 #include "cpusolver.h"
+#include "cpusolver.h"
 #include <iostream>
+#include <cstdint>
 
 cpuSolver::cpuSolver()
 {
@@ -114,4 +116,90 @@ uint64_t cpuSolver::solve_subboard(const std::vector<start_condition>& starts) {
      num += l_num;
   }
   return num * 2;
+}
+
+uint64_t cpuSolver::solve_subboard(const std::vector<Record> &starts)
+{
+    // counter for the number of solutions
+    // sufficient until n=29
+    uint_fast64_t num = 0;
+    size_t start_cnt = starts.size();
+
+  #pragma omp parallel for reduction(+ : num) schedule(dynamic)
+    for (size_t cnt = 0; cnt < start_cnt; cnt++) {
+        uint_fast64_t l_num = 0;
+        uint_fast32_t cols[MAXN], rows[MAXN], posibs[MAXN]; // Our backtracking 'stack'
+        uint_fast64_t diagu[MAXN], diagd[MAXN];
+        int_fast16_t d = 1; // d is our depth in the backtrack stack
+        uint_fast16_t row_idx = 0;
+        // The UINT_FAST32_MAX here is used to fill all 'coloumn' bits after n ...
+        const uint8_t N = boardsize;
+        cols[d] = ((((starts[cnt].hor>>2)|(UINT64_MAX<<(N-4)))+1)<<(N-5))-1; // TODO(chr): decipher this, copied from q27 source
+        rows[d] = starts[cnt].vert >> 2;
+        diagu[d] = starts[cnt].diag_up >> 4;
+        diagd[d] = (starts[cnt].diag_down >> 4) << (N - 5);
+
+        auto new_cols = cols[d] + 1;
+
+        // found a solution
+        if(new_cols == 0) {
+            l_num++;
+            continue;
+        }
+
+        // skip already placed rows
+        while((rows[d] & 1) != 0) {
+            rows[d] >>= 1;
+            row_idx++;
+            diagu[d] <<= 1;
+            diagd[d] >>= 1;
+        }
+        rows[d] >>= 1;
+        row_idx++;
+
+        uint_fast32_t posib = ~(cols[d] | diagu[d] | diagd[d]);
+        posibs[d] = posib;
+
+        while(d > 0) {
+
+            while (posib != 0) {
+                uint_fast32_t bit = posib & -posib;
+
+                uint_fast32_t new_col = cols[d] | bit;
+                uint_fast64_t new_diagu = (diagu[d] | bit) << 1;
+                uint_fast64_t new_diagd = (diagd[d] | bit) >> 1;
+                posib ^= bit;
+                posibs[d] = posib;
+
+                d++;
+
+                cols[d] = new_col;
+                diagu[d] = new_diagu;
+                diagd[d] = new_diagd;
+                rows[d] = rows[d - 1];
+
+                // skip already placed rows
+                while((rows[d] & 1) != 0) {
+                    rows[d] >>= 1;
+                    row_idx++;
+                    diagu[d] <<= 1;
+                    diagd[d] >>= 1;
+                }
+
+                // found a solution
+                if((cols[d] + 1) == 0) {
+                    l_num++;
+                    continue;
+                }
+
+                posib = ~(cols[d] | diagu[d] | diagd[d]);
+            }
+
+            d--;
+            posib = posibs[d];
+
+        }
+
+        num += l_num;
+    }
 }
