@@ -228,7 +228,7 @@ int main(int argc, char **argv) {
         }
 
 
-        constexpr size_t chunk_size = 1024;
+        constexpr size_t chunk_size = 1024*1024;
         bool has_data = true;
 
         while(has_data) {
