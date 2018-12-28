@@ -69,19 +69,18 @@ uint64_t nqueens(uint_fast8_t n) {
     //  to try in a given row ...
     uint_fast32_t posib = (cols[d] | diagl[d] | diagr[d]);
 
+    diagl[d] <<= 1;
+    diagr[d] >>= 1;
+
     while (d > 0) {
-      // moving the two shifts out of the inner loop slightly improves
-      // performance
-      uint_fast32_t diagl_shifted = diagl[d] << 1;
-      uint_fast32_t diagr_shifted = diagr[d] >> 1;
       int8_t l_rest = rest[d];
 
       while (posib != UINT_FAST32_MAX) {
         // The standard trick for getting the rightmost bit in the mask
         uint_fast32_t bit = ~posib & (posib + 1);
         posib ^= bit; // Eliminate the tried possibility.
-        uint_fast32_t new_diagl = (bit << 1) | diagl_shifted;
-        uint_fast32_t new_diagr = (bit >> 1) | diagr_shifted;
+        uint_fast32_t new_diagl = (bit << 1) | diagl[d];
+        uint_fast32_t new_diagr = (bit >> 1) | diagr[d];
         bit |= cols[d];
         uint_fast32_t new_posib = (bit | new_diagl | new_diagr);
 
@@ -116,11 +115,9 @@ uint64_t nqueens(uint_fast8_t n) {
 
           // make values current
           cols[d] = bit;
-          diagl[d] = new_diagl;
-          diagr[d] = new_diagr;
+          diagl[d] = new_diagl << 1;
+          diagr[d] = new_diagr >> 1;
           rest[d] = l_rest;
-          diagl_shifted = new_diagl << 1;
-          diagr_shifted = new_diagr >> 1;
         }
       }
       d--;
@@ -154,19 +151,18 @@ uint64_t nqueens(uint_fast8_t n) {
     //  to try in a given row ...
     uint_fast32_t posib = (cols[d] | diagl[d] | diagr[d]);
 
+    diagl[d] <<= 1;
+    diagr[d] >>= 1;
+
     while (d > 0) {
-      // moving the two shifts out of the inner loop slightly improves
-      // performance
-      uint_fast32_t diagl_shifted = diagl[d] << 1;
-      uint_fast32_t diagr_shifted = diagr[d] >> 1;
       int8_t l_rest = rest[d];
 
       while (posib != UINT_FAST32_MAX) {
         // The standard trick for getting the rightmost bit in the mask
         uint_fast32_t bit = ~posib & (posib + 1);
         posib ^= bit; // Eliminate the tried possibility.
-        uint_fast32_t new_diagl = (bit << 1) | diagl_shifted;
-        uint_fast32_t new_diagr = (bit >> 1) | diagr_shifted;
+        uint_fast32_t new_diagl = (bit << 1) | diagl[d];
+        uint_fast32_t new_diagr = (bit >> 1) | diagr[d];
         bit |= cols[d];
         uint_fast32_t new_posib = (bit | new_diagl | new_diagr);
 
@@ -191,11 +187,9 @@ uint64_t nqueens(uint_fast8_t n) {
 
           // make values current
           cols[d] = bit;
-          diagl[d] = new_diagl;
-          diagr[d] = new_diagr;
+          diagl[d] = new_diagl << 1;
+          diagr[d] = new_diagr >> 1;
           rest[d] = l_rest;
-          diagl_shifted = new_diagl << 1;
-          diagr_shifted = new_diagr >> 1;
         } else {
           // when all columns are used, we found a solution
           num += bit == UINT_FAST32_MAX;
