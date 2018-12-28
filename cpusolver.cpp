@@ -182,6 +182,7 @@ uint64_t cpuSolver::solve_subboard(const std::vector<Preplacement> &starts)
         // check if preplacement is already full
         if(cols[d] == board_mask) {
             num++;
+            //std::cout << "num: " << std::to_string(cnt) << " cnt:" << std::to_string(1) << std::endl;
             continue;
         }
 
@@ -208,17 +209,11 @@ uint64_t cpuSolver::solve_subboard(const std::vector<Preplacement> &starts)
                 uint_fast64_t new_diagu = (diagu[d] | bit << (boardsize - 1)) << 1;
                 uint_fast64_t new_diagd = (diagd[d] | bit) >> 1;
                 uint_fast32_t new_cols = cols[d] | bit;
+                uint_fast32_t new_rows = rows[d] >> 1;
+                skip_preplaced(new_rows, new_diagu, new_diagd);
                 uint_fast32_t new_posib = ~(new_cols | new_diagu  >> (boardsize - 1)| new_diagd);
 
                 if(new_posib) {
-                    uint_fast32_t new_rows = rows[d] | 1;
-                    uint_fast32_t new_rows_shifted = new_rows >> 1;
-                    skip_preplaced(new_rows_shifted, new_diagu, new_diagd);
-                    new_posib = ~(new_cols | new_diagu  >> (boardsize - 1)| new_diagd);
-                    if(!new_posib) {
-                        continue;
-                    }
-
                     posibs[d] = posib;
 
                     d += posib != 0; // avoid branching with this trick
@@ -238,6 +233,9 @@ uint64_t cpuSolver::solve_subboard(const std::vector<Preplacement> &starts)
             posib = posibs[d]; // backtrack ...
         }
 
+        if(l_num) {
+            //std::cout << "num: " << std::to_string(cnt) << " cnt:" << std::to_string(l_num) << std::endl;
+        }
         num += l_num;
     }
 
