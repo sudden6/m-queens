@@ -15,21 +15,7 @@
 
 #include <vector>
 
-// uncomment to start with n=2 and compare to known results
-#define TESTSUITE
-
-#ifndef N
-#define N 18
-#endif
 #define MAXN 29
-
-#if N > MAXN
-#warning "N too big, overflow may occur"
-#endif
-
-#if N < 2
-#error "N too small"
-#endif
 
 
 #ifdef _MSC_VER
@@ -83,12 +69,12 @@ std::vector<start_condition> create_subboards(uint_fast8_t n, uint_fast8_t place
     std::vector<start_condition> result;
 
     if(n < 2) {
-        return  result;
+        return result;
     }
 
     if(depth == 0) {
         result.push_back(start);
-        return  result;
+        return result;
     }
 
     // ensure we don't preplace all rows
@@ -220,19 +206,6 @@ static const uint64_t results[27] = {
     2207893435808352ULL,
     22317699616364044ULL,
     234907967154122528ULL};
-
-constexpr uint32_t THREADS = 1;
-static uint64_t thread_results[THREADS] = {0};
-
-void thread_worker(ClSolver solver, uint32_t id,
-                   std::vector<start_condition>::iterator begin,
-                   std::vector<start_condition>::iterator end) {
-    std::cout << "Starting thread: " << std::to_string(id) << std::endl;
-
-    std::vector<start_condition> thread_batch(begin, end);
-
-    thread_results[id] = solver.solve_subboard(thread_batch);
-}
 
 int main(int argc, char **argv) {
     long start = 0;
