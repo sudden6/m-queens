@@ -332,8 +332,12 @@ int main(int argc, char **argv) {
 
     time_diff = (get_time() - time_start); // calculating time difference
     result == results[i - 1] ? printf("PASS ") : printf("FAIL ");
-    std::cout << "N " << i << ", Solutions " << result << ", Expected " << results[i - 1] <<
-           ", Time " << time_diff << " , Solutions/s " << result/time_diff << std::endl;
+    std::cout << "N " << std::to_string(i)
+              << ", Solutions " << std::to_string(result)
+              << ", Expected " << std::to_string(results[i - 1])
+              << ", Time " << std::to_string(time_diff)
+              << ", Solutions/s " << std::to_string(result/time_diff)
+              << std::endl;
   }
 
   std::cout << "DONE" << std::endl;
