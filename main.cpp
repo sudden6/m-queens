@@ -37,14 +37,16 @@ double get_time() {
 
 /**
  * @brief compute the maximum number of possibilities at a specified depth
+ * @param current number of possibilities at the current depth
+ * @param placed already placed queens
  * @param boardsize size of the board
- * @param depth zero based depth
+ * @param depth number of steps to calculate
  * @return number of possibilites at this depth
  */
-size_t possibs_at_depth(uint8_t boardsize, uint8_t depth) {
-    size_t result = boardsize - 2;  // depends on preplacement algorithm
-    for(uint8_t i = 1; i < depth; i++) {
-        result *= boardsize - 1 - i;
+size_t possibs_at_depth(size_t current, uint8_t placed, uint8_t boardsize, uint8_t depth) {
+    size_t result = current;  // depends on preplacement algorithm
+    for(uint8_t i = 0; i < depth; i++) {
+        result *= boardsize - 1 - placed - i;
     }
     return result;
 }
@@ -72,7 +74,7 @@ std::vector<start_condition> create_preplacement(uint_fast8_t n) {
     }
 
     // maximum number of start possibilities at row 3
-    result.resize(possibs_at_depth(n, 3));
+    result.resize(possibs_at_depth(start_cnt, 2, n, 1));
 
     uint_fast32_t start_level3_cnt = 0;
   #define START_LEVEL4 (MAXN - 4)
