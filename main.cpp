@@ -6,7 +6,6 @@
 #include <iostream>
 #include <iterator>
 #include <thread>
-#include <time.h>
 #include "clsolver.h"
 #include "cpusolver.h"
 #include "solverstructs.h"
@@ -14,26 +13,9 @@
 #include "cxxopts.hpp"
 
 #include <vector>
+#include <chrono>
 
 #define MAXN 29
-
-
-#ifdef _MSC_VER
-double get_time() {
-    return GetTickCount64() / 1000.0;
-}
-
-#else
-#include <sys/time.h>
-
-// get the current wall clock time in seconds
-double get_time() {
-  struct timeval tp;
-  gettimeofday(&tp, nullptr);
-  return tp.tv_sec + tp.tv_usec / 1000000.0;
-}
-
-#endif
 
 /**
  * @brief compute the maximum number of possibilities at a specified depth
@@ -64,40 +46,40 @@ std::vector<start_condition> create_preplacement(uint_fast8_t n) {
     //
     uint_fast16_t start_cnt = 0;
     start_condition_t start_queens[(MAXN - 2)*(MAXN - 1)];
-    #pragma omp simd
+#pragma omp simd
     for (uint_fast8_t q0 = 0; q0 < n - 2; q0++) {
-      for (uint_fast8_t q1 = q0 + 2; q1 < n; q1++) {
-        uint_fast32_t bit0 = 1 << q0; // The first queen placed
-        uint_fast32_t bit1 = 1 << q1; // The second queen placed
-        start_queens[start_cnt].cols = bit0 | bit1;
-        // This places the first two queens
-        start_queens[start_cnt].diagl = (bit0 << 2) | (bit1 << 1);
-        start_queens[start_cnt].diagr = (bit0 >> 2) | (bit1 >> 1);
+        for (uint_fast8_t q1 = q0 + 2; q1 < n; q1++) {
+            uint_fast32_t bit0 = 1 << q0; // The first queen placed
+            uint_fast32_t bit1 = 1 << q1; // The second queen placed
+            start_queens[start_cnt].cols = bit0 | bit1;
+            // This places the first two queens
+            start_queens[start_cnt].diagl = (bit0 << 2) | (bit1 << 1);
+            start_queens[start_cnt].diagr = (bit0 >> 2) | (bit1 >> 1);
 
-        start_cnt++;
-      }
+            start_cnt++;
+        }
     }
 
     // maximum number of start possibilities at row 3
     result.resize(possibs_at_depth(start_cnt, 2, n, 1));
 
     uint_fast32_t start_level3_cnt = 0;
-  #define START_LEVEL4 (MAXN - 4)
+#define START_LEVEL4 (MAXN - 4)
 
-  #pragma omp parallel for schedule(dynamic)
+#pragma omp parallel for schedule(dynamic)
     for (uint_fast16_t cnt = 0; cnt < start_cnt; cnt++) {
-      std::vector<start_condition_t> start_level4;
-      start_level4.resize(START_LEVEL4);
-      PreSolver pre(n, 2, 1, start_queens[cnt]);
-      auto end = pre.getNext(start_level4.begin(), start_level4.cend());
-      size_t level4_cnt = std::distance(start_level4.begin(), end);
+        std::vector<start_condition_t> start_level4;
+        start_level4.resize(START_LEVEL4);
+        PreSolver pre(n, 2, 1, start_queens[cnt]);
+        auto end = pre.getNext(start_level4.begin(), start_level4.cend());
+        size_t level4_cnt = std::distance(start_level4.begin(), end);
 
-      // copy the results into global memory
-      uint_fast32_t old_idx;
-      // fetch_and_add in OpenMP
-  #pragma omp atomic capture
-      { old_idx = start_level3_cnt; start_level3_cnt += level4_cnt; } // atomically update start_level3_cnt, but capture original value of start_level3_cnt in old_idx
-      memcpy(&result[old_idx], &start_level4[0], level4_cnt*sizeof(start_condition_t));
+        // copy the results into global memory
+        uint_fast32_t old_idx;
+        // fetch_and_add in OpenMP
+#pragma omp atomic capture
+        { old_idx = start_level3_cnt; start_level3_cnt += level4_cnt; } // atomically update start_level3_cnt, but capture original value of start_level3_cnt in old_idx
+        memcpy(&result[old_idx], &start_level4[0], level4_cnt*sizeof(start_condition_t));
     }
 
     result.resize(start_level3_cnt); // shrink
@@ -220,23 +202,22 @@ int main(int argc, char **argv) {
   uint8_t u8_end = static_cast<uint8_t>(end);
 
   for (uint8_t i = u8_start; i <= u8_end; i++) {
-    double time_diff, time_start; // for measuring calculation time
-
     solver->init(i, 3);
 
     uint64_t result = 0;
-    time_start = get_time();
+    auto time_start = std::chrono::high_resolution_clock::now();
     std::vector<start_condition> st = create_preplacement(i);
 
     result = solver->solve_subboard(st);
+    auto time_end = std::chrono::high_resolution_clock::now();
+    std::chrono::duration<double> elapsed = time_end - time_start;
 
-    time_diff = (get_time() - time_start); // calculating time difference
     result == results[i - 1] ? printf("PASS ") : printf("FAIL ");
     std::cout << "N " << std::to_string(i)
               << ", Solutions " << std::to_string(result)
               << ", Expected " << std::to_string(results[i - 1])
-              << ", Time " << std::to_string(time_diff)
-              << ", Solutions/s " << std::to_string(result/time_diff)
+              << ", Time " << std::to_string(elapsed.count())
+              << ", Solutions/s " << std::to_string(result/elapsed.count())
               << std::endl;
   }
 

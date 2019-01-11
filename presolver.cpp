@@ -88,58 +88,58 @@ std::vector<start_condition>::iterator PreSolver::getNext(std::vector<start_cond
     }
 
     while (d > 0) {
-      int8_t l_rest = rest[d];
+        int8_t l_rest = rest[d];
 
-      while (posib != UINT_FAST32_MAX) {
-        // The standard trick for getting the rightmost bit in the mask
-        uint_fast32_t bit = ~posib & (posib + 1);
-        posib ^= bit; // Eliminate the tried possibility.
-        uint_fast32_t new_diagl = (bit << 1) | diagl[d];
-        uint_fast32_t new_diagr = (bit >> 1) | diagr[d];
-        bit |= cols[d];
-        uint_fast32_t new_posib = (bit | new_diagl | new_diagr);
+        while (posib != UINT_FAST32_MAX) {
+            // The standard trick for getting the rightmost bit in the mask
+            uint_fast32_t bit = ~posib & (posib + 1);
+            posib ^= bit; // Eliminate the tried possibility.
+            uint_fast32_t new_diagl = (bit << 1) | diagl[d];
+            uint_fast32_t new_diagr = (bit >> 1) | diagr[d];
+            bit |= cols[d];
+            uint_fast32_t new_posib = (bit | new_diagl | new_diagr);
 
-        if (new_posib != UINT_FAST32_MAX) {
-            uint_fast32_t lookahead1 = (bit | (new_diagl << (LOOKAHEAD - 2)) | (new_diagr >> (LOOKAHEAD - 2)));
-            uint_fast32_t lookahead2 = (bit | (new_diagl << (LOOKAHEAD - 1)) | (new_diagr >> (LOOKAHEAD - 1)));
-            uint_fast32_t allowed2 = l_rest > (int8_t)0;
+            if (new_posib != UINT_FAST32_MAX) {
+                uint_fast32_t lookahead1 = (bit | (new_diagl << (LOOKAHEAD - 2)) | (new_diagr >> (LOOKAHEAD - 2)));
+                uint_fast32_t lookahead2 = (bit | (new_diagl << (LOOKAHEAD - 1)) | (new_diagr >> (LOOKAHEAD - 1)));
+                uint_fast32_t allowed2 = l_rest > (int8_t)0;
 
-            if(allowed2 && ((lookahead2 == UINT_FAST32_MAX) || (lookahead1 == UINT_FAST32_MAX))) {
-                continue;
-            }
-
-
-            if(l_rest == max_depth) {
-                it->cols = static_cast<uint32_t> (bit);
-                it->diagl = static_cast<uint32_t> (new_diagl);
-                it->diagr = static_cast<uint32_t>(new_diagr);
-                it++;
-                if(it != end) {
-            continue;
-                } else {
-                    return it;
+                if(allowed2 && ((lookahead2 == UINT_FAST32_MAX) || (lookahead1 == UINT_FAST32_MAX))) {
+                    continue;
                 }
-          }
 
-          l_rest--;
 
-          // The next two lines save stack depth + backtrack operations
-          // when we passed the last possibility in a row.
-          // Go lower in the stack, avoid branching by writing above the current
-          // position
-          posibs[d] = posib;
-          d += posib != UINT_FAST32_MAX; // avoid branching with this trick
-          posib = new_posib;
+                if(l_rest == max_depth) {
+                    it->cols = static_cast<uint32_t> (bit);
+                    it->diagl = static_cast<uint32_t> (new_diagl);
+                    it->diagr = static_cast<uint32_t>(new_diagr);
+                    it++;
+                    if(it != end) {
+                        continue;
+                    } else {
+                        return it;
+                    }
+                }
 
-          // make values current
-          cols[d] = bit;
-          diagl[d] = new_diagl << 1;
-          diagr[d] = new_diagr >> 1;
-          rest[d] = l_rest;
+                l_rest--;
+
+                // The next two lines save stack depth + backtrack operations
+                // when we passed the last possibility in a row.
+                // Go lower in the stack, avoid branching by writing above the current
+                // position
+                posibs[d] = posib;
+                d += posib != UINT_FAST32_MAX; // avoid branching with this trick
+                posib = new_posib;
+
+                // make values current
+                cols[d] = bit;
+                diagl[d] = new_diagl << 1;
+                diagr[d] = new_diagr >> 1;
+                rest[d] = l_rest;
+            }
         }
-      }
-      d--;
-      posib = posibs[d]; // backtrack ...
+        d--;
+        posib = posibs[d]; // backtrack ...
     }
 
     valid = false;  // all subboards created
