@@ -63,12 +63,17 @@ std::vector<start_condition> create_preplacement(uint_fast8_t n) {
     // by forcing second queen to be AFTER the first queen.
     //
     uint_fast16_t start_cnt = 0;
-    uint_fast32_t start_queens[(MAXN - 2)*(MAXN - 1)][2];
+    start_condition_t start_queens[(MAXN - 2)*(MAXN - 1)];
     #pragma omp simd
     for (uint_fast8_t q0 = 0; q0 < n - 2; q0++) {
       for (uint_fast8_t q1 = q0 + 2; q1 < n; q1++) {
-        start_queens[start_cnt][0] = 1 << q0;
-        start_queens[start_cnt][1] = 1 << q1;
+        uint_fast32_t bit0 = 1 << q0; // The first queen placed
+        uint_fast32_t bit1 = 1 << q1; // The second queen placed
+        start_queens[start_cnt].cols = bit0 | bit1;
+        // This places the first two queens
+        start_queens[start_cnt].diagl = (bit0 << 2) | (bit1 << 1);
+        start_queens[start_cnt].diagr = (bit0 >> 2) | (bit1 >> 1);
+
         start_cnt++;
       }
     }
@@ -81,82 +86,11 @@ std::vector<start_condition> create_preplacement(uint_fast8_t n) {
 
   #pragma omp parallel for schedule(dynamic)
     for (uint_fast16_t cnt = 0; cnt < start_cnt; cnt++) {
-      start_condition_t start_level4[START_LEVEL4];
-      uint_fast32_t level4_cnt = 0;
-      uint_fast32_t cols[MAXN], posibs[MAXN]; // Our backtracking 'stack'
-      uint_fast32_t diagl[MAXN], diagr[MAXN];
-      int8_t rest[MAXN]; // number of rows left
-      uint_fast32_t bit0 = start_queens[cnt][0]; // The first queen placed
-      uint_fast32_t bit1 = start_queens[cnt][1]; // The second queen placed
-      int_fast16_t d = 1; // d is our depth in the backtrack stack
-      // The UINT_FAST32_MAX here is used to fill all 'coloumn' bits after n ...
-      cols[d] = bit0 | bit1 | (UINT_FAST32_MAX << n);
-      // This places the first two queens
-      diagl[d] = (bit0 << 2) | (bit1 << 1);
-      diagr[d] = (bit0 >> 2) | (bit1 >> 1);
-  #define LOOKAHEAD 3
-      // we're allready two rows into the field here
-      rest[d] = n - 2 - LOOKAHEAD;
-
-  #define STORE_LEVEL (n - 2 - LOOKAHEAD - 1)
-
-      //  The variable posib contains the bitmask of possibilities we still have
-      //  to try in a given row ...
-      uint_fast32_t posib = (cols[d] | diagl[d] | diagr[d]);
-
-      diagl[d] <<= 1;
-      diagr[d] >>= 1;
-
-      while (d > 0) {
-        int8_t l_rest = rest[d];
-
-        while (posib != UINT_FAST32_MAX) {
-          // The standard trick for getting the rightmost bit in the mask
-          uint_fast32_t bit = ~posib & (posib + 1);
-          posib ^= bit; // Eliminate the tried possibility.
-          uint_fast32_t new_diagl = (bit << 1) | diagl[d];
-          uint_fast32_t new_diagr = (bit >> 1) | diagr[d];
-          bit |= cols[d];
-          uint_fast32_t new_posib = (bit | new_diagl | new_diagr);
-
-          if (new_posib != UINT_FAST32_MAX) {
-              uint_fast32_t lookahead1 = (bit | (new_diagl << (LOOKAHEAD - 2)) | (new_diagr >> (LOOKAHEAD - 2)));
-              uint_fast32_t lookahead2 = (bit | (new_diagl << (LOOKAHEAD - 1)) | (new_diagr >> (LOOKAHEAD - 1)));
-              uint_fast32_t allowed2 = l_rest > (int8_t)0;
-
-              if(allowed2 && ((lookahead2 == UINT_FAST32_MAX) || (lookahead1 == UINT_FAST32_MAX))) {
-                  continue;
-              }
-
-
-            if(l_rest == (STORE_LEVEL + 1)) {
-              start_level4[level4_cnt].cols = bit;
-              start_level4[level4_cnt].diagl = new_diagl;
-              start_level4[level4_cnt].diagr = new_diagr;
-              level4_cnt++;
-              continue;
-            }
-
-            l_rest--;
-
-            // The next two lines save stack depth + backtrack operations
-            // when we passed the last possibility in a row.
-            // Go lower in the stack, avoid branching by writing above the current
-            // position
-            posibs[d] = posib;
-            d += posib != UINT_FAST32_MAX; // avoid branching with this trick
-            posib = new_posib;
-
-            // make values current
-            cols[d] = bit;
-            diagl[d] = new_diagl << 1;
-            diagr[d] = new_diagr >> 1;
-            rest[d] = l_rest;
-          }
-        }
-        d--;
-        posib = posibs[d]; // backtrack ...
-      }
+      std::vector<start_condition_t> start_level4;
+      start_level4.resize(START_LEVEL4);
+      PreSolver pre(n, 2, 1, start_queens[cnt]);
+      auto end = pre.getNext(start_level4.begin(), start_level4.cend());
+      size_t level4_cnt = std::distance(start_level4.begin(), end);
 
       // copy the results into global memory
       uint_fast32_t old_idx;

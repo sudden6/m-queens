@@ -195,7 +195,7 @@ void ClSolver::threadWorker(uint32_t id, std::mutex &pre_lock)
 
         // TODO(sudden6): cleanup
         while(curIt < endIt) {
-            curIt = pre.getNext(curIt, endIt);
+            //curIt = pre.getNext((std::vector<start_condition>::iterator)curIt, (std::vector<start_condition>::const_iterator)endIt);
             if(pre.empty()) {
                 auto end_time = std::time(nullptr);
                 std::cout << "pre block took " << difftime(end_time, start_time) << "s" << std::endl;
