@@ -2,11 +2,11 @@ typedef struct __attribute__ ((packed)) {
     uint cols; // bitfield with all the used columns
     uint diagl;// bitfield with all the used diagonals down left
     uint diagr;// bitfield with all the used diagonals down right
-    //uint placed;// number of rows where queens are already placed
 } start_condition;
 
 #define MAXN 29
 
+typedef char int8_t;
 typedef char int_fast8_t;
 typedef uchar uint_fast8_t;
 typedef short int_fast16_t;
@@ -15,90 +15,81 @@ typedef int int_fast32_t;
 typedef uint uint_fast32_t;
 #define UINT_FAST32_MAX UINT_MAX
 
-typedef ulong uint_fast64_t;
+// for convenience
+#define L (get_local_id(0))
+#define G (get_global_id(0))
 
-#define MAXD (N - PLACED)
-
-kernel void solve_subboard(__global const start_condition* in_starts, __global ulong* out_cnt) {
-    __private size_t id = get_global_id(0);
-
+kernel void solve_subboard(__global const start_condition* in_starts, __global uint* out_cnt) {
     // counter for the number of solutions
     // sufficient until n=29
-    uint_fast64_t num = 0;
-    uint_fast32_t cols[MAXD], posibs[MAXD]; // Our backtracking 'stack'
-    uint_fast32_t diagl[MAXD], diagr[MAXD];
-    int_fast8_t rest[MAXD]; // number of rows left
-    int_fast16_t d = 0; // d is our depth in the backtrack stack
-    // The UINT_FAST32_MAX here is used to fill all 'coloumn' bits after n ...
-    cols[d] = in_starts[id].cols | (UINT_FAST32_MAX << N);
-    // This places the first two queens
-    diagl[d] = in_starts[id].diagl;
-    diagr[d] = in_starts[id].diagr;
+    uint num = 0;
     #define LOOKAHEAD 3
-    // we're allready two rows into the field here
-    rest[d] = N - LOOKAHEAD - PLACED;
 
-    //printf("gpuid: %d, cols: %x, diagl: %x, diagr: %x, rest: %d, N: %d\n", id, in_starts[id].cols, in_starts[id].diagl, in_starts[id].diagr, in_starts[id].placed, N);
-    //printf("gpuid: %d, cols: %x, diagl: %x, diagr: %x, rest: %d, N: %d\n", id, cols[d], diagl[d], diagr[d], rest[d], N);
+    uint_fast32_t cols[WG_SIZE][DEPTH], posibs[WG_SIZE][DEPTH]; // Our backtracking 'stack'
+    uint_fast32_t diagl[WG_SIZE][DEPTH], diagr[WG_SIZE][DEPTH];
+    int8_t rest[WG_SIZE][DEPTH]; // number of rows left
+    int_fast16_t d = 1; // d is our depth in the backtrack stack
+    // The UINT_FAST32_MAX here is used to fill all 'coloumn' bits after n ...
+    cols[L][d] = in_starts[G].cols;
+    // This places the first two queens
+    diagl[L][d] = in_starts[G].diagl;
+    diagr[L][d] = in_starts[G].diagr;
+    // we're allready two rows into the field here
+    rest[L][d] = N - LOOKAHEAD - PLACED;
+
+    //printf("G: %d, L: %d, cols: %x, diagl: %x, diagr: %x\n", G, L, cols[L][d], diagl[L][d], diagr[L][d]);
+
     //  The variable posib contains the bitmask of possibilities we still have
     //  to try in a given row ...
-    uint_fast32_t posib = (cols[d] | diagl[d] | diagr[d]);
+    uint_fast32_t posib = (cols[L][d] | diagl[L][d] | diagr[L][d]);
 
-    while (d >= 0) {
-      // moving the two shifts out of the inner loop slightly improves
-      // performance
-      uint_fast32_t diagl_shifted = diagl[d] << 1;
-      uint_fast32_t diagr_shifted = diagr[d] >> 1;
-      int_fast8_t l_rest = rest[d];
+    diagl[L][d] <<= 1;
+    diagr[L][d] >>= 1;
 
-      while (posib != UINT_FAST32_MAX) {
-        // The standard trick for getting the rightmost bit in the mask
-        uint_fast32_t bit = ~posib & (posib + 1);
-        uint_fast32_t new_diagl = (bit << 1) | diagl_shifted;
-        uint_fast32_t new_diagr = (bit >> 1) | diagr_shifted;
-        uint_fast32_t new_posib = (cols[d] | bit | new_diagl | new_diagr);
-        posib ^= bit; // Eliminate the tried possibility.
-        bit |= cols[d];
+    while (d > 0) {
+        int8_t l_rest = rest[L][d];
 
-        if (new_posib != UINT_FAST32_MAX) {
-            uint_fast32_t lookahead1 = (bit | (new_diagl << (LOOKAHEAD - 2)) | (new_diagr >> (LOOKAHEAD - 2)));
-            uint_fast32_t lookahead2 = (bit | (new_diagl << (LOOKAHEAD - 1)) | (new_diagr >> (LOOKAHEAD - 1)));
-            uint_fast8_t allowed1 = l_rest >= 0;
-            uint_fast8_t allowed2 = l_rest > 0;
+        while (posib != UINT_FAST32_MAX) {
+            // The standard trick for getting the rightmost bit in the mask
+            uint_fast32_t bit = ~posib & (posib + 1);
+            posib ^= bit; // Eliminate the tried possibility.
+            uint_fast32_t new_diagl = (bit << 1) | diagl[L][d];
+            uint_fast32_t new_diagr = (bit >> 1) | diagr[L][d];
+            bit |= cols[L][d];
+            uint_fast32_t new_posib = (bit | new_diagl | new_diagr);
 
-            if(allowed1 && (lookahead1 == UINT_FAST32_MAX)) {
-                continue;
+            if (new_posib != UINT_FAST32_MAX) {
+                uint_fast32_t lookahead1 = (bit | (new_diagl << (LOOKAHEAD - 2)) | (new_diagr >> (LOOKAHEAD - 2)));
+                uint_fast32_t lookahead2 = (bit | (new_diagl << (LOOKAHEAD - 1)) | (new_diagr >> (LOOKAHEAD - 1)));
+                uint_fast32_t allowed2 = l_rest > (int8_t)0;
+
+                if(allowed2 && ((lookahead2 == UINT_FAST32_MAX) || (lookahead1 == UINT_FAST32_MAX))) {
+                    continue;
+                }
+
+              // The next two lines save stack depth + backtrack operations
+              // when we passed the last possibility in a row.
+              // Go lower in the stack, avoid branching by writing above the current
+              // position
+              posibs[L][d] = posib;
+              d += posib != UINT_FAST32_MAX; // avoid branching with this trick
+              posib = new_posib;
+
+              l_rest--;
+
+              // make values current
+              cols[L][d] = bit;
+              diagl[L][d] = new_diagl << 1;
+              diagr[L][d] = new_diagr >> 1;
+              rest[L][d] = l_rest;
+            } else {
+                // when all columns are used, we found a solution
+                num += bit == UINT_FAST32_MAX;
             }
-
-            if(allowed2 && (lookahead2 == UINT_FAST32_MAX)) {
-                continue;
-            }
-
-            // The next two lines save stack depth + backtrack operations
-            // when we passed the last possibility in a row.
-            // Go lower in the stack, avoid branching by writing above the current
-            // position
-            posibs[d + 1] = posib;
-            d += posib != UINT_FAST32_MAX; // avoid branching with this trick
-            posib = new_posib;
-
-            l_rest--;
-
-            // make values current
-            cols[d] = bit;
-            diagl[d] = new_diagl;
-            diagr[d] = new_diagr;
-            rest[d] = l_rest;
-            diagl_shifted = new_diagl << 1;
-            diagr_shifted = new_diagr >> 1;
-        } else {
-            // when all columns are used, we found a solution
-            num += bit == UINT_FAST32_MAX;
         }
-      }
-      posib = posibs[d]; // backtrack ...
-      d--;
+        d--;
+        posib = posibs[L][d]; // backtrack ...
     }
 
-    out_cnt[id] = num*2;
+    out_cnt[G] += num;
 }

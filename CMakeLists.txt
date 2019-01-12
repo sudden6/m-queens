@@ -21,7 +21,6 @@ set (CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -march=native -mtune=na
 
 set(${PROJECT_NAME}_SOURCES
   clqueens.cl
-  clqueens_amd.cl
   clsolver.cpp
   clsolver.h
   cpusolver.h
@@ -39,4 +38,3 @@ target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/c
 
 # copy OpenCL kernel source
 configure_file(${CMAKE_SOURCE_DIR}/clqueens.cl ./ COPYONLY)
-configure_file(${CMAKE_SOURCE_DIR}/clqueens_amd.cl ./ COPYONLY)

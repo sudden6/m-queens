@@ -62,15 +62,16 @@ bool ClSolver::init(uint8_t boardsize, uint8_t placed)
     std::cout << "OPTIONS: " << options << std::endl;
 
     cl_int builderr = program.build(options.c_str());
+
+    cl_int err = 0;
+    std::cout << "OpenCL build log:" << std::endl;
+    auto buildlog = program.getBuildInfo<CL_PROGRAM_BUILD_LOG>(device, &err);
+    std::cout << buildlog << std::endl;
+    if(err != CL_SUCCESS) {
+        std::cout << "getBuildInfo<CL_PROGRAM_BUILD_LOG> failed" << std::endl;
+    }
     if(builderr != CL_SUCCESS) {
         std::cout << "program.build failed: " << builderr << std::endl;
-        cl_int err = 0;
-        std::cout << "OpenCL build log:" << std::endl;
-        auto buildlog = program.getBuildInfo<CL_PROGRAM_BUILD_LOG>(device, &err);
-        std::cout << buildlog << std::endl;
-        if(err != CL_SUCCESS) {
-            std::cout << "getBuildInfo<CL_PROGRAM_BUILD_LOG> failed" << std::endl;
-        }
         return false;
     }
 
@@ -84,10 +85,11 @@ constexpr size_t BATCH_SIZE = WORKGROUP_SIZE*(1 << 13);
 typedef cl_uint result_type;
 
 typedef struct {
-    cl::Kernel clKernel;
+    std::vector<result_type> hostOutputBuf;
+    std::vector<start_condition_t> hostStartBuf;
     cl::Buffer clStartBuf;
     cl::Buffer clOutputBuf;
-    std::vector<result_type> hostOutputBuf;
+    cl::Kernel clKernel;
 } batch;
 
 constexpr size_t NUM_BATCHES = 1;
@@ -120,9 +122,10 @@ void ClSolver::threadWorker(uint32_t id, std::mutex &pre_lock)
             std::cout << "cl::Kernel failed: " << err << std::endl;
         }
 
+        b.hostStartBuf.resize(BATCH_SIZE);
         // Allocate start condition buffer on device
-        b.clStartBuf = cl::Buffer(context, CL_MEM_READ_ONLY | CL_MEM_HOST_WRITE_ONLY | CL_MEM_ALLOC_HOST_PTR,
-            BATCH_SIZE * sizeof(start_condition), nullptr, &err);
+        b.clStartBuf = cl::Buffer(context, CL_MEM_READ_ONLY | CL_MEM_HOST_WRITE_ONLY | CL_MEM_USE_HOST_PTR,
+            b.hostStartBuf.size() * sizeof(start_condition), b.hostStartBuf.data(), &err);
         if(err != CL_SUCCESS) {
             std::cout << "cl::Buffer start_buf failed: " << err << std::endl;
         }
@@ -189,16 +192,18 @@ void ClSolver::threadWorker(uint32_t id, std::mutex &pre_lock)
         if(!clStart) {
             std::cout << "Unexpected NULL pointer" << std::endl;
         }
-        start_condition * curIt = static_cast<start_condition*>(clStart);
-        const start_condition * beginIt = curIt;
-        const start_condition * endIt = beginIt + BATCH_SIZE;
 
+        if(clStart != b.hostStartBuf.data()) {
+            std::cout << "Unexpected pointer" << std::endl;
+        }
+
+        auto curIt = b.hostStartBuf.begin();
         // TODO(sudden6): cleanup
-        while(curIt < endIt) {
-            //curIt = pre.getNext((std::vector<start_condition>::iterator)curIt, (std::vector<start_condition>::const_iterator)endIt);
+        while(curIt < b.hostStartBuf.cend()) {
+            curIt = pre.getNext(curIt, b.hostStartBuf.cend());
             if(pre.empty()) {
                 auto end_time = std::time(nullptr);
-                std::cout << "pre block took " << difftime(end_time, start_time) << "s" << std::endl;
+                //std::cout << "pre block took " << difftime(end_time, start_time) << "s" << std::endl;
                 start_time = end_time;
                 pre = nextPre(pre_lock);
                 if(pre.empty()) {
@@ -207,7 +212,7 @@ void ClSolver::threadWorker(uint32_t id, std::mutex &pre_lock)
             }
         }
 
-        const size_t batchSize = curIt - beginIt;
+        const size_t batchSize = std::distance(b.hostStartBuf.begin(), curIt);
 
         size_t rest = batchSize % WORKGROUP_SIZE;
         size_t whole = batchSize - rest;
@@ -273,7 +278,7 @@ PreSolver ClSolver::nextPre(std::mutex& pre_lock)
     std::lock_guard<std::mutex> guard(pre_lock);
 
     if(solved < start.size()) {
-        std::cout << "Solving: " << solved << "/" << start.size() << std::endl;
+        //std::cout << "Solving: " << solved << "/" << start.size() << std::endl;
         result = PreSolver(boardsize, placed, presolve_depth, start[solved]);
         solved++;
     }
@@ -443,7 +448,7 @@ ClSolver* ClSolver::makeClSolver(unsigned int platform, unsigned int device)
     }
 
     // load source code
-    std::ifstream sourcefile("clqueens_amd.cl");
+    std::ifstream sourcefile("clqueens.cl");
     std::string sourceStr((std::istreambuf_iterator<char>(sourcefile)),
                      std::istreambuf_iterator<char>());
 
