@@ -1,5 +1,6 @@
 #include "presolver.h"
 
+#include <cstring>
 #include <iterator>
 
 PreSolver::PreSolver()
@@ -149,4 +150,52 @@ std::vector<start_condition>::iterator PreSolver::getNext(std::vector<start_cond
 bool PreSolver::empty() const
 {
     return !valid;
+}
+
+std::vector<uint8_t> PreSolver::save() const
+{
+    struct bin_save save_data;
+    save_data.n = this->n;
+    save_data.placed = this->placed;
+    save_data.depth = this->depth;
+    save_data.valid = this->valid;
+    save_data.start = this->start;
+    memcpy(save_data.cols, this->cols, sizeof(uint_fast32_t) * MAXD);
+    memcpy(save_data.posibs, this->posibs, sizeof(uint_fast32_t) * MAXD);
+    memcpy(save_data.diagl, this->diagl, sizeof(uint_fast32_t) * MAXD);
+    memcpy(save_data.diagr, this->diagr, sizeof(uint_fast32_t) * MAXD);
+    memcpy(save_data.rest, this->rest, sizeof(int_fast8_t) * MAXD);
+    save_data.posib = this->posib;
+    save_data.max_depth = this->max_depth;
+
+    std::vector<uint8_t> result;
+    result.resize(sizeof(save_data));
+    memcpy(result.data(), &save_data, result.size());
+
+    return result;
+}
+
+bool PreSolver::load(std::vector<uint8_t> data)
+{
+    struct bin_save load_data;
+    if(data.size() != sizeof(load_data)) {
+        return false;
+    }
+
+    memcpy(&load_data, data.data(), data.size());
+
+    this->n = load_data.n;
+    this->placed = load_data.placed;
+    this->depth = load_data.depth;
+    this->valid = load_data.valid;
+    this->start = load_data.start;
+    memcpy(this->cols, load_data.cols, sizeof(uint_fast32_t) * MAXD);
+    memcpy(this->posibs, load_data.posibs, sizeof(uint_fast32_t) * MAXD);
+    memcpy(this->diagl, load_data.diagl, sizeof(uint_fast32_t) * MAXD);
+    memcpy(this->diagr, load_data.diagr, sizeof(uint_fast32_t) * MAXD);
+    memcpy(this->rest, load_data.rest, sizeof(int_fast8_t) * MAXD);
+    this->posib = load_data.posib;
+    this->max_depth = load_data.max_depth;
+
+    return true;
 }

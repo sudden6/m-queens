@@ -14,6 +14,8 @@ public:
     std::vector<start_condition>::iterator getNext(std::vector<start_condition>::iterator it,
                  const std::vector<start_condition>::const_iterator end);
     bool empty() const;
+    std::vector<uint8_t> save() const;
+    bool load(std::vector<uint8_t> data);
 
 private:
     uint_fast8_t n = 0;
@@ -34,6 +36,20 @@ private:
     uint_fast32_t posib = 0;
 
     int_fast8_t max_depth = 0;
+
+    // struct definition for class serialization
+    struct bin_save {
+        uint_fast8_t n = 0;
+        uint_fast8_t placed = 0;
+        uint_fast8_t depth = 0;
+        bool valid = false;
+        start_condition start;
+        uint_fast32_t cols[PreSolver::MAXD], posibs[PreSolver::MAXD];
+        uint_fast32_t diagl[PreSolver::MAXD], diagr[PreSolver::MAXD];
+        int_fast8_t rest[MAXD];
+        uint_fast32_t posib = 0;
+        int_fast8_t max_depth = 0;
+    };
 };
 
 #endif // PRESOLVER_H
