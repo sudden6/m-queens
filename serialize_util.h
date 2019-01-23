@@ -6,6 +6,9 @@
 class serialize_util
 {
 public:
+    static void pack_u16(uint16_t i, uint8_t* o);
+    static uint16_t unpack_u16(const uint8_t *o);
+
     static void pack_u32(uint32_t i, uint8_t* o);
     static uint32_t unpack_u32(const uint8_t* o);
 

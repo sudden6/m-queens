@@ -4,7 +4,7 @@
 #include <vector>
 #include "solverstructs.h"
 
-class start_file_handler
+class start_file
 {
 public:
     static std::vector<start_condition> load_all();
