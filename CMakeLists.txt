@@ -28,7 +28,11 @@ set(${PROJECT_NAME}_SOURCES
   isolver.h
   presolver.cpp
   presolver.h
+  serialize_util.cpp
+  serialize_util.h
   solverstructs.h
+  start_file_handler.cpp
+  start_file_handler.h
  )
 
 add_executable(${PROJECT_NAME} ${${PROJECT_NAME}_SOURCES} "main.cpp")
