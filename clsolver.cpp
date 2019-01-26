@@ -55,7 +55,7 @@ bool ClSolver::init(uint8_t boardsize, uint8_t placed)
     std::ostringstream optionsStream;
     optionsStream << "-D N=" << std::to_string(boardsize)
                   << " -D PLACED=" <<std::to_string(boardsize - gpu_depth)
-                  << " -D DEPTH=" <<std::to_string(GPU_DEPTH)
+                  << " -D DEPTH=" <<std::to_string(gpu_depth)
                   << " -D WG_SIZE=" <<std::to_string(WORKGROUP_SIZE);
     std::string options = optionsStream.str();
 
