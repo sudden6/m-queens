@@ -17,6 +17,8 @@ public:
     std::vector<uint8_t> save() const;
     bool load(std::vector<uint8_t> data);
 
+    static size_t possibs_at_depth(size_t current, uint8_t placed, uint8_t boardsize, uint8_t depth);
+    static std::vector<start_condition> create_preplacement(uint_fast8_t n);
 private:
     uint_fast8_t n = 0;
     uint_fast8_t placed = 0;
@@ -25,6 +27,9 @@ private:
     start_condition start;
 
     static constexpr unsigned MAXD = 20;
+
+    // maximum board size for which this solver is designed
+    static constexpr unsigned MAXN = 29;
 
     // Our backtracking 'stack'
     uint_fast32_t cols[MAXD], posibs[MAXD];

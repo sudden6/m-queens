@@ -42,5 +42,24 @@ target_link_libraries(${PROJECT_NAME} OpenCL::OpenCL)
 target_link_libraries(${PROJECT_NAME} Threads::Threads)
 target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/cxxopts/include)
 
+set(PRESOLVER_PROJECT presolver)
+
+set(${PRESOLVER_PROJECT}_SOURCES
+    presolver/main.cpp
+    presolver.cpp
+    presolver.h
+    solverstructs.h
+    serialize_util.cpp
+    serialize_util.h
+    start_file.cpp
+    start_file.h
+)
+
+add_executable(${PRESOLVER_PROJECT} ${${PRESOLVER_PROJECT}_SOURCES} "presolver/main.cpp")
+target_include_directories(${PRESOLVER_PROJECT} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/cxxopts/include)
+
+
 # copy OpenCL kernel source
 configure_file(${CMAKE_SOURCE_DIR}/clqueens.cl ./ COPYONLY)
+
+

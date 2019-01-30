@@ -152,6 +152,76 @@ bool PreSolver::empty() const
     return !valid;
 }
 
+
+/**
+ * @brief compute the maximum number of possibilities at a specified depth
+ * @param current number of possibilities at the current depth
+ * @param placed already placed queens
+ * @param boardsize size of the board
+ * @param depth number of steps to calculate
+ * @return number of possibilites at this depth
+ */
+size_t PreSolver::possibs_at_depth(size_t current, uint8_t placed, uint8_t boardsize, uint8_t depth) {
+    size_t result = current;  // depends on preplacement algorithm
+    for(uint8_t i = 0; i < depth; i++) {
+        result *= boardsize - 1 - placed - i;
+    }
+    return result;
+}
+
+std::vector<start_condition> PreSolver::create_preplacement(uint_fast8_t n) {
+    std::vector<start_condition> result;
+
+    if(n < 2) {
+        return  result;
+    }
+
+    //
+    // The top level is two fors, to save one bit of symmetry in the enumeration
+    // by forcing second queen to be AFTER the first queen.
+    //
+    uint_fast16_t start_cnt = 0;
+    start_condition_t start_queens[(MAXN - 2)*(MAXN - 1)];
+#pragma omp simd
+    for (uint_fast8_t q0 = 0; q0 < n - 2; q0++) {
+        for (uint_fast8_t q1 = q0 + 2; q1 < n; q1++) {
+            uint_fast32_t bit0 = 1 << q0; // The first queen placed
+            uint_fast32_t bit1 = 1 << q1; // The second queen placed
+            start_queens[start_cnt].cols = bit0 | bit1;
+            // This places the first two queens
+            start_queens[start_cnt].diagl = (bit0 << 2) | (bit1 << 1);
+            start_queens[start_cnt].diagr = (bit0 >> 2) | (bit1 >> 1);
+
+            start_cnt++;
+        }
+    }
+
+    // maximum number of start possibilities at row 3
+    result.resize(possibs_at_depth(start_cnt, 2, n, 1));
+
+    uint_fast32_t start_level3_cnt = 0;
+#define START_LEVEL4 (MAXN - 4)
+
+#pragma omp parallel for schedule(dynamic)
+    for (uint_fast16_t cnt = 0; cnt < start_cnt; cnt++) {
+        std::vector<start_condition_t> start_level4;
+        start_level4.resize(START_LEVEL4);
+        PreSolver pre(n, 2, 1, start_queens[cnt]);
+        auto end = pre.getNext(start_level4.begin(), start_level4.cend());
+        size_t level4_cnt = std::distance(start_level4.begin(), end);
+
+        // copy the results into global memory
+        uint_fast32_t old_idx;
+        // fetch_and_add in OpenMP
+#pragma omp atomic capture
+        { old_idx = start_level3_cnt; start_level3_cnt += level4_cnt; } // atomically update start_level3_cnt, but capture original value of start_level3_cnt in old_idx
+        memcpy(&result[old_idx], &start_level4[0], level4_cnt*sizeof(start_condition_t));
+    }
+
+    result.resize(start_level3_cnt); // shrink
+    return result;
+}
+
 std::vector<uint8_t> PreSolver::save() const
 {
     struct bin_save save_data;
