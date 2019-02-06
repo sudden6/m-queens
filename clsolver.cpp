@@ -27,7 +27,7 @@ constexpr uint_fast8_t MAXN = 29;
  * With a too high GPU_DEPTH, solving a board takes too long and the
  * GPU is detected as "hung" by the driver and reset or the system crashes.
  */
-constexpr uint_fast8_t GPU_DEPTH = 10;
+constexpr uint_fast8_t GPU_DEPTH = 9;
 constexpr size_t WORKGROUP_SIZE = 64;
 
 bool ClSolver::init(uint8_t boardsize, uint8_t placed)
@@ -86,13 +86,10 @@ typedef cl_uint result_type;
 
 typedef struct {
     std::vector<result_type> hostOutputBuf;
-    std::vector<start_condition_t> hostStartBuf;
     cl::Buffer clStartBuf;
     cl::Buffer clOutputBuf;
     cl::Kernel clKernel;
 } batch;
-
-constexpr size_t NUM_BATCHES = 1;
 
 void ClSolver::threadWorker(uint32_t id, std::mutex &pre_lock)
 {
@@ -104,85 +101,73 @@ void ClSolver::threadWorker(uint32_t id, std::mutex &pre_lock)
     }
 
     // buffer
-    batch batches[NUM_BATCHES];
-    cl::CommandQueue cmdQueue;
+    batch b;
+
     // Create command queue.
-    cmdQueue = cl::CommandQueue(context, device, 0, &err);
-    if(err != CL_SUCCESS) {
+    cl::CommandQueue cmdQueue = cl::CommandQueue(context, device, 0, &err);
+        if(err != CL_SUCCESS) {
         std::cout << "failed to create command queue: " << err << std::endl;
         return;
     }
 
-    for(size_t i = 0; i < NUM_BATCHES; i++) {
-        batch& b = batches[i];
+    // create device kernel
+    b.clKernel = cl::Kernel(program, "solve_subboard", &err);
+    if(err != CL_SUCCESS) {
+        std::cout << "cl::Kernel failed: " << err << std::endl;
+    }
 
-        // create device kernel
-        b.clKernel = cl::Kernel(program, "solve_subboard", &err);
-        if(err != CL_SUCCESS) {
-            std::cout << "cl::Kernel failed: " << err << std::endl;
-        }
+    // Allocate start condition buffer on device
+    b.clStartBuf = cl::Buffer(context, CL_MEM_READ_ONLY | CL_MEM_HOST_WRITE_ONLY,
+        BATCH_SIZE * sizeof(start_condition), nullptr, &err);
+    if(err != CL_SUCCESS) {
+        std::cout << "cl::Buffer start_buf failed: " << err << std::endl;
+    }
 
-        b.hostStartBuf.resize(BATCH_SIZE);
-        // Allocate start condition buffer on device
-        b.clStartBuf = cl::Buffer(context, CL_MEM_READ_ONLY | CL_MEM_HOST_WRITE_ONLY | CL_MEM_USE_HOST_PTR,
-            b.hostStartBuf.size() * sizeof(start_condition), b.hostStartBuf.data(), &err);
-        if(err != CL_SUCCESS) {
-            std::cout << "cl::Buffer start_buf failed: " << err << std::endl;
-        }
-
-        // TODO(sudden6): not the most efficient way to create a zero buffer on the device
-        // Allocate result buffer on host
-        b.hostOutputBuf = std::vector<result_type>(BATCH_SIZE, 0);
+    // TODO(sudden6): not the most efficient way to create a zero buffer on the device
+    // Allocate result buffer on host
+    b.hostOutputBuf = std::vector<result_type>(BATCH_SIZE, 0);
 
 #if 0
-        // Needs OpenCL 1.2
-        // Allocate result buffer on device
-        b.clOutputBuf = cl::Buffer(context, CL_MEM_READ_WRITE | CL_MEM_HOST_READ_ONLY,
-            BATCH_SIZE * sizeof(result_type), nullptr, &err);
-        if(err != CL_SUCCESS) {
-            std::cout << "cl::Buffer results_buf failed: " << err << std::endl;
-        }
+    // Needs OpenCL 1.2
+    // Allocate result buffer on device
+    b.clOutputBuf = cl::Buffer(context, CL_MEM_READ_WRITE | CL_MEM_HOST_READ_ONLY,
+        BATCH_SIZE * sizeof(result_type), nullptr, &err);
+    if(err != CL_SUCCESS) {
+        std::cout << "cl::Buffer results_buf failed: " << err << std::endl;
+    }
 
-        // zero the result buffer
-        result_type pattern = 0;
-        err = cmdQueue.enqueueFillBuffer(b.clOutputBuf, pattern,
-                                         0, BATCH_SIZE * sizeof(result_type),
-                                         nullptr, nullptr);
-        if(err != CL_SUCCESS) {
-            std::cout << "fillBuffer results_buf failed: " << err << std::endl;
-        }
+    // zero the result buffer
+    result_type pattern = 0;
+    err = cmdQueue.enqueueFillBuffer(b.clOutputBuf, pattern,
+                                     0, BATCH_SIZE * sizeof(result_type),
+                                     nullptr, nullptr);
+    if(err != CL_SUCCESS) {
+        std::cout << "fillBuffer results_buf failed: " << err << std::endl;
+    }
 #else
-        // Allocate result buffer on device
-        b.clOutputBuf = cl::Buffer(context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR,
-            BATCH_SIZE * sizeof(result_type), b.hostOutputBuf.data(), &err);
-        if(err != CL_SUCCESS) {
-            std::cout << "cl::Buffer results_buf failed: " << err << std::endl;
-        }
+    // Allocate result buffer on device
+    b.clOutputBuf = cl::Buffer(context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR,
+        BATCH_SIZE * sizeof(result_type), b.hostOutputBuf.data(), &err);
+    if(err != CL_SUCCESS) {
+        std::cout << "cl::Buffer results_buf failed: " << err << std::endl;
+    }
 #endif
 
 
-        // Set kernel parameters.
-        err = b.clKernel.setArg(0, b.clStartBuf);
-        if(err != CL_SUCCESS) {
-            std::cout << "solve_subboard.setArg(0 failed: " << err << std::endl;
-        }
-
-        err = b.clKernel.setArg(1, b.clOutputBuf);
-        if(err != CL_SUCCESS) {
-            std::cout << "solve_subboard.setArg(1 failed: " << err << std::endl;
-        }
+    // Set kernel parameters.
+    err = b.clKernel.setArg(0, b.clStartBuf);
+    if(err != CL_SUCCESS) {
+        std::cout << "solve_subboard.setArg(0 failed: " << err << std::endl;
     }
 
+    err = b.clKernel.setArg(1, b.clOutputBuf);
+    if(err != CL_SUCCESS) {
+        std::cout << "solve_subboard.setArg(1 failed: " << err << std::endl;
+    }
 
     auto start_time = std::time(nullptr);
 
-    size_t cur_batch = 0;
-
     while (!pre.empty()) {
-        auto& b = batches[cur_batch];
-        cur_batch++;
-        cur_batch %= NUM_BATCHES;
-
         void* clStart = cmdQueue.enqueueMapBuffer(b.clStartBuf, CL_TRUE, CL_MAP_WRITE_INVALIDATE_REGION,
                                                   0, BATCH_SIZE * sizeof(start_condition), nullptr, nullptr, &err);
         if(err != CL_SUCCESS) {
@@ -193,14 +178,12 @@ void ClSolver::threadWorker(uint32_t id, std::mutex &pre_lock)
             std::cout << "Unexpected NULL pointer" << std::endl;
         }
 
-        if(clStart != b.hostStartBuf.data()) {
-            std::cout << "Unexpected pointer" << std::endl;
-        }
-
-        auto curIt = b.hostStartBuf.begin();
+        start_condition_t* curIt = static_cast<start_condition_t*>(clStart);
+        const start_condition* startIt = curIt;
+        const start_condition_t* endIt = curIt + BATCH_SIZE;
         // TODO(sudden6): cleanup
-        while(curIt < b.hostStartBuf.cend()) {
-            curIt = pre.getNext(curIt, b.hostStartBuf.cend());
+        while(curIt < endIt) {
+            curIt = pre.getNext(curIt, endIt);
             if(pre.empty()) {
                 auto end_time = std::time(nullptr);
                 //std::cout << "pre block took " << difftime(end_time, start_time) << "s" << std::endl;
@@ -212,7 +195,7 @@ void ClSolver::threadWorker(uint32_t id, std::mutex &pre_lock)
             }
         }
 
-        const size_t batchSize = std::distance(b.hostStartBuf.begin(), curIt);
+        const size_t batchSize = curIt - startIt;
 
         size_t rest = batchSize % WORKGROUP_SIZE;
         size_t whole = batchSize - rest;
@@ -245,28 +228,20 @@ void ClSolver::threadWorker(uint32_t id, std::mutex &pre_lock)
         cmdQueue.flush();
     }
 
-    for(size_t i = 0; i < NUM_BATCHES; i++) {
-        batch& b = batches[i];
-
-        err = cmdQueue.enqueueReadBuffer(b.clOutputBuf, CL_FALSE, 0,
-                                         BATCH_SIZE * sizeof(result_type), b.hostOutputBuf.data(),
-                                         nullptr, nullptr);
-        if(err != CL_SUCCESS) {
-            std::cout << "enqueueReadBuffer failed: " << err << std::endl;
-        }
+    err = cmdQueue.enqueueReadBuffer(b.clOutputBuf, CL_FALSE, 0,
+                                     BATCH_SIZE * sizeof(result_type), b.hostOutputBuf.data(),
+                                     nullptr, nullptr);
+    if(err != CL_SUCCESS) {
+        std::cout << "enqueueReadBuffer failed: " << err << std::endl;
     }
 
     uint64_t result = 0;
 
     cmdQueue.finish();
 
-    for(size_t i = 0; i < NUM_BATCHES; i++) {
-        batch& b = batches[i];
-
-        // get data from completed batch
-        for(size_t i = 0; i < BATCH_SIZE; i++) {
-            result += b.hostOutputBuf[i];
-        }
+    // get data from completed batch
+    for(size_t i = 0; i < BATCH_SIZE; i++) {
+        result += b.hostOutputBuf[i];
     }
 
     results[id] = result;

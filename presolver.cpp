@@ -65,13 +65,14 @@ std::vector<start_condition> PreSolver::getNext(size_t count)
 {
     std::vector<start_condition> result;
     result.resize(count);
-    std::vector<start_condition>::iterator end = getNext(result.begin(), result.cend());
-    result.resize(std::distance(result.begin(), end));
+    start_condition* start = result.data();
+    start_condition* new_end = getNext(start, start + count);
+    result.resize(new_end - start);
     return result;
 }
 
-std::vector<start_condition>::iterator PreSolver::getNext(std::vector<start_condition>::iterator it,
-                        const std::vector<start_condition>::const_iterator end)
+start_condition* PreSolver::getNext(start_condition* it,
+                        const start_condition* end)
 {
     if(it == end) {
         return it;

@@ -11,8 +11,8 @@ public:
     PreSolver();
     PreSolver(uint_fast8_t n, uint_fast8_t placed, uint_fast8_t depth, start_condition start);
     std::vector<start_condition> getNext(size_t count);
-    std::vector<start_condition>::iterator getNext(std::vector<start_condition>::iterator it,
-                 const std::vector<start_condition>::const_iterator end);
+    start_condition *getNext(start_condition *it,
+                 const start_condition *end);
     bool empty() const;
     std::vector<uint8_t> save() const;
     bool load(std::vector<uint8_t> data);

@@ -71,8 +71,10 @@ std::vector<start_condition> create_preplacement(uint_fast8_t n) {
         std::vector<start_condition_t> start_level4;
         start_level4.resize(START_LEVEL4);
         PreSolver pre(n, 2, 1, start_queens[cnt]);
-        auto end = pre.getNext(start_level4.begin(), start_level4.cend());
-        size_t level4_cnt = std::distance(start_level4.begin(), end);
+        start_condition* start = start_level4.data();
+        const start_condition* end = start + start_level4.size();
+        const auto new_end = pre.getNext(start, end);
+        size_t level4_cnt = new_end - start_level4.data();
 
         // copy the results into global memory
         uint_fast32_t old_idx;

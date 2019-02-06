@@ -22,7 +22,7 @@ public:
 private:
     ClSolver();
     void threadWorker(uint32_t id, std::mutex &pre_lock);
-    static constexpr size_t NUM_CMDQUEUES = 16;
+    static constexpr size_t NUM_CMDQUEUES = 1;
     PreSolver nextPre(std::mutex &pre_lock);
 
     std::vector<start_condition> start;
