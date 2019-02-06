@@ -38,7 +38,7 @@ uint64_t cpuSolver::solve_subboard(const std::vector<start_condition>& starts) {
 
 #pragma omp parallel for reduction(+ : num) schedule(dynamic)
   for (uint_fast32_t cnt = 0; cnt < start_cnt; cnt++) {
-    uint_fast32_t cols[MAXN], posibs[MAXN]; // Our backtracking 'stack'
+      uint_fast32_t cols[MAXN], posibs[MAXN] = {UINT_FAST32_MAX}; // Our backtracking 'stack'
     uint_fast32_t diagl[MAXN], diagr[MAXN];
     int8_t rest[MAXN]; // number of rows left
     int_fast16_t d = 1; // d is our depth in the backtrack stack

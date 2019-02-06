@@ -223,6 +223,8 @@ int main(int argc, char **argv) {
               << std::endl;
   }
 
+  delete solver;
+
   std::cout << "DONE" << std::endl;
   return 0;
 }
