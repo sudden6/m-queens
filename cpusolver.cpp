@@ -52,13 +52,14 @@ uint64_t cpuSolver::solve_subboard(const std::vector<start_condition>& starts) {
 
     //  The variable posib contains the bitmask of possibilities we still have
     //  to try in a given row ...
-    uint_fast32_t posib = (cols[d] | diagl[d] | diagr[d]);
+    posibs[d] = (cols[d] | diagl[d] | diagr[d]);
 
     diagl[d] <<= 1;
     diagr[d] >>= 1;
 
     while (d > 0) {
       int8_t l_rest = rest[d];
+      uint_fast32_t posib = posibs[d];
 
       while (posib != UINT_FAST32_MAX) {
         // The standard trick for getting the rightmost bit in the mask
@@ -98,8 +99,7 @@ uint64_t cpuSolver::solve_subboard(const std::vector<start_condition>& starts) {
           num += bit == UINT_FAST32_MAX;
         }
       }
-      d--;
-      posib = posibs[d]; // backtrack ...
+      d--;  // backtrack
     }
   }
   return num * 2;

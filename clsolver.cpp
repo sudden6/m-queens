@@ -27,7 +27,7 @@ constexpr uint_fast8_t MAXN = 29;
  * With a too high GPU_DEPTH, solving a board takes too long and the
  * GPU is detected as "hung" by the driver and reset or the system crashes.
  */
-constexpr uint_fast8_t GPU_DEPTH = 9;
+constexpr uint_fast8_t GPU_DEPTH = 8;
 constexpr size_t WORKGROUP_SIZE = 64;
 
 bool ClSolver::init(uint8_t boardsize, uint8_t placed)
@@ -55,7 +55,7 @@ bool ClSolver::init(uint8_t boardsize, uint8_t placed)
     std::ostringstream optionsStream;
     optionsStream << "-D N=" << std::to_string(boardsize)
                   << " -D PLACED=" <<std::to_string(boardsize - gpu_depth)
-                  << " -D DEPTH=" <<std::to_string(GPU_DEPTH)
+                  << " -D DEPTH=" <<std::to_string(gpu_depth)
                   << " -D WG_SIZE=" <<std::to_string(WORKGROUP_SIZE);
     std::string options = optionsStream.str();
 
@@ -81,7 +81,7 @@ bool ClSolver::init(uint8_t boardsize, uint8_t placed)
 // should be a multiple of 64 at least for AMD GPUs
 // ideally would be CL_KERNEL_PREFERRED_WORK_GROUP_SIZE_MULTIPLE
 // bigger BATCH_SIZE means higher memory usage
-constexpr size_t BATCH_SIZE = WORKGROUP_SIZE*(1 << 13);
+constexpr size_t BATCH_SIZE = WORKGROUP_SIZE*(1 << 14);
 typedef cl_uint result_type;
 
 typedef struct {
@@ -224,11 +224,9 @@ void ClSolver::threadWorker(uint32_t id, std::mutex &pre_lock)
                 std::cout << "enqueueNDRangeKernel failed: " << err << std::endl;
             }
         }
-        // don't flood the device with commands
-        cmdQueue.flush();
     }
 
-    err = cmdQueue.enqueueReadBuffer(b.clOutputBuf, CL_FALSE, 0,
+    err = cmdQueue.enqueueReadBuffer(b.clOutputBuf, CL_TRUE, 0,
                                      BATCH_SIZE * sizeof(result_type), b.hostOutputBuf.data(),
                                      nullptr, nullptr);
     if(err != CL_SUCCESS) {
@@ -236,8 +234,6 @@ void ClSolver::threadWorker(uint32_t id, std::mutex &pre_lock)
     }
 
     uint64_t result = 0;
-
-    cmdQueue.finish();
 
     // get data from completed batch
     for(size_t i = 0; i < BATCH_SIZE; i++) {
