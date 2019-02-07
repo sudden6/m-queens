@@ -27,7 +27,7 @@ constexpr uint_fast8_t MAXN = 29;
  * With a too high GPU_DEPTH, solving a board takes too long and the
  * GPU is detected as "hung" by the driver and reset or the system crashes.
  */
-constexpr uint_fast8_t GPU_DEPTH = 8;
+constexpr uint_fast8_t GPU_DEPTH = 7;
 constexpr size_t WORKGROUP_SIZE = 64;
 
 bool ClSolver::init(uint8_t boardsize, uint8_t placed)
@@ -91,13 +91,13 @@ typedef struct {
     cl::Kernel clKernel;
 } batch;
 
-void ClSolver::threadWorker(uint32_t id, std::mutex &pre_lock)
+uint64_t ClSolver::threadWorker()
 {
     cl_int err = CL_SUCCESS;
-    auto pre = nextPre(pre_lock);
+    auto pre = nextPre();
 
     if(pre.empty()) {
-        return;
+        return 0;
     }
 
     // buffer
@@ -107,7 +107,7 @@ void ClSolver::threadWorker(uint32_t id, std::mutex &pre_lock)
     cl::CommandQueue cmdQueue = cl::CommandQueue(context, device, 0, &err);
         if(err != CL_SUCCESS) {
         std::cout << "failed to create command queue: " << err << std::endl;
-        return;
+        return 0;
     }
 
     // create device kernel
@@ -188,7 +188,7 @@ void ClSolver::threadWorker(uint32_t id, std::mutex &pre_lock)
                 auto end_time = std::time(nullptr);
                 //std::cout << "pre block took " << difftime(end_time, start_time) << "s" << std::endl;
                 start_time = end_time;
-                pre = nextPre(pre_lock);
+                pre = nextPre();
                 if(pre.empty()) {
                     break;
                 }
@@ -240,18 +240,23 @@ void ClSolver::threadWorker(uint32_t id, std::mutex &pre_lock)
         result += b.hostOutputBuf[i];
     }
 
-    results[id] = result;
+    return result;
 }
 
-PreSolver ClSolver::nextPre(std::mutex& pre_lock)
+PreSolver ClSolver::nextPre()
 {
     auto result = PreSolver();
-    std::lock_guard<std::mutex> guard(pre_lock);
-
-    if(solved < start.size()) {
-        std::cout << "Solving: " << solved << "/" << start.size() << std::endl;
-        result = PreSolver(boardsize, placed, presolve_depth, start[solved]);
-        solved++;
+    size_t old_solved;
+#pragma omp atomic capture
+    { old_solved = solved; solved++; } // atomically update solved, but capture original value in old_solved
+    if(old_solved < start.size()) {
+        if(old_solved % 10 == 0) {
+            #pragma omp critical
+            {
+                std::cout << "Solving: " << old_solved << "/" << start.size() << std::endl;
+            }
+        }
+        result = PreSolver(boardsize, placed, presolve_depth, start[old_solved]);
     }
 
     return result;
@@ -266,24 +271,13 @@ uint64_t ClSolver::solve_subboard(const std::vector<start_condition> &start)
         return 0;
     }
 
-    std::thread* threads[NUM_CMDQUEUES] = {nullptr};
-    std::mutex pre_lock{};
-
     std::cout << "Number of Threads: " << NUM_CMDQUEUES << std::endl;
     std::cout << "Buffer per Thread: " << BATCH_SIZE * (sizeof(start_condition) + sizeof(cl_uint))/(1024*1024) << "MB" << std::endl;
 
-    for(size_t i = 0; i < NUM_CMDQUEUES; i++) {
-        // init result
-        results.push_back(0);
-
-        threads[i] = new std::thread(&ClSolver::threadWorker, this, i, std::ref(pre_lock));
-    }
-
     uint64_t result = 0;
+    #pragma omp parallel for reduction(+ : result)
     for(size_t i = 0; i < NUM_CMDQUEUES; i++) {
-        threads[i]->join();
-        result += results[i];
-        delete threads[i];
+        result = threadWorker();
     }
 
     return result * 2;

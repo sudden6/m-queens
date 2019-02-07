@@ -1,6 +1,7 @@
 #ifndef CLSOLVER_H
 #define CLSOLVER_H
 
+#include <atomic>
 #include <cstdint>
 #include <vector>
 #include <mutex>
@@ -21,9 +22,9 @@ public:
 
 private:
     ClSolver();
-    void threadWorker(uint32_t id, std::mutex &pre_lock);
     static constexpr size_t NUM_CMDQUEUES = 8;
-    PreSolver nextPre(std::mutex &pre_lock);
+    PreSolver nextPre();
+    uint64_t threadWorker();
 
     std::vector<start_condition> start;
     size_t solved = 0;
@@ -34,7 +35,6 @@ private:
     cl::Context context;
     cl::Device device;
     cl::Program program;
-    std::vector<uint64_t> results;
 };
 
 #endif // CLSOLVER_H
