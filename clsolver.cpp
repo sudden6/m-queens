@@ -81,7 +81,7 @@ bool ClSolver::init(uint8_t boardsize, uint8_t placed)
 // should be a multiple of 64 at least for AMD GPUs
 // ideally would be CL_KERNEL_PREFERRED_WORK_GROUP_SIZE_MULTIPLE
 // bigger BATCH_SIZE means higher memory usage
-constexpr size_t BATCH_SIZE = WORKGROUP_SIZE*(1 << 14);
+constexpr size_t BATCH_SIZE = WORKGROUP_SIZE*(1 << 16);
 typedef cl_uint result_type;
 
 typedef struct {
@@ -249,7 +249,7 @@ PreSolver ClSolver::nextPre(std::mutex& pre_lock)
     std::lock_guard<std::mutex> guard(pre_lock);
 
     if(solved < start.size()) {
-        //std::cout << "Solving: " << solved << "/" << start.size() << std::endl;
+        std::cout << "Solving: " << solved << "/" << start.size() << std::endl;
         result = PreSolver(boardsize, placed, presolve_depth, start[solved]);
         solved++;
     }
@@ -270,7 +270,7 @@ uint64_t ClSolver::solve_subboard(const std::vector<start_condition> &start)
     std::mutex pre_lock{};
 
     std::cout << "Number of Threads: " << NUM_CMDQUEUES << std::endl;
-    std::cout << "Buffer per Thread: " << BATCH_SIZE * sizeof(start_condition)/(1024*1024) << "MB" << std::endl;
+    std::cout << "Buffer per Thread: " << BATCH_SIZE * (sizeof(start_condition) + sizeof(cl_uint))/(1024*1024) << "MB" << std::endl;
 
     for(size_t i = 0; i < NUM_CMDQUEUES; i++) {
         // init result
