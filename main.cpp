@@ -215,11 +215,13 @@ int main(int argc, char **argv) {
     std::chrono::duration<double> elapsed = time_end - time_start;
 
     result == results[i - 1] ? printf("PASS ") : printf("FAIL ");
+    std::cout.precision(3);
     std::cout << "N " << std::to_string(i)
               << ", Solutions " << std::to_string(result)
               << ", Expected " << std::to_string(results[i - 1])
-              << ", Time " << std::to_string(elapsed.count())
-              << ", Solutions/s " << std::to_string(result/elapsed.count())
+              << ", Time " << std::to_string(elapsed.count());
+    std::cout << std::scientific
+              << ", Solutions/s " << result/elapsed.count()
               << std::endl;
   }
 
