@@ -1,3 +1,4 @@
+#include <cassert>
 #include "clsolver.h"
 #include <ctime>
 #include <ios>
@@ -30,6 +31,16 @@ constexpr uint_fast8_t MAXN = 29;
 constexpr uint_fast8_t GPU_DEPTH = 7;
 constexpr size_t WORKGROUP_SIZE = 64;
 
+uint64_t ClSolver::expansion(uint8_t boardsize, uint8_t cur_idx, uint8_t depth) {
+    assert(boardsize > cur_idx);
+    assert(boardsize >= (cur_idx + depth));
+    uint64_t start = 1;
+    for(uint8_t i = 0; i < depth; i++) {
+        start *= boardsize - (cur_idx + i);
+    }
+    return start;
+}
+
 bool ClSolver::init(uint8_t boardsize, uint8_t placed)
 {
     if(boardsize > MAXN || boardsize < MINN) {
@@ -45,6 +56,7 @@ bool ClSolver::init(uint8_t boardsize, uint8_t placed)
     this->boardsize = boardsize;
     this->placed = placed;
     uint_fast8_t gpu_depth = GPU_DEPTH;
+    this->gpu_presolve_depth = 2;
     if((boardsize - placed) < GPU_DEPTH) {
         gpu_depth = boardsize - placed;
         presolve_depth = 0;
@@ -52,11 +64,31 @@ bool ClSolver::init(uint8_t boardsize, uint8_t placed)
         presolve_depth = boardsize - placed - GPU_DEPTH;
     }
 
+    // Need at least 1 step presolve and 1 step solve
+    if(gpu_depth < 2) {
+        return false;
+    }
+
+    if(presolve_depth > 0) {
+        this->gpu_presolve_depth = std::min(presolve_depth, gpu_presolve_depth);
+        presolve_depth -= gpu_presolve_depth;
+    } else {
+        if(gpu_depth < 3) {
+            this->gpu_presolve_depth = 1;
+        }
+        gpu_depth -= this->gpu_presolve_depth;
+    }
+
+    this->gpu_presolve_expansion = expansion(boardsize, placed + presolve_depth, gpu_presolve_depth);
+
     std::ostringstream optionsStream;
     optionsStream << "-D N=" << std::to_string(boardsize)
                   << " -D PLACED=" <<std::to_string(boardsize - gpu_depth)
                   << " -D DEPTH=" <<std::to_string(gpu_depth)
-                  << " -D WG_SIZE=" <<std::to_string(WORKGROUP_SIZE);
+                  << " -D WG_SIZE=" <<std::to_string(WORKGROUP_SIZE)
+                  << " -D PRE_END=" <<std::to_string(placed + presolve_depth + gpu_presolve_depth)
+                  << " -D PRE_DEPTH=" << std::to_string(gpu_presolve_depth)
+                  << " -D PRE_EXPANSION=" << std::to_string(gpu_presolve_expansion);
     std::string options = optionsStream.str();
 
     std::cout << "OPTIONS: " << options << std::endl;
@@ -81,14 +113,16 @@ bool ClSolver::init(uint8_t boardsize, uint8_t placed)
 // should be a multiple of 64 at least for AMD GPUs
 // ideally would be CL_KERNEL_PREFERRED_WORK_GROUP_SIZE_MULTIPLE
 // bigger BATCH_SIZE means higher memory usage
-constexpr size_t BATCH_SIZE = WORKGROUP_SIZE*(1 << 16);
+constexpr size_t BATCH_SIZE = WORKGROUP_SIZE*(1 << 10);
 typedef cl_uint result_type;
 
 typedef struct {
     std::vector<result_type> hostOutputBuf;
     cl::Buffer clStartBuf;
+    cl::Buffer clInterBuf;
     cl::Buffer clOutputBuf;
     cl::Kernel clKernel;
+    cl::Kernel clPreKernel;
 } batch;
 
 uint64_t ClSolver::threadWorker()
@@ -105,7 +139,7 @@ uint64_t ClSolver::threadWorker()
 
     // Create command queue.
     cl::CommandQueue cmdQueue = cl::CommandQueue(context, device, 0, &err);
-        if(err != CL_SUCCESS) {
+    if(err != CL_SUCCESS) {
         std::cout << "failed to create command queue: " << err << std::endl;
         return 0;
     }
@@ -116,9 +150,22 @@ uint64_t ClSolver::threadWorker()
         std::cout << "cl::Kernel failed: " << err << std::endl;
     }
 
+    // create device presolver kernel
+    b.clPreKernel = cl::Kernel(program, "pre_solve_subboard", &err);
+    if(err != CL_SUCCESS) {
+        std::cout << "cl::PreKernel failed: " << err << std::endl;
+    }
+
     // Allocate start condition buffer on device
     b.clStartBuf = cl::Buffer(context, CL_MEM_READ_ONLY | CL_MEM_HOST_WRITE_ONLY,
         BATCH_SIZE * sizeof(start_condition), nullptr, &err);
+    if(err != CL_SUCCESS) {
+        std::cout << "cl::Buffer start_buf failed: " << err << std::endl;
+    }
+
+    // Allocate intermediate buffer on device
+    b.clInterBuf = cl::Buffer(context, CL_MEM_READ_WRITE | CL_MEM_HOST_NO_ACCESS,
+        BATCH_SIZE * sizeof(start_condition) * gpu_presolve_expansion, nullptr, &err);
     if(err != CL_SUCCESS) {
         std::cout << "cl::Buffer start_buf failed: " << err << std::endl;
     }
@@ -153,16 +200,26 @@ uint64_t ClSolver::threadWorker()
     }
 #endif
 
+    // Set prekernel parameters.
+    err = b.clPreKernel.setArg(0, b.clStartBuf);
+    if(err != CL_SUCCESS) {
+        std::cout << "presolve_subboard.setArg(0) failed: " << err << std::endl;
+    }
+
+    err = b.clPreKernel.setArg(1, b.clInterBuf);
+    if(err != CL_SUCCESS) {
+        std::cout << "presolve_subboard.setArg(1) failed: " << err << std::endl;
+    }
 
     // Set kernel parameters.
-    err = b.clKernel.setArg(0, b.clStartBuf);
+    err = b.clKernel.setArg(0, b.clInterBuf);
     if(err != CL_SUCCESS) {
-        std::cout << "solve_subboard.setArg(0 failed: " << err << std::endl;
+        std::cout << "solve_subboard.setArg(0) failed: " << err << std::endl;
     }
 
     err = b.clKernel.setArg(1, b.clOutputBuf);
     if(err != CL_SUCCESS) {
-        std::cout << "solve_subboard.setArg(1 failed: " << err << std::endl;
+        std::cout << "solve_subboard.setArg(1) failed: " << err << std::endl;
     }
 
     auto start_time = std::time(nullptr);
@@ -206,6 +263,14 @@ uint64_t ClSolver::threadWorker()
         }
 
         if(whole > 0) {
+            // Launch pre kernel on the compute device.
+            err = cmdQueue.enqueueNDRangeKernel(b.clPreKernel, cl::NullRange,
+                                                cl::NDRange{whole}, cl::NDRange{WORKGROUP_SIZE},
+                                                nullptr, nullptr);
+            if(err != CL_SUCCESS) {
+                std::cout << "[PRE] enqueueNDRangeKernel failed: " << err << std::endl;
+            }
+
             // Launch kernel on the compute device.
             err = cmdQueue.enqueueNDRangeKernel(b.clKernel, cl::NullRange,
                                                 cl::NDRange{whole}, cl::NDRange{WORKGROUP_SIZE},
@@ -216,6 +281,14 @@ uint64_t ClSolver::threadWorker()
         }
 
         if(rest > 0) {
+            // Launch pre kernel on the compute device.
+            err = cmdQueue.enqueueNDRangeKernel(b.clPreKernel, cl::NDRange{whole},
+                                                cl::NDRange{rest}, cl::NDRange{1},
+                                                nullptr, nullptr);
+            if(err != CL_SUCCESS) {
+                std::cout << "[PRE] enqueueNDRangeKernel failed: " << err << std::endl;
+            }
+
             // Launch kernel on the compute device.
             err = cmdQueue.enqueueNDRangeKernel(b.clKernel, cl::NDRange{whole},
                                                 cl::NDRange{rest}, cl::NDRange{1},
@@ -253,7 +326,7 @@ PreSolver ClSolver::nextPre()
         if(old_solved % 10 == 0) {
             #pragma omp critical
             {
-                std::cout << "Solving: " << old_solved << "/" << start.size() << std::endl;
+                //std::cout << "Solving: " << old_solved << "/" << start.size() << std::endl;
             }
         }
         result = PreSolver(boardsize, placed, presolve_depth, start[old_solved]);
@@ -272,7 +345,7 @@ uint64_t ClSolver::solve_subboard(const std::vector<start_condition> &start)
     }
 
     std::cout << "Number of Threads: " << NUM_CMDQUEUES << std::endl;
-    std::cout << "Buffer per Thread: " << BATCH_SIZE * (sizeof(start_condition) + sizeof(cl_uint))/(1024*1024) << "MB" << std::endl;
+    std::cout << "Buffer per Thread: " << BATCH_SIZE * (sizeof(start_condition)*(1 + gpu_presolve_expansion) + sizeof(cl_uint))/(1024*1024) << "MB" << std::endl;
 
     uint64_t result = 0;
     #pragma omp parallel for reduction(+ : result)

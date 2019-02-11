@@ -25,11 +25,14 @@ private:
     static constexpr size_t NUM_CMDQUEUES = 8;
     PreSolver nextPre();
     uint64_t threadWorker();
+    uint64_t expansion(uint8_t boardsize, uint8_t cur_idx, uint8_t depth);
 
     std::vector<start_condition> start;
     size_t solved = 0;
 
     uint8_t presolve_depth = 0;
+    uint8_t gpu_presolve_depth = 0;
+    uint8_t gpu_presolve_expansion = 0;
     uint8_t placed = 0;
     uint8_t boardsize = 0;
     cl::Context context;

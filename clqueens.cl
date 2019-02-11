@@ -17,6 +17,108 @@ typedef uint uint_fast32_t;
 #define L (get_local_id(0))
 #define G (get_global_id(0))
 
+kernel void pre_solve_subboard(__global const start_condition* in_starts, __global start_condition* out_starts) {
+
+#define LOOKAHEAD 3
+
+#define DIAGL(d) diagl[L][(d)]
+#define DIAGR(d) diagr[L][(d)]
+#define POSIBS(d) posibs[L][(d)]
+#define COLS(d) cols[L][(d)]
+
+    __local uint_fast32_t cols[WG_SIZE][PRE_DEPTH];
+    __local uint_fast32_t posibs[WG_SIZE][PRE_DEPTH]; // Our backtracking 'stack'
+    __local uint_fast32_t diagl[WG_SIZE][PRE_DEPTH], diagr[WG_SIZE][PRE_DEPTH];
+#ifdef LOOKAHEAD
+    __local int8_t rest[WG_SIZE][PRE_DEPTH]; // number of rows left
+#endif
+    int_fast16_t d = 0; // d is our depth in the backtrack stack
+    // The UINT_FAST32_MAX here is used to fill all 'coloumn' bits after n ...
+    COLS(d) = in_starts[G].cols;
+    // This places the first two queens
+    DIAGL(d) = in_starts[G].diagl;
+    DIAGR(d) = in_starts[G].diagr;
+    // we're allready two rows into the field here
+#ifdef LOOKAHEAD
+    rest[L][d] = N - LOOKAHEAD - (PRE_END - PRE_DEPTH);
+    int8_t max_depth = rest[L][d] - PRE_DEPTH + 1;  // save result at this depth
+#endif
+
+    __global start_condition* out = &out_starts[G*PRE_EXPANSION];
+
+    //printf("G: %d, L: %d, cols: %x, diagl: %x, diagr: %x\n", G, L, COLS(d), diagl[L][d], diagr[L][d]);
+
+    //  The variable posib contains the bitmask of possibilities we still have
+    //  to try in a given row ...
+    POSIBS(d) = (COLS(d) | DIAGL(d) | DIAGR(d));
+
+    DIAGL(d) <<= 1;
+    DIAGR(d) >>= 1;
+
+    while (d >= 0) {
+#ifdef LOOKAHEAD
+        int8_t l_rest = rest[L][d];
+#endif
+        uint_fast32_t posib = POSIBS(d); // backtrack ...
+
+        while (posib != UINT_FAST32_MAX) {
+            // The standard trick for getting the rightmost bit in the mask
+            uint_fast32_t bit = ~posib & (posib + 1);
+            posib ^= bit; // Eliminate the tried possibility.
+            uint_fast32_t new_diagl = (bit << 1) | DIAGL(d);
+            uint_fast32_t new_diagr = (bit >> 1) | DIAGR(d);
+            bit |= COLS(d);
+            uint_fast32_t new_posib = (bit | new_diagl | new_diagr);
+
+            if (new_posib != UINT_FAST32_MAX) {
+#ifdef LOOKAHEAD
+                uint_fast32_t lookahead1 = (bit | (new_diagl << (LOOKAHEAD - 2)) | (new_diagr >> (LOOKAHEAD - 2)));
+                uint_fast32_t lookahead2 = (bit | (new_diagl << (LOOKAHEAD - 1)) | (new_diagr >> (LOOKAHEAD - 1)));
+                uint_fast32_t allowed2 = l_rest > (int8_t)0;
+
+                if(allowed2 && ((lookahead2 == UINT_FAST32_MAX) || (lookahead1 == UINT_FAST32_MAX))) {
+                    continue;
+                }
+#endif
+                if(l_rest == max_depth) {
+                    //printf("Hit\n");
+                    out->cols = bit;
+                    out->diagl = new_diagl;
+                    out->diagr = new_diagr;
+                    out++;
+                    continue;
+                }
+
+#ifdef LOOKAHEAD
+              l_rest--;
+#endif
+
+              // The next two lines save stack depth + backtrack operations
+              // when we passed the last possibility in a row.
+              // Go lower in the stack, avoid branching by writing above the current
+              // position
+              POSIBS(d) = posib;
+              d += posib != UINT_FAST32_MAX; // avoid branching with this trick
+              posib = new_posib;
+
+
+              // make values current
+              COLS(d) = bit;
+              DIAGL(d) = new_diagl << 1;
+              DIAGR(d) = new_diagr >> 1;
+#ifdef LOOKAHEAD
+              rest[L][d] = l_rest;
+#endif
+            }
+        }
+        d--;    // backtrack
+    }
+
+    if(out - &out_starts[G*PRE_EXPANSION] < PRE_EXPANSION) {
+        out->cols = 0;
+    }
+}
+
 kernel void solve_subboard(__global const start_condition* in_starts, __global uint* out_cnt) {
     // counter for the number of solutions
     // sufficient until n=29
@@ -34,12 +136,18 @@ kernel void solve_subboard(__global const start_condition* in_starts, __global u
 #ifdef LOOKAHEAD
     __local int8_t rest[WG_SIZE][DEPTH]; // number of rows left
 #endif
+    const __global start_condition* in = &in_starts[G*PRE_EXPANSION];
+for(uint i = 0; i < PRE_EXPANSION; i++) {
+    if(in->cols == 0) {
+        break;
+    }
+    //printf("HIT\n");
     int_fast16_t d = 0; // d is our depth in the backtrack stack
     // The UINT_FAST32_MAX here is used to fill all 'coloumn' bits after n ...
-    COLS(d) = in_starts[G].cols;
+    COLS(d) = in->cols;
     // This places the first two queens
-    DIAGL(d) = in_starts[G].diagl;
-    DIAGR(d) = in_starts[G].diagr;
+    DIAGL(d) = in->diagl;
+    DIAGR(d) = in->diagr;
     // we're allready two rows into the field here
 #ifdef LOOKAHEAD
     rest[L][d] = N - LOOKAHEAD - PLACED;
@@ -105,6 +213,8 @@ kernel void solve_subboard(__global const start_condition* in_starts, __global u
         }
         d--;    // backtrack
     }
+    in++;
+}
 
     out_cnt[G] += num;
 }

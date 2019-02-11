@@ -204,7 +204,9 @@ int main(int argc, char **argv) {
   uint8_t u8_end = static_cast<uint8_t>(end);
 
   for (uint8_t i = u8_start; i <= u8_end; i++) {
-    solver->init(i, 3);
+      if(!solver->init(i, 3)) {
+          break;
+      };
 
     uint64_t result = 0;
     auto time_start = std::chrono::high_resolution_clock::now();
