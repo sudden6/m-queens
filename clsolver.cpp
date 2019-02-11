@@ -350,7 +350,7 @@ uint64_t ClSolver::solve_subboard(const std::vector<start_condition> &start)
     uint64_t result = 0;
     #pragma omp parallel for reduction(+ : result)
     for(size_t i = 0; i < NUM_CMDQUEUES; i++) {
-        result = threadWorker();
+        result += threadWorker();
     }
 
     return result * 2;
