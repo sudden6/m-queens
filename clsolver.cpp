@@ -56,7 +56,7 @@ bool ClSolver::init(uint8_t boardsize, uint8_t placed)
     this->boardsize = boardsize;
     this->placed = placed;
     uint_fast8_t gpu_depth = GPU_DEPTH;
-    this->gpu_presolve_depth = 2;
+    this->gpu_presolve_depth = 3;
     if((boardsize - placed) < GPU_DEPTH) {
         gpu_depth = boardsize - placed;
         presolve_depth = 0;
@@ -326,7 +326,7 @@ PreSolver ClSolver::nextPre()
         if(old_solved % 10 == 0) {
             #pragma omp critical
             {
-                //std::cout << "Solving: " << old_solved << "/" << start.size() << std::endl;
+                std::cout << "Solving: " << old_solved << "/" << start.size() << std::endl;
             }
         }
         result = PreSolver(boardsize, placed, presolve_depth, start[old_solved]);

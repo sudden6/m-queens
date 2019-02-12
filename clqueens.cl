@@ -45,6 +45,7 @@ kernel void pre_solve_subboard(__global const start_condition* in_starts, __glob
 #endif
 
     __global start_condition* out = &out_starts[G*PRE_EXPANSION];
+    __global const start_condition* out_bak = out;
 
     //printf("G: %d, L: %d, cols: %x, diagl: %x, diagr: %x\n", G, L, COLS(d), diagl[L][d], diagr[L][d]);
 
@@ -82,6 +83,7 @@ kernel void pre_solve_subboard(__global const start_condition* in_starts, __glob
 #endif
                 if(l_rest == max_depth) {
                     //printf("Hit\n");
+
                     out->cols = bit;
                     out->diagl = new_diagl;
                     out->diagr = new_diagr;
@@ -114,10 +116,14 @@ kernel void pre_solve_subboard(__global const start_condition* in_starts, __glob
         d--;    // backtrack
     }
 
-    if(out - &out_starts[G*PRE_EXPANSION] < PRE_EXPANSION) {
+    size_t diff = out - out_bak;
+
+    if(diff < PRE_EXPANSION) {
         out->cols = 0;
     }
 }
+
+#undef LOOKAHEAD
 
 kernel void solve_subboard(__global const start_condition* in_starts, __global uint* out_cnt) {
     // counter for the number of solutions

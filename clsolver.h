@@ -22,7 +22,7 @@ public:
 
 private:
     ClSolver();
-    static constexpr size_t NUM_CMDQUEUES = 8;
+    static constexpr size_t NUM_CMDQUEUES = 4;
     PreSolver nextPre();
     uint64_t threadWorker();
     uint64_t expansion(uint8_t boardsize, uint8_t cur_idx, uint8_t depth);
@@ -32,7 +32,7 @@ private:
 
     uint8_t presolve_depth = 0;
     uint8_t gpu_presolve_depth = 0;
-    uint8_t gpu_presolve_expansion = 0;
+    uint64_t gpu_presolve_expansion = 0;
     uint8_t placed = 0;
     uint8_t boardsize = 0;
     cl::Context context;
