@@ -6,11 +6,7 @@
 #include <iostream>
 #include <fstream>
 
-namespace {
-    const std::string filename = "start_conditions.dat";
-}
-
-std::vector<start_condition> start_file::load_all()
+std::vector<start_condition> start_file::load_all(const std::string& filename)
 {
     std::ifstream file;
     file.open(filename, std::ifstream::in | std::ifstream::binary);
@@ -43,7 +39,7 @@ std::vector<start_condition> start_file::load_all()
     return res;
 }
 
-bool start_file::save_all(const std::vector<start_condition_t> data)
+bool start_file::save_all(const std::vector<start_condition_t> data, const std::string &filename)
 {
     std::ofstream file;
     file.open(filename, std::ofstream::out | std::ofstream::binary);
