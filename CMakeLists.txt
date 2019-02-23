@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 2.8)
 
-project(m-queens)
+project(m-queens2)
 set (CMAKE_CXX_STANDARD 11)
 
 find_package(OpenCL REQUIRED)

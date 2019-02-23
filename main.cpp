@@ -47,9 +47,33 @@ static const uint64_t results[27] = {
     22317699616364044ULL,
     234907967154122528ULL};
 
+static void solve_from_range(ISolver& solver, uint8_t start, uint8_t end) {
+    for (uint8_t i = start; i <= end; i++) {
+      solver.init(i, 3);
+
+      uint64_t result = 0;
+      auto time_start = std::chrono::high_resolution_clock::now();
+      std::vector<start_condition> st = PreSolver::create_preplacement(i);
+
+      result = solver.solve_subboard(st);
+      auto time_end = std::chrono::high_resolution_clock::now();
+      std::chrono::duration<double> elapsed = time_end - time_start;
+
+      result == results[i - 1] ? printf("PASS ") : printf("FAIL ");
+      std::cout << "N " << std::to_string(i)
+                << ", Solutions " << std::to_string(result)
+                << ", Expected " << std::to_string(results[i - 1])
+                << ", Time " << std::to_string(elapsed.count())
+                << ", Solutions/s " << std::to_string(result/elapsed.count())
+                << std::endl;
+    }
+
+    std::cout << "DONE" << std::endl;
+}
+
 int main(int argc, char **argv) {
-    long start = 0;
-    long end = 0;
+    uint8_t start = 0;
+    uint8_t end = 0;
     bool solve_range = false;
     bool list_opencl = false;
     bool help = false;
@@ -60,8 +84,8 @@ int main(int argc, char **argv) {
     {
       cxxopts::Options options("m-queens2", " - a CPU and GPU solver for the N queens problem");
       options.add_options()
-        ("s,start", "[4..29] start value for N", cxxopts::value(start))
-        ("e,end", "[OPTIONAL] end value to solve a range of N values", cxxopts::value(end))
+        ("s,start", "[4..29] boardsize to solve", cxxopts::value(start))
+        ("e,end", "[OPTIONAL] end value to solve a range of board sizes", cxxopts::value(end))
         ("l,list", "list and enumerate available OpenCL devices, must be the only option passed", cxxopts::value(list_opencl))
         ("m,mode", "solve on [cpu] or OpenCL [ocl] mode", cxxopts::value(solver_string)->default_value("ocl"))
         ("p,platform", "OpenCL platform to use", cxxopts::value(ocl_platform)->default_value("0"))
@@ -74,20 +98,20 @@ int main(int argc, char **argv) {
       if (help)
       {
         options.help();
-        exit(0);
+        exit(EXIT_SUCCESS);
       }
 
       if (list_opencl)
       {
         std::cout << "The following OpenCL devices are available:" << std::endl;
         ClSolver::enumerate_devices();
-        exit(0);
+        exit(EXIT_SUCCESS);
       }
 
       if (!result.count("start"))
       {
         std::cout << options.help() << std::endl;
-        exit(1);
+        exit(EXIT_FAILURE);
       }
 
       if (result.count("end"))
@@ -98,18 +122,18 @@ int main(int argc, char **argv) {
     } catch (const cxxopts::OptionException& e)
     {
       std::cout << "error parsing options: " << e.what() << std::endl;
-      exit(1);
+      exit(EXIT_FAILURE);
     }
 
     if(start <= 4 || start > MAXN) {
       std::cout << "[start] must be greater 4 and smaller than " << std::to_string(MAXN) << std::endl;
-      exit(1);
+      exit(EXIT_FAILURE);
     }
 
     if(solve_range) {
       if(end < start || start > MAXN) {
         std::cout << "[end] must be equal or greater [start] and smaller than " << std::to_string(MAXN) << std::endl;
-        exit(1);
+        exit(EXIT_FAILURE);
       }
     } else {
         end = start;
@@ -122,36 +146,20 @@ int main(int argc, char **argv) {
     } else if(solver_string == "OCL" || solver_string == "ocl") {
         solver = ClSolver::makeClSolver(ocl_platform, ocl_device);
         if(!solver) {
-            exit(1);
+            exit(EXIT_FAILURE);
         }
     } else {
         std::cout << "[type] must be either CPU or OCL" << std::endl;
-        exit(1);
+        exit(EXIT_FAILURE);
     }
 
-  uint8_t u8_start = static_cast<uint8_t>(start);
-  uint8_t u8_end = static_cast<uint8_t>(end);
+    if(solver == nullptr) {
+        std::cout << "Couldn't start solver" << std::endl;
+        exit(EXIT_FAILURE);
+    }
 
-  for (uint8_t i = u8_start; i <= u8_end; i++) {
-    solver->init(i, 3);
+    solve_from_range(*solver, start, end);
 
-    uint64_t result = 0;
-    auto time_start = std::chrono::high_resolution_clock::now();
-    std::vector<start_condition> st = PreSolver::create_preplacement(i);
-
-    result = solver->solve_subboard(st);
-    auto time_end = std::chrono::high_resolution_clock::now();
-    std::chrono::duration<double> elapsed = time_end - time_start;
-
-    result == results[i - 1] ? printf("PASS ") : printf("FAIL ");
-    std::cout << "N " << std::to_string(i)
-              << ", Solutions " << std::to_string(result)
-              << ", Expected " << std::to_string(results[i - 1])
-              << ", Time " << std::to_string(elapsed.count())
-              << ", Solutions/s " << std::to_string(result/elapsed.count())
-              << std::endl;
-  }
-
-  std::cout << "DONE" << std::endl;
   return 0;
 }
+
