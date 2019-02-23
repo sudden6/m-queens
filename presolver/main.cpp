@@ -9,17 +9,18 @@ using start_con_vec = std::vector<start_condition_t>;
 static void write_file(const start_con_vec& starts, uint8_t boardsize, size_t start_idx, size_t end_idx) {
     const std::string filename = "N_" + std::to_string(boardsize)
                                + "_" + std::to_string(start_idx)
-                               + "_" + std::to_string(end_idx);
+                               + "_" + std::to_string(end_idx)
+                               + ".dat";
 
     if(!start_file::save_all(starts, filename)) {
-        exit(1);
+        exit(EXIT_FAILURE);
     }
 }
 
 int main(int argc, char **argv) {
     uint8_t boardsize = 0;
     uint8_t depth = 0;
-    size_t chunk_size = 1000000;
+    size_t chunk_size = 40;
     bool help = false;
     try
     {
@@ -63,19 +64,50 @@ int main(int argc, char **argv) {
       exit(1);
     }
 
-    start_con_vec pre = PreSolver::create_preplacement(boardsize);
+    start_con_vec start = PreSolver::create_preplacement(boardsize);
 
     if(depth == 2) {
-        for(size_t i = 0; i < pre.size(); i += chunk_size) {
+        for(size_t i = 0; i < start.size(); i += chunk_size) {
             start_con_vec write_buf;
             write_buf.reserve(chunk_size);
-            size_t end = std::min(i + chunk_size, pre.size());
+            size_t end = std::min(i + chunk_size, start.size());
             for(size_t j = i; j < end; j++) {
-                write_buf.push_back(pre[j]);
+                write_buf.push_back(start[j]);
             }
 
             write_file(write_buf, boardsize, i, end);
         }
+
+        exit(EXIT_SUCCESS);
     }
 
+    size_t pre_idx = 0;
+    auto pre = PreSolver(boardsize, 2, depth - 2, start[pre_idx]);
+    start_con_vec write_buf;
+    write_buf.resize(chunk_size);
+    auto curIt = write_buf.begin();
+
+    size_t write_idx = 0;
+    while(pre_idx < start.size()) {
+        while(curIt < write_buf.cend()) {
+            curIt = pre.getNext(curIt, write_buf.cend());
+            if(!pre.empty()) {
+                continue;
+            }
+            pre_idx++;
+            if(pre_idx == start.size()) {
+                break;
+            }
+            pre = PreSolver(boardsize, 2, depth - 2, start[pre_idx]);
+            if(pre.empty()) {
+                break;
+            }
+        }
+        const size_t end_idx = write_idx + std::distance(write_buf.begin(), curIt);
+        write_file(write_buf, boardsize, write_idx, end_idx-1);
+        write_idx = end_idx;
+        curIt = write_buf.begin();
+    }
+
+    exit(EXIT_SUCCESS);
 }
