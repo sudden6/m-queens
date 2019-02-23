@@ -6,16 +6,28 @@
 
 using start_con_vec = std::vector<start_condition_t>;
 
-static void write_file(const start_con_vec& starts, uint8_t boardsize, size_t start_idx, size_t end_idx) {
-    const std::string filename = "N_" + std::to_string(boardsize)
-                               + "_" + std::to_string(start_idx)
-                               + "_" + std::to_string(end_idx)
-                               + ".dat";
+class Writer {
+    public:
+        Writer(uint8_t boardsize, uint8_t depth) {
+            this->boardsize = boardsize;
+            this->depth = depth;
+        }
 
-    if(!start_file::save_all(starts, filename)) {
-        exit(EXIT_FAILURE);
-    }
-}
+        void write_file(const start_con_vec& starts, size_t start_idx, size_t end_idx) {
+            const std::string filename = "N_" + std::to_string(boardsize)
+                                       + "_D_" + std::to_string(depth)
+                                       + "_" + std::to_string(start_idx)
+                                       + "_" + std::to_string(end_idx)
+                                       + ".dat";
+
+            if(!start_file::save_all(starts, filename)) {
+                exit(EXIT_FAILURE);
+            }
+        }
+    private:
+        uint8_t boardsize = 0;
+        uint8_t depth = 0;
+};
 
 int main(int argc, char **argv) {
     uint8_t boardsize = 0;
@@ -37,7 +49,7 @@ int main(int argc, char **argv) {
       if (help)
       {
         options.help();
-        exit(0);
+        exit(EXIT_SUCCESS);
       }
 
       if (boardsize < 5 || boardsize > 29)
@@ -49,22 +61,23 @@ int main(int argc, char **argv) {
       if (depth >= boardsize || depth < 2)
       {
         std::cout << "depth must be in the range [2..(boardsize-1)]" << std::endl;
-        exit(1);
+        exit(EXIT_FAILURE);
       }
 
       if (chunk_size == 0)
       {
           std::cout << "chunksize must be at least 1" << std::endl;
-          exit(1);
+          exit(EXIT_FAILURE);
       }
 
     } catch (const cxxopts::OptionException& e)
     {
       std::cout << "error parsing options: " << e.what() << std::endl;
-      exit(1);
+      exit(EXIT_FAILURE);
     }
 
     start_con_vec start = PreSolver::create_preplacement(boardsize);
+    Writer w{boardsize, depth};
 
     if(depth == 2) {
         for(size_t i = 0; i < start.size(); i += chunk_size) {
@@ -75,7 +88,7 @@ int main(int argc, char **argv) {
                 write_buf.push_back(start[j]);
             }
 
-            write_file(write_buf, boardsize, i, end);
+            w.write_file(write_buf, i, end);
         }
 
         exit(EXIT_SUCCESS);
@@ -104,7 +117,7 @@ int main(int argc, char **argv) {
             }
         }
         const size_t end_idx = write_idx + std::distance(write_buf.begin(), curIt);
-        write_file(write_buf, boardsize, write_idx, end_idx-1);
+        w.write_file(write_buf, write_idx, end_idx-1);
         write_idx = end_idx;
         curIt = write_buf.begin();
     }
