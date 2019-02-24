@@ -32,7 +32,7 @@ class Writer {
 int main(int argc, char **argv) {
     uint8_t boardsize = 0;
     uint8_t depth = 0;
-    size_t chunk_size = 40;
+    size_t chunk_size = 1000*1000;
     bool help = false;
     try
     {
@@ -41,10 +41,13 @@ int main(int argc, char **argv) {
         ("b,boardsize", "[5..29] size of the board", cxxopts::value(boardsize))
         ("d,depth", "[3..(boardsize-1)] number of rows to presolver", cxxopts::value(depth))
         ("c,chunksize", "(default=1M) Number of start conditions to store in one file", cxxopts::value(chunk_size))
-        ("h,help", "Print this information")
+        ("h,help", "Print this information", cxxopts::value(help))
         ;
 
       auto result = options.parse(argc, argv);
+      if (result.arguments().size() == 0) {
+          help = true;
+      }
 
       if (help)
       {
