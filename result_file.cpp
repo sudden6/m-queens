@@ -5,11 +5,7 @@
 #include <iostream>
 #include <fstream>
 
-namespace {
-    const std::string filename = "result.uint64_t";
-}
-
-uint64_t result_file::load()
+uint64_t result_file::load(const std::string& filename)
 {
     std::ifstream file;
     file.open(filename, std::ifstream::in | std::ifstream::binary);
@@ -33,7 +29,7 @@ uint64_t result_file::load()
     return serialize_util::unpack_u64(data);
 }
 
-bool result_file::save(uint64_t res)
+bool result_file::save(uint64_t res, const std::string& filename)
 {
     std::ofstream file;
     file.open(filename, std::ofstream::out | std::ofstream::binary);

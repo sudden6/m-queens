@@ -2,12 +2,13 @@
 #define RESULT_FILE_H
 
 #include <cstdint>
+#include <string>
 
 class result_file
 {
 public:
-    static uint64_t load();
-    static bool save(uint64_t res);
+    static uint64_t load(const std::string& filename);
+    static bool save(uint64_t res, const std::string& filename);
 };
 
 #endif // RESULT_FILE_H

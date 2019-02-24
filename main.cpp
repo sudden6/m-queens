@@ -220,7 +220,9 @@ static void solve_from_file(ISolver& solver, const std::string& filename) {
               << ", Solutions/s " << std::to_string(result/elapsed.count())
               << std::endl;
 
-    if(!result_file::save(result)) {
+    std::string res_filname = filename.substr(0, filename.size() - 4) + ".res";
+
+    if(!result_file::save(result, res_filname)) {
         std::cout << "Failed to save result" << std::endl;
         exit(EXIT_FAILURE);
     }
