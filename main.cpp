@@ -11,11 +11,16 @@
 #include "solverstructs.h"
 #include "presolver.h"
 #include "cxxopts.hpp"
+#include "result_file.h"
+#include "start_file.h"
 
 #include <vector>
 #include <chrono>
+#include <regex>
 
-#define MAXN 29
+constexpr uint8_t MAXN = 29;
+constexpr uint8_t MINN = 4;
+constexpr uint8_t MIN_PRE_DEPTH = 3;
 
 // expected results from https://oeis.org/A000170
 static const uint64_t results[27] = {
@@ -49,18 +54,18 @@ static const uint64_t results[27] = {
 
 static void solve_from_range(ISolver& solver, uint8_t start, uint8_t end) {
     for (uint8_t i = start; i <= end; i++) {
-      solver.init(i, 3);
+        solver.init(i, 3);
 
-      uint64_t result = 0;
-      auto time_start = std::chrono::high_resolution_clock::now();
-      std::vector<start_condition> st = PreSolver::create_preplacement(i);
+        uint64_t result = 0;
+        auto time_start = std::chrono::high_resolution_clock::now();
+        std::vector<start_condition> st = PreSolver::create_preplacement(i);
 
-      result = solver.solve_subboard(st);
-      auto time_end = std::chrono::high_resolution_clock::now();
-      std::chrono::duration<double> elapsed = time_end - time_start;
+        result = solver.solve_subboard(st);
+        auto time_end = std::chrono::high_resolution_clock::now();
+        std::chrono::duration<double> elapsed = time_end - time_start;
 
-      result == results[i - 1] ? printf("PASS ") : printf("FAIL ");
-      std::cout << "N " << std::to_string(i)
+        result == results[i - 1] ? printf("PASS ") : printf("FAIL ");
+        std::cout << "N " << std::to_string(i)
                 << ", Solutions " << std::to_string(result)
                 << ", Expected " << std::to_string(results[i - 1])
                 << ", Time " << std::to_string(elapsed.count())
@@ -71,15 +76,167 @@ static void solve_from_range(ISolver& solver, uint8_t start, uint8_t end) {
     std::cout << "DONE" << std::endl;
 }
 
+struct file_info {
+    uint64_t start_idx = 0;
+    uint64_t end_idx = 0;
+    uint8_t boardsize = 0;  // if 0, the data is invalid
+    uint8_t placed = 0;
+};
+
+static file_info parse_filename(const std::string& filename) {
+    file_info fi;
+    const std::regex parser{R"(N_(\d+)_D_(\d+)_(\d+)_(\d+)\.pre$)"};
+    std::smatch matches;
+
+    if (!std::regex_match(filename, matches, parser) || matches.size() != 5) {
+        std::cout << "Failed to parse filename: " << filename << std::endl;
+        return fi;
+    }
+
+    // parse placed
+    {
+        std::string placed_str = matches[2].str();
+        unsigned long placed_l = 0;
+        bool fail = true;
+        try {
+            placed_l = std::stoul(placed_str);
+            fail = placed_l > std::numeric_limits<uint8_t>::max();
+        } catch (...) {
+        }
+
+        if(fail) {
+            std::cout << "Failed to parse placed" << std::endl;
+            return fi;
+        }
+        fi.placed = static_cast<uint8_t>(placed_l);
+    }
+
+    // parse start_idx
+    {
+        std::string start_idx_str = matches[3].str();
+        unsigned long long start_idx_l = 0;
+        bool fail = true;
+        try {
+            start_idx_l = std::stoull(start_idx_str);
+            fail = start_idx_l > std::numeric_limits<uint64_t>::max();
+        } catch (...) {
+        }
+
+        if(fail) {
+            std::cout << "Failed to parse start_idx" << std::endl;
+            return fi;
+        }
+        fi.start_idx = static_cast<uint64_t>(start_idx_l);
+    }
+
+    // parse end_idx
+    {
+        std::string end_idx_str = matches[4].str();
+        unsigned long long end_idx_l = 0;
+        bool fail = true;
+        try {
+            end_idx_l = std::stoull(end_idx_str);
+            fail = end_idx_l > std::numeric_limits<uint64_t>::max();
+        } catch (...) {
+        }
+
+        if(fail) {
+            std::cout << "Failed to parse end_idx" << std::endl;
+            return fi;
+        }
+        fi.end_idx = static_cast<uint64_t>(end_idx_l);
+    }
+
+    // parse boardsize
+    // must be last, because if boardsize is valid file_info is valid
+    {
+        std::string boardsize_str = matches[1].str();
+        unsigned long boardsize_l = 0;
+        bool fail = true;
+        try {
+            boardsize_l = std::stoul(boardsize_str);
+            fail = boardsize_l > std::numeric_limits<uint8_t>::max() || boardsize_l < 1;
+        } catch (...) {
+        }
+
+        if(fail) {
+            std::cout << "Failed to parse boardsize" << std::endl;
+            return fi;
+        }
+        fi.boardsize = static_cast<uint8_t>(boardsize_l);
+    }
+
+    return fi;
+}
+
+static void solve_from_file(ISolver& solver, const std::string& filename) {
+    file_info fi = parse_filename(filename);
+
+    if (fi.boardsize == 0) {
+        exit(EXIT_FAILURE);
+    }
+
+    if (fi.boardsize < MINN || fi.boardsize > MAXN) {
+        std::cout << "Boardsize out of range" << std::endl;
+        exit(EXIT_FAILURE);
+    }
+
+    if (fi.placed < MIN_PRE_DEPTH || fi.placed >= fi.boardsize) {
+        std::cout << "Invalid number of placed queens" << std::endl;
+        exit(EXIT_FAILURE);
+    }
+
+    if (fi.start_idx > fi.end_idx) {
+        std::cout << "Invalid range" << std::endl;
+        exit(EXIT_FAILURE);
+    }
+
+    uint64_t start_count = fi.end_idx - fi.start_idx + 1;
+
+    std::vector<start_condition_t> start = start_file::load_all(filename);
+
+    if(start_count != start.size()) {
+        std::cout << "File content not matching description" << std::endl;
+        exit(EXIT_FAILURE);
+    }
+
+    if(!solver.init(fi.boardsize, fi.placed)) {
+        std::cout << "Failed to initialize solver" << std::endl;
+        exit(EXIT_FAILURE);
+    }
+
+    uint64_t result = 0;
+    auto time_start = std::chrono::high_resolution_clock::now();
+    result = solver.solve_subboard(start);
+    auto time_end = std::chrono::high_resolution_clock::now();
+    std::chrono::duration<double> elapsed = time_end - time_start;
+
+    std::cout << "N " << std::to_string(fi.boardsize)
+              << ", Placed " << std::to_string(fi.placed)
+              << ", Range [" << std::to_string(fi.start_idx)
+              << ":" << std::to_string(fi.end_idx)
+              << "], Solutions " << std::to_string(result)
+              << ", Time " << std::to_string(elapsed.count())
+              << ", Solutions/s " << std::to_string(result/elapsed.count())
+              << std::endl;
+
+    if(!result_file::save(result)) {
+        std::cout << "Failed to save result" << std::endl;
+        exit(EXIT_FAILURE);
+    }
+}
+
 int main(int argc, char **argv) {
     uint8_t start = 0;
     uint8_t end = 0;
     bool solve_range = false;
     bool list_opencl = false;
+    bool presolve_file = false;
     bool help = false;
     unsigned int ocl_platform = 0;
     unsigned int ocl_device = 0;
     std::string solver_string = "";
+    std::string presolve_file_name = "";
     try
     {
       cxxopts::Options options("m-queens2", " - a CPU and GPU solver for the N queens problem");
@@ -90,6 +247,7 @@ int main(int argc, char **argv) {
         ("m,mode", "solve on [cpu] or OpenCL [ocl] mode", cxxopts::value(solver_string)->default_value("ocl"))
         ("p,platform", "OpenCL platform to use", cxxopts::value(ocl_platform)->default_value("0"))
         ("d,device", "OpenCL device to use", cxxopts::value(ocl_device)->default_value("0"))
+        ("f,file", "Use presolve file generated by 'presolver', '-s' and '-e' are invalid in this mode", cxxopts::value(presolve_file_name)->default_value(""))
         ("h,help", "Print this information")
         ;
 
@@ -108,35 +266,34 @@ int main(int argc, char **argv) {
         exit(EXIT_SUCCESS);
       }
 
-      if (!result.count("start"))
-      {
-        std::cout << options.help() << std::endl;
-        exit(EXIT_FAILURE);
-      }
+      if (result.count("file") > 0) {
+          if (result.count("file") != 1) {
+              std::cout << "Only one presolve file supported" << std::endl;
+              exit(EXIT_FAILURE);
+          }
 
-      if (result.count("end"))
-      {
-        solve_range = true;
+          if(result.count("start") || result.count("end")) {
+              std::cout << "[start] and [end] are not supported with presolve files" << std::endl;
+              exit(EXIT_FAILURE);
+          }
+          presolve_file = true;
+      } else {
+          if (!result.count("start"))
+          {
+            std::cout << options.help() << std::endl;
+            exit(EXIT_FAILURE);
+          }
+
+          if (result.count("end"))
+          {
+            solve_range = true;
+          }
       }
 
     } catch (const cxxopts::OptionException& e)
     {
       std::cout << "error parsing options: " << e.what() << std::endl;
       exit(EXIT_FAILURE);
-    }
-
-    if(start <= 4 || start > MAXN) {
-      std::cout << "[start] must be greater 4 and smaller than " << std::to_string(MAXN) << std::endl;
-      exit(EXIT_FAILURE);
-    }
-
-    if(solve_range) {
-      if(end < start || start > MAXN) {
-        std::cout << "[end] must be equal or greater [start] and smaller than " << std::to_string(MAXN) << std::endl;
-        exit(EXIT_FAILURE);
-      }
-    } else {
-        end = start;
     }
 
     ISolver* solver = nullptr;
@@ -158,7 +315,25 @@ int main(int argc, char **argv) {
         exit(EXIT_FAILURE);
     }
 
-    solve_from_range(*solver, start, end);
+    if(presolve_file) {
+        solve_from_file(*solver, presolve_file_name);
+    } else {
+        if(start <= MINN || start > MAXN) {
+          std::cout << "[start] must be greater 4 and smaller than " << std::to_string(MAXN) << std::endl;
+          exit(EXIT_FAILURE);
+        }
+
+        if(solve_range) {
+          if(end < start || start > MAXN) {
+            std::cout << "[end] must be equal or greater [start] and smaller than " << std::to_string(MAXN) << std::endl;
+            exit(EXIT_FAILURE);
+          }
+        } else {
+            end = start;
+        }
+
+        solve_from_range(*solver, start, end);
+    }
 
   return 0;
 }

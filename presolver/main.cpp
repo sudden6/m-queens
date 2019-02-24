@@ -18,7 +18,7 @@ class Writer {
                                        + "_D_" + std::to_string(depth)
                                        + "_" + std::to_string(start_idx)
                                        + "_" + std::to_string(end_idx)
-                                       + ".dat";
+                                       + ".pre";
 
             if(!start_file::save_all(starts, filename)) {
                 exit(EXIT_FAILURE);
