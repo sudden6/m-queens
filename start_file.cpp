@@ -21,11 +21,14 @@ std::vector<start_condition> start_file::load_all(const std::string& filename)
     char* data_p = reinterpret_cast<char*> (data);
     std::vector<start_condition_t> res;
 
-    while (!file.eof()) {
+    while (file) {
+        if(file.peek() == EOF) {
+            break;
+        }
         file.read(data_p, record_size);
         if(!file) {
             std::cout << "Incomplete record in file" << std::endl;
-            break;
+            return {};
         }
 
         start_condition_t start;
