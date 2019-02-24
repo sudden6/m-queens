@@ -39,7 +39,7 @@ int main(int argc, char **argv) {
       cxxopts::Options options("presolver", " - a workunit gernerator for m-queens2");
       options.add_options()
         ("b,boardsize", "[5..29] size of the board", cxxopts::value(boardsize))
-        ("d,depth", "[2..(boardsize-1)] number of rows to presolver", cxxopts::value(depth))
+        ("d,depth", "[3..(boardsize-1)] number of rows to presolver", cxxopts::value(depth))
         ("c,chunksize", "(default=1M) Number of start conditions to store in one file", cxxopts::value(chunk_size))
         ("h,help", "Print this information")
         ;
@@ -58,9 +58,9 @@ int main(int argc, char **argv) {
         exit(1);
       }
 
-      if (depth >= boardsize || depth < 2)
+      if (depth >= boardsize || depth < 3)
       {
-        std::cout << "depth must be in the range [2..(boardsize-1)]" << std::endl;
+        std::cout << "depth must be in the range [3..(boardsize-1)]" << std::endl;
         exit(EXIT_FAILURE);
       }
 
@@ -79,7 +79,7 @@ int main(int argc, char **argv) {
     start_con_vec start = PreSolver::create_preplacement(boardsize);
     Writer w{boardsize, depth};
 
-    if(depth == 2) {
+    if(depth == 3) {
         for(size_t i = 0; i < start.size(); i += chunk_size) {
             start_con_vec write_buf;
             write_buf.reserve(chunk_size);
@@ -95,7 +95,7 @@ int main(int argc, char **argv) {
     }
 
     size_t pre_idx = 0;
-    auto pre = PreSolver(boardsize, 2, depth - 2, start[pre_idx]);
+    auto pre = PreSolver(boardsize, 3, depth - 3, start[pre_idx]);
     start_con_vec write_buf;
     write_buf.resize(chunk_size);
     auto curIt = write_buf.begin();
@@ -111,13 +111,13 @@ int main(int argc, char **argv) {
             if(pre_idx == start.size()) {
                 break;
             }
-            pre = PreSolver(boardsize, 2, depth - 2, start[pre_idx]);
+            pre = PreSolver(boardsize, 3, depth - 3, start[pre_idx]);
             if(pre.empty()) {
                 break;
             }
         }
         const size_t end_idx = write_idx + std::distance(write_buf.begin(), curIt);
-        w.write_file(write_buf, write_idx, end_idx-1);
+        w.write_file(write_buf, write_idx, end_idx - 1);
         write_idx = end_idx;
         curIt = write_buf.begin();
     }
