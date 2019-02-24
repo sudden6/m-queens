@@ -88,7 +88,7 @@ int main(int argc, char **argv) {
                 write_buf.push_back(start[j]);
             }
 
-            w.write_file(write_buf, i, end);
+            w.write_file(write_buf, i, end - 1);
         }
 
         exit(EXIT_SUCCESS);
@@ -116,8 +116,11 @@ int main(int argc, char **argv) {
                 break;
             }
         }
-        const size_t end_idx = write_idx + std::distance(write_buf.begin(), curIt);
+        const size_t write_size = std::distance(write_buf.begin(), curIt);
+        const size_t end_idx = write_idx + write_size;
+        write_buf.resize(write_size);
         w.write_file(write_buf, write_idx, end_idx - 1);
+        write_buf.resize(chunk_size);
         write_idx = end_idx;
         curIt = write_buf.begin();
     }
