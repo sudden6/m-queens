@@ -51,7 +51,7 @@ int main(int argc, char **argv) {
 
       if (help)
       {
-        options.help();
+        std::cout << options.help();
         exit(EXIT_SUCCESS);
       }
 
