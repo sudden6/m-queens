@@ -52,3 +52,24 @@ bool result_file::save(uint64_t res, const std::string& filename)
 
     return true;
 }
+
+// expects a write binary opened file
+bool result_file::save(uint64_t res, FILE *file)
+{
+    if(!file) {
+        std::cout << "Error writing file" << std::endl;
+        return false;
+    }
+
+    constexpr size_t record_size = sizeof(uint64_t);
+    uint8_t record[record_size] = {0};
+    serialize_util::pack_u64(res, record);
+
+    size_t cnt = fwrite(record, record_size, 1, file);
+
+    if(cnt != 1) {
+        return false;
+    }
+
+    return true;
+}

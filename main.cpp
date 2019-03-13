@@ -20,7 +20,7 @@
 
 constexpr uint8_t MAXN = 29;
 constexpr uint8_t MINN = 4;
-constexpr uint8_t MIN_PRE_DEPTH = 3;
+constexpr uint8_t MIN_PRE_PLACED = 3;
 
 // expected results from https://oeis.org/A000170
 static const uint64_t results[27] = {
@@ -88,7 +88,7 @@ static void solve_from_file(ISolver& solver, const std::string& filename) {
         exit(EXIT_FAILURE);
     }
 
-    if (fi.placed < MIN_PRE_DEPTH || fi.placed >= fi.boardsize) {
+    if (fi.placed < MIN_PRE_PLACED || fi.placed >= fi.boardsize) {
         std::cout << "Invalid number of placed queens" << std::endl;
         exit(EXIT_FAILURE);
     }

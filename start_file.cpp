@@ -1,6 +1,5 @@
 #include "start_file.h"
 #include "serialize_util.h"
-#include "boinc/boinc_api.h"
 #include <string>
 #include <cstdio>
 #include <iostream>
@@ -28,6 +27,39 @@ std::vector<start_condition> start_file::load_all(const std::string& filename)
         }
         file.read(data_p, record_size);
         if(!file) {
+            std::cout << "Incomplete record in file" << std::endl;
+            return {};
+        }
+
+        start_condition_t start;
+        start.cols  = serialize_util::unpack_u32(&data[0]);
+        start.diagl = serialize_util::unpack_u32(&data[4]);
+        start.diagr = serialize_util::unpack_u32(&data[8]);
+
+        res.push_back(start);
+    }
+
+    return res;
+}
+
+// expects an opened file in binary read mode
+std::vector<start_condition> start_file::load_all(FILE* file)
+{
+    if(!file) {
+        std::cout << "Error reading file" << std::endl;
+        return{};
+    }
+
+    constexpr size_t record_size = sizeof(start_condition_t);
+    uint8_t data[record_size] = {0};
+    std::vector<start_condition_t> res;
+
+    while (true) {
+        if(feof(file)) {
+            break;
+        }
+        size_t cnt = fread(data, record_size, 1, file);
+        if(cnt != 1) {
             std::cout << "Incomplete record in file" << std::endl;
             return {};
         }
