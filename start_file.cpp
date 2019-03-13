@@ -54,14 +54,27 @@ std::vector<start_condition> start_file::load_all(FILE* file)
     uint8_t data[record_size] = {0};
     std::vector<start_condition_t> res;
 
-    while (true) {
+    bool finished = false;
+    while (!finished) {
         if(feof(file)) {
             break;
         }
-        size_t cnt = fread(data, record_size, 1, file);
-        if(cnt != 1) {
-            std::cout << "Incomplete record in file" << std::endl;
-            return {};
+        for (size_t i = 0; i < record_size; i++) {
+            size_t cnt = fread(&data[i], 1, 1, file);
+            if(cnt != 1) {
+                // ensure we only read complete records
+                if(i == 0 && feof(file)) {
+                    finished = true;
+                    break;
+                } else {
+                    std::cout << "Incomplete record in file" << std::endl;
+                    return {};
+                }
+            }
+        }
+
+        if(finished) {
+            break;
         }
 
         start_condition_t start;

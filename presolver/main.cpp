@@ -104,6 +104,7 @@ int main(int argc, char **argv) {
     auto curIt = write_buf.begin();
 
     size_t write_idx = 0;
+    size_t end_idx = 0;
     while(pre_idx < start.size()) {
         while(curIt < write_buf.cend()) {
             curIt = pre.getNext(curIt, write_buf.cend());
@@ -120,13 +121,15 @@ int main(int argc, char **argv) {
             }
         }
         const size_t write_size = std::distance(write_buf.begin(), curIt);
-        const size_t end_idx = write_idx + write_size;
+        end_idx = write_idx + write_size;
         write_buf.resize(write_size);
         w.write_file(write_buf, write_idx, end_idx - 1);
         write_buf.resize(chunk_size);
         write_idx = end_idx;
         curIt = write_buf.begin();
     }
+
+    std::cout << "Wrote " << std::to_string(end_idx) << " records" << std::endl;
 
     exit(EXIT_SUCCESS);
 }
