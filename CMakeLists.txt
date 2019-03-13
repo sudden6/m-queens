@@ -59,6 +59,23 @@ add_executable(${PRESOLVER_PROJECT} ${${PRESOLVER_PROJECT}_SOURCES} "presolver/m
 target_include_directories(${PRESOLVER_PROJECT} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/cxxopts/include)
 target_include_directories(${PRESOLVER_PROJECT} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 
+set(BOINC_PROJECT m-queens2-boinc)
+
+set(${BOINC_PROJECT}_SOURCES
+    boinc/main.cpp
+    presolver.cpp
+    presolver.h
+    solverstructs.h
+    serialize_util.cpp
+    serialize_util.h
+    start_file.cpp
+    start_file.h
+)
+
+add_executable(${BOINC_PROJECT} ${${BOINC_PROJECT}_SOURCES} "boinc/main.cpp")
+target_include_directories(${BOINC_PROJECT} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/cxxopts/include)
+target_include_directories(${BOINC_PROJECT} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+
 
 # copy OpenCL kernel source
 configure_file(${CMAKE_SOURCE_DIR}/clqueens.cl ./ COPYONLY)

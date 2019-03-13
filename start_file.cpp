@@ -69,3 +69,90 @@ bool start_file::save_all(const std::vector<start_condition_t> data, const std::
 
     return true;
 }
+
+file_info start_file::parse_filename(const std::string& filename) {
+    file_info fi;
+    const std::regex parser{R"(N_(\d+)_D_(\d+)_(\d+)_(\d+)\.pre$)"};
+    std::smatch matches;
+
+    if (!std::regex_match(filename, matches, parser) || matches.size() != 5) {
+        std::cout << "Failed to parse filename: " << filename << std::endl;
+        return fi;
+    }
+
+    // parse placed
+    {
+        std::string placed_str = matches[2].str();
+        unsigned long placed_l = 0;
+        bool fail = true;
+        try {
+            placed_l = std::stoul(placed_str);
+            fail = placed_l > std::numeric_limits<uint8_t>::max();
+        } catch (...) {
+        }
+
+        if(fail) {
+            std::cout << "Failed to parse placed" << std::endl;
+            return fi;
+        }
+        fi.placed = static_cast<uint8_t>(placed_l);
+    }
+
+    // parse start_idx
+    {
+        std::string start_idx_str = matches[3].str();
+        unsigned long long start_idx_l = 0;
+        bool fail = true;
+        try {
+            start_idx_l = std::stoull(start_idx_str);
+            fail = start_idx_l > std::numeric_limits<uint64_t>::max();
+        } catch (...) {
+        }
+
+        if(fail) {
+            std::cout << "Failed to parse start_idx" << std::endl;
+            return fi;
+        }
+        fi.start_idx = static_cast<uint64_t>(start_idx_l);
+    }
+
+    // parse end_idx
+    {
+        std::string end_idx_str = matches[4].str();
+        unsigned long long end_idx_l = 0;
+        bool fail = true;
+        try {
+            end_idx_l = std::stoull(end_idx_str);
+            fail = end_idx_l > std::numeric_limits<uint64_t>::max();
+        } catch (...) {
+        }
+
+        if(fail) {
+            std::cout << "Failed to parse end_idx" << std::endl;
+            return fi;
+        }
+        fi.end_idx = static_cast<uint64_t>(end_idx_l);
+    }
+
+    // parse boardsize
+    // must be last, because if boardsize is valid file_info is valid
+    {
+        std::string boardsize_str = matches[1].str();
+        unsigned long boardsize_l = 0;
+        bool fail = true;
+        try {
+            boardsize_l = std::stoul(boardsize_str);
+            fail = boardsize_l > std::numeric_limits<uint8_t>::max() || boardsize_l < 1;
+        } catch (...) {
+        }
+
+        if(fail) {
+            std::cout << "Failed to parse boardsize" << std::endl;
+            return fi;
+        }
+        fi.boardsize = static_cast<uint8_t>(boardsize_l);
+    }
+
+    return fi;
+}
+
