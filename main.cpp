@@ -77,7 +77,7 @@ static void solve_from_range(ISolver& solver, uint8_t start, uint8_t end) {
 }
 
 static void solve_from_file(ISolver& solver, const std::string& filename) {
-    file_info fi = parse_filename(filename);
+    start_file::file_info fi = start_file::parse_filename(filename);
 
     if (fi.boardsize == 0) {
         exit(EXIT_FAILURE);

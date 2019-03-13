@@ -5,6 +5,7 @@
 #include <cstdio>
 #include <iostream>
 #include <fstream>
+#include <regex>
 
 std::vector<start_condition> start_file::load_all(const std::string& filename)
 {
@@ -70,7 +71,7 @@ bool start_file::save_all(const std::vector<start_condition_t> data, const std::
     return true;
 }
 
-file_info start_file::parse_filename(const std::string& filename) {
+start_file::file_info start_file::parse_filename(const std::string& filename) {
     file_info fi;
     const std::regex parser{R"(N_(\d+)_D_(\d+)_(\d+)_(\d+)\.pre$)"};
     std::smatch matches;

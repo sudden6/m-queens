@@ -22,8 +22,8 @@ constexpr uint8_t MINN = 4;
 constexpr uint8_t MIN_PRE_DEPTH = 3;
 
 
-static void solve_from_file(ISolver& solver, const std::string& filename) {
-    file_info fi = start_file::parse_filename(filename);
+static int solve_from_file(ISolver& solver, const std::string& filename) {
+    start_file::file_info fi = start_file::parse_filename(filename);
 
     if (fi.boardsize == 0) {
         return EXIT_FAILURE;
@@ -64,7 +64,7 @@ static void solve_from_file(ISolver& solver, const std::string& filename) {
         result += solver.solve_subboard(start);
         auto time_end = std::chrono::high_resolution_clock::now();
         std::chrono::duration<double> elapsed = time_end - time_start;
-        std::cout << "[" << std::to_string(i) << "] Solved in " << std::to_string(elapsed) << "s" << std::endl;
+        std::cout << "[" << std::to_string(i) << "] Solved in " << std::to_string(elapsed.count()) << "s" << std::endl;
         boinc_fraction_done(static_cast<double>(i)/start.size());
     }
 
@@ -107,9 +107,9 @@ int main(int argc, char **argv) {
       exit(EXIT_FAILURE);
     }
 
-    ISolver solver = cpuSolver();
+    ISolver* solver = new cpuSolver();
 
-    solve_from_file(solver, presolve_file_name);
+    solve_from_file(*solver, presolve_file_name);
 
   return 0;
 }
