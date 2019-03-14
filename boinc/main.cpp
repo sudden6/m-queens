@@ -122,18 +122,25 @@ int main(int argc, char **argv) {
         exit_msg("Failed to close input file");
     }
 
-    std::cout << "Starting solver: boardsize: " << std::to_string(boardsize)
-              << " placed: " << std::to_string(placed) << std::endl;
+    std::cout << std::to_string(start.size()) << " start conditions loaded" << std::endl;
 
     if(!solver->init(boardsize, placed)) {
         exit_msg("Failed to initialize solver");
     }
 
+    std::cout << "Starting solver: boardsize: " << std::to_string(boardsize)
+              << " placed: " << std::to_string(placed) << std::endl;
+
+    // no high precision data is printed
+    std::cout << std::scientific;
+    std::cout.precision(2);
     // process job data
     uint64_t result = 0;
     // for progress indicator
     std::vector<start_condition_t> start_single;
     start_single.resize(1);
+    // track total computation time
+    auto total_time_start = std::chrono::high_resolution_clock::now();
 
     for(size_t i = 0; i < start.size(); i++) {
         start_single[0] = start[i];
@@ -141,11 +148,17 @@ int main(int argc, char **argv) {
         result += solver->solve_subboard(start_single);
         auto time_end = std::chrono::high_resolution_clock::now();
         std::chrono::duration<double> elapsed = time_end - time_start;
-        std::cout << "[" << std::to_string(i + 1) << "] Solved in " << std::to_string(elapsed.count()) << "s" << std::endl;
+        std::cout << "[" << std::to_string(i + 1) << "] Solved in " << elapsed.count()
+                  << "s, Solutions per second: " << result/elapsed.count() << std::endl;
         boinc_fraction_done(static_cast<double>(i + 1)/start.size());
     }
 
+    auto total_time_end = std::chrono::high_resolution_clock::now();
+    std::chrono::duration<double> total_elapsed = total_time_end - total_time_start;
+
     std::cout << "Result: " << std::to_string(result) << std::endl;
+    std::cout << "Computation time: " << total_elapsed.count() << "s" << std::endl;
+    std::cout << "Solutions per second: " << result/total_elapsed.count() << std::endl;
 
     if(!result_file::save(result, outfile)) {
         exit_msg("Failed to save result");
