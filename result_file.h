@@ -4,13 +4,13 @@
 #include <cstdio>
 #include <cstdint>
 #include <string>
+#include <vector>
 
 class result_file
 {
 public:
-    static uint64_t load(const std::string& filename);
-    static bool save(uint64_t res, const std::string& filename);
-    static bool save(uint64_t res, FILE* file);
+    static bool save(std::vector<uint64_t> res, const std::string& filename);
+    static bool save(std::vector<uint64_t> res, FILE* file);
 };
 
 #endif // RESULT_FILE_H

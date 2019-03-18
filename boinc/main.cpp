@@ -13,6 +13,7 @@
 #include <chrono>
 #include <regex>
 #include <iostream>
+#include <numeric>
 
 constexpr uint8_t MAXN = 29;
 constexpr uint8_t MINN = 4;
@@ -135,32 +136,35 @@ int main(int argc, char **argv) {
     std::cout << std::scientific;
     std::cout.precision(2);
     // process job data
-    uint64_t result = 0;
+    std::vector<uint64_t> results;
     // for progress indicator
     std::vector<start_condition_t> start_single;
     start_single.resize(1);
+
     // track total computation time
     auto total_time_start = std::chrono::high_resolution_clock::now();
 
     for(size_t i = 0; i < start.size(); i++) {
         start_single[0] = start[i];
         auto time_start = std::chrono::high_resolution_clock::now();
-        result += solver->solve_subboard(start_single);
+        results.push_back(solver->solve_subboard(start_single));
         auto time_end = std::chrono::high_resolution_clock::now();
         std::chrono::duration<double> elapsed = time_end - time_start;
         std::cout << "[" << std::to_string(i + 1) << "] Solved in " << elapsed.count()
-                  << "s, Solutions per second: " << result/elapsed.count() << std::endl;
+                  << "s, Solutions per second: " << results[i]/elapsed.count() << std::endl;
         boinc_fraction_done(static_cast<double>(i + 1)/start.size());
     }
 
     auto total_time_end = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double> total_elapsed = total_time_end - total_time_start;
 
-    std::cout << "Result: " << std::to_string(result) << std::endl;
-    std::cout << "Computation time: " << total_elapsed.count() << "s" << std::endl;
-    std::cout << "Solutions per second: " << result/total_elapsed.count() << std::endl;
+    uint64_t total_result = std::accumulate(results.begin(), results.end(), uint64_t{0});
 
-    if(!result_file::save(result, outfile)) {
+    std::cout << "Result: " << std::to_string(total_result) << std::endl;
+    std::cout << "Computation time: " << total_elapsed.count() << "s" << std::endl;
+    std::cout << "Solutions per second: " << total_result/total_elapsed.count() << std::endl;
+
+    if(!result_file::save(results, outfile)) {
         exit_msg("Failed to save result");
     }
 

@@ -129,7 +129,9 @@ static void solve_from_file(ISolver& solver, const std::string& filename) {
 
     std::string res_filname = filename.substr(0, filename.size() - 4) + ".res";
 
-    if(!result_file::save(result, res_filname)) {
+    std::vector<uint64_t> results = {result};
+
+    if(!result_file::save(results, res_filname)) {
         std::cout << "Failed to save result" << std::endl;
         exit(EXIT_FAILURE);
     }
