@@ -1,14 +1,14 @@
 cmake_minimum_required(VERSION 2.8)
+project(m-queens2)
 
 option(BOINC_ONLY "Build only stuff needed for BOINC" OFF)
 option(BUILD_STATIC "Build static binaries" ON)
-# for static linking a path to the boinc build folder is needed
-set(BOINC_DIR "../../boinc" CACHE PATH "BOINC build directory")
+# for static linking a path to the boinc static build is needed
+set(BOINC_STATIC_DIR "${PROJECT_SOURCE_DIR}/../../static_boinc/lib64" CACHE PATH "BOINC static build directory")
 
 set (CMAKE_CXX_STANDARD 11)
 
 if (NOT ${BOINC_ONLY} AND NOT ${BUILD_STATIC})
-project(m-queens2)
 
 find_package(OpenCL REQUIRED)
 
@@ -54,8 +54,10 @@ configure_file(${CMAKE_SOURCE_DIR}/clqueens.cl ./ COPYONLY)
 
 endif()
 
+set (CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} -O2")
+set (CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O2")
 
-set(PRESOLVER_PROJECT presolver)
+set(PRESOLVER_PROJECT m-queens2-presolver)
 
 set(${PRESOLVER_PROJECT}_SOURCES
     presolver/main.cpp
@@ -69,11 +71,16 @@ set(${PRESOLVER_PROJECT}_SOURCES
 )
 
 add_executable(${PRESOLVER_PROJECT} ${${PRESOLVER_PROJECT}_SOURCES} "presolver/main.cpp")
+# Strip binary for release builds
+if (CMAKE_BUILD_TYPE STREQUAL Release)
+    add_custom_command(TARGET ${PRESOLVER_PROJECT} POST_BUILD
+            COMMAND ${CMAKE_STRIP} ${PRESOLVER_PROJECT})
+endif ()
 target_include_directories(${PRESOLVER_PROJECT} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/cxxopts/include)
 target_include_directories(${PRESOLVER_PROJECT} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 if (${BUILD_STATIC})
 set(CMAKE_EXE_LINKER_FLAGS " -static")
-    target_link_libraries(${BOINC_PROJECT} -static-libgcc -static-libstdc++)
+target_link_libraries(${PRESOLVER_PROJECT} "-static-libgcc -static-libstdc++")
 endif()
 
 set(BOINC_PROJECT m-queens2-boinc)
@@ -94,14 +101,20 @@ set(${BOINC_PROJECT}_SOURCES
 )
 
 add_executable(${BOINC_PROJECT} ${${BOINC_PROJECT}_SOURCES} "boinc/main.cpp")
+# Strip binary for release builds
+if (CMAKE_BUILD_TYPE STREQUAL Release)
+    add_custom_command(TARGET ${BOINC_PROJECT} POST_BUILD
+            COMMAND ${CMAKE_STRIP} ${BOINC_PROJECT})
+endif ()
 target_include_directories(${BOINC_PROJECT} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/cxxopts/include)
 target_include_directories(${BOINC_PROJECT} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 
 if (${BUILD_STATIC})
-set(CMAKE_EXE_LINKER_FLAGS " -static")
-    target_link_libraries(${BOINC_PROJECT} -static-libgcc -static-libstdc++)
-    #target_link_libraries(${BOINC_PROJECT} boinc)
-    target_link_libraries(${BOINC_PROJECT} boinc_api)
+    # Linking standard libs statically
+    set(CMAKE_CXX_STANDARD_LIBRARIES "-Wl,-Bstatic,--whole-archive -lpthread -Wl,--no-whole-archive -static-libgcc -static-libstdc++")
+    set(CMAKE_EXE_LINKER_FLAGS "--static --verbose")
+    target_link_libraries(${BOINC_PROJECT} ${BOINC_STATIC_DIR}/libboinc_api.a)
+    target_link_libraries(${BOINC_PROJECT} ${BOINC_STATIC_DIR}/libboinc.a)
 else()
     target_link_libraries(${BOINC_PROJECT} boinc)
     target_link_libraries(${BOINC_PROJECT} boinc_api)

@@ -1,16 +1,13 @@
 # Change the following to match your installation
-BOINC_DIR = ../../boinc
-BOINC_API_DIR = $(BOINC_DIR)/api
-BOINC_LIB_DIR = $(BOINC_DIR)/lib
+BOINC_DIR = ../../static_boinc
+BOINC_INC_DIR = $(BOINC_DIR)/include
+BOINC_LIB_DIR = $(BOINC_DIR)/lib64
 
 CXXFLAGS = -Ofast \
     --static -static-libgcc \
     -I ./ \
     -I ./cxxopts/include/ \
-    -I$(BOINC_DIR) \
-    -I$(BOINC_LIB_DIR) \
-    -I$(BOINC_API_DIR) \
-    -L$(BOINC_API_DIR) \
+    -I$(BOINC_INC_DIR) \
     -L$(BOINC_LIB_DIR) \
     -L.
 
@@ -35,15 +32,15 @@ components:
 	g++ $(CXXFLAGS) -c serialize_util.cpp
 	g++ $(CXXFLAGS) -c start_file.cpp
 
-m-queens-boinc: components libstdc++.a $(BOINC_LIB_DIR)/libboinc.a $(BOINC_API_DIR)/libboinc_api.a
+m-queens-boinc: components libstdc++.a $(BOINC_LIB_DIR)/libboinc.a $(BOINC_LIB_DIR)/libboinc_api.a
 	g++ $(CXXFLAGS) -c boinc/main.cpp -o boinc_main.o
 	g++ $(CXXFLAGS) -o $@ boinc_main.o cpusolver.o presolver.o result_file.o serialize_util.o \
-	start_file.o libstdc++.a -pthread -lboinc_api -lboinc -static-libgcc
+	start_file.o libstdc++.a -Wl,-Bstatic,--whole-archive -lpthread -Wl,--no-whole-archive -lboinc_api -lboinc -static-libgcc
 	strip $@
 
 m-queens-presolver: components libstdc++.a
 	g++ $(CXXFLAGS) -c presolver/main.cpp -o presolver_main.o
 	g++ $(CXXFLAGS) -o $@ presolver_main.o cpusolver.o presolver.o result_file.o serialize_util.o \
-	start_file.o libstdc++.a -pthread -lboinc_api -lboinc -static-libgcc
+	start_file.o libstdc++.a -Wl,-Bstatic,--whole-archive -lpthread -Wl,--no-whole-archive -lboinc_api -lboinc -static-libgcc
 	strip $@
 
