@@ -4,7 +4,12 @@ project(m-queens2)
 option(BOINC_ONLY "Build only stuff needed for BOINC" OFF)
 option(BUILD_STATIC "Build static binaries" ON)
 # for static linking a path to the boinc static build is needed
-set(BOINC_STATIC_DIR "${PROJECT_SOURCE_DIR}/../../static_boinc/lib64" CACHE PATH "BOINC static build directory")
+# boinc build commands:
+# mkdir -p /build/static_boinc/
+# ./configure --disable-server --disable-manager --disable-fcgi --disable-client --prefix=/build/static_boinc/
+# make
+# make install
+set(BOINC_STATIC_DIR "/build/static_boinc/lib64" CACHE PATH "BOINC static build directory")
 
 set (CMAKE_CXX_STANDARD 11)
 
