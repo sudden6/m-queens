@@ -91,10 +91,10 @@ int main(int argc, char **argv) {
     std::string resolved_infile_name = presolve_file_name;
     std::string resolved_outfile_name = result_file_name;
     if(!standalone) {
-        if(!boinc_resolve_filename_s(presolve_file_name.c_str(), resolved_infile_name)) {
+        if(boinc_resolve_filename_s(presolve_file_name.c_str(), resolved_infile_name)) {
             exit_msg("Couldn't resolve input filename: " + presolve_file_name);
         }
-        if(!boinc_resolve_filename_s(result_file_name.c_str(), resolved_outfile_name)) {
+        if(boinc_resolve_filename_s(result_file_name.c_str(), resolved_outfile_name)) {
             exit_msg("Couldn't resolve output filename: " + result_file_name);
         }
     }
