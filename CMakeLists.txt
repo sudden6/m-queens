@@ -60,7 +60,7 @@ configure_file(${CMAKE_SOURCE_DIR}/clqueens.cl ./ COPYONLY)
 
 endif()
 
-if (NOT ${NO_BOINC})
+
 set (CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} -O2")
 set (CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O2")
 
@@ -90,6 +90,7 @@ set(CMAKE_EXE_LINKER_FLAGS " -static")
 target_link_libraries(${PRESOLVER_PROJECT} "-static-libgcc -static-libstdc++")
 endif()
 
+if (NOT ${NO_BOINC})
 set(BOINC_PROJECT m-queens2-boinc)
 
 set(${BOINC_PROJECT}_SOURCES

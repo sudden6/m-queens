@@ -24,10 +24,6 @@ bool cpuSolver::init(uint8_t boardsize, uint8_t placed)
     this->boardsize = boardsize;
     this->placed = placed;
 
-    lookup_hash.clear();
-
-    init_lookup(4);
-
     return true;
 }
 
@@ -38,6 +34,28 @@ uint64_t cpuSolver::solve_subboard(const std::vector<start_condition>& starts) {
   // sufficient until n=29
   uint_fast64_t num = 0;
   const size_t start_cnt = starts.size();  
+
+  uint32_t col_mask = UINT32_MAX;
+
+  for (const auto& start : starts) {
+      col_mask &= start.cols;
+  }
+
+  // count fixed bits overall
+  uint8_t mask = 0;
+  for (uint8_t i = 0; i < 32; i++) {
+      if ((UINT32_C(1) << i) & col_mask) {
+          mask++;
+      }
+  }
+
+  // subtract overhead bits
+  mask -= 32 - boardsize;
+
+  std::cout << "Column mask: " << std::hex << col_mask << " zeros in mask: " << std::to_string(mask) << std::endl;
+
+  lookup_hash.clear();
+  init_lookup(4, mask);
 
 #define LOOKAHEAD 3
   const int8_t rest_init = boardsize - LOOKAHEAD - this->placed;
@@ -111,7 +129,7 @@ uint64_t cpuSolver::solve_subboard(const std::vector<start_condition>& starts) {
   return num * 2;
 }
 
-size_t cpuSolver::init_lookup(uint8_t depth)
+size_t cpuSolver::init_lookup(uint8_t depth, uint32_t skip_mask)
 {
     // stat counter for number of elements in the lookup table
     uint_fast64_t num = 0;
@@ -154,6 +172,10 @@ size_t cpuSolver::init_lookup(uint8_t depth)
           uint_fast32_t new_posib = (bit | new_diagl | new_diagr);
 
           if (new_posib != UINT_FAST32_MAX) {
+              if (bit & skip_mask) {
+                  continue;
+              }
+
               if (l_rest == 0) {
                   auto it = lookup_hash.find(bit);
                   if (it == lookup_hash.end()) {
