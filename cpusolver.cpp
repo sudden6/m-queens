@@ -30,6 +30,9 @@ bool cpuSolver::init(uint8_t boardsize, uint8_t placed)
 
 uint64_t cpuSolver::solve_subboard(const std::vector<start_condition>& starts) {
 
+  uint_fast64_t stat_lookups = 0;
+  uint_fast64_t stat_lookups_found = 0;
+  std::cout << "Solving" << std::endl;
   // counter for the number of solutions
   // sufficient until n=29
   uint_fast64_t num = 0;
@@ -55,12 +58,15 @@ uint64_t cpuSolver::solve_subboard(const std::vector<start_condition>& starts) {
   std::cout << "Column mask: " << std::hex << col_mask << " zeros in mask: " << std::to_string(mask) << std::endl;
 
   lookup_hash.clear();
-  init_lookup(4, mask);
+  const uint8_t lookup_depth = 7;
+  init_lookup(lookup_depth, mask);
 
 #define LOOKAHEAD 3
   const int8_t rest_init = boardsize - LOOKAHEAD - this->placed;
+  // TODO: find out why +1 is needed
+  const int8_t rest_lookup = rest_init - (boardsize - this->placed - lookup_depth) + 1;
 
-#pragma omp parallel for reduction(+ : num) schedule(dynamic)
+//#pragma omp parallel for reduction(+ : num) schedule(dynamic)
   for (uint_fast32_t cnt = 0; cnt < start_cnt; cnt++) {
     uint_fast32_t cols[MAXN], posibs[MAXN]; // Our backtracking 'stack'
     uint_fast32_t diagl[MAXN], diagr[MAXN];
@@ -102,6 +108,16 @@ uint64_t cpuSolver::solve_subboard(const std::vector<start_condition>& starts) {
                 continue;
             }
 
+            if (l_rest == rest_lookup) {
+                stat_lookups++;
+
+                const auto& found = lookup_hash.find(bit);
+                // std::cout << std::hex << (bit & 0xFF) << std::endl;
+                if(found != lookup_hash.end()) {
+                    stat_lookups_found++;
+                }
+            }
+
           // The next two lines save stack depth + backtrack operations
           // when we passed the last possibility in a row.
           // Go lower in the stack, avoid branching by writing above the current
@@ -126,11 +142,17 @@ uint64_t cpuSolver::solve_subboard(const std::vector<start_condition>& starts) {
       posib = posibs[d]; // backtrack ...
     }
   }
+
+  std::cout << "Lookups: " << std::to_string(stat_lookups) << std::endl;
+  std::cout << "Lookups found: " << std::to_string(stat_lookups_found) << std::endl;
+
+
   return num * 2;
 }
 
 size_t cpuSolver::init_lookup(uint8_t depth, uint32_t skip_mask)
 {
+    std::cout << "Building Lookup Table" << std::endl;
     // stat counter for number of elements in the lookup table
     uint_fast64_t num = 0;
     // stat counter of how many bit patterns have more than one entry
@@ -150,7 +172,8 @@ size_t cpuSolver::init_lookup(uint8_t depth, uint32_t skip_mask)
       diagl[d] = bit0 << 1;
       diagr[d] = bit0 >> 1;
       // we're allready two rows into the field here
-      rest[d] = static_cast<int8_t>(depth);
+      // TODO: find out why -2 is needed here
+      rest[d] = static_cast<int8_t>(depth - 2);
 
       //  The variable posib contains the bitmask of possibilities we still have
       //  to try in a given row ...
@@ -177,11 +200,13 @@ size_t cpuSolver::init_lookup(uint8_t depth, uint32_t skip_mask)
               }
 
               if (l_rest == 0) {
-                  auto it = lookup_hash.find(bit);
+                  uint_fast32_t conv = ~bit | (UINT_FAST32_MAX << boardsize);
+                  // std::cout << std::hex << (conv & 0xFF) << std::endl;
+                  auto it = lookup_hash.find(conv);
                   if (it == lookup_hash.end()) {
                       lookup_t new_entry = {.diag_r = new_diagr, .diag_l = new_diagl};
                       std::vector<lookup_t> new_vec = {new_entry};
-                      lookup_hash.emplace(bit, new_vec);
+                      lookup_hash.emplace(conv, new_vec);
                       num++;
                   } else {
                       auto& vec = it->second;
