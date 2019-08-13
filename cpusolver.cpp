@@ -1,5 +1,6 @@
 #include "cpusolver.h"
 #include <iostream>
+#include <cassert>
 
 cpuSolver::cpuSolver()
 {
@@ -124,8 +125,9 @@ uint64_t cpuSolver::solve_subboard(const std::vector<start_condition>& starts) {
                             num_lookup++;
                         }
                     }
-
                 }
+
+                continue;
             }
 
           // The next two lines save stack depth + backtrack operations
@@ -155,7 +157,9 @@ uint64_t cpuSolver::solve_subboard(const std::vector<start_condition>& starts) {
 
   std::cout << "Lookups: " << std::to_string(stat_lookups) << std::endl;
   std::cout << "Lookups found: " << std::to_string(stat_lookups_found) << std::endl;
+  std::cout << "Solutions Lookup: " << std::to_string(num_lookup*2) << std::endl;
 
+  assert(num == num_lookup);
 
   return num * 2;
 }
@@ -180,14 +184,14 @@ size_t cpuSolver::init_lookup(uint8_t depth, uint32_t skip_mask)
       cols[d] = bit0 | (UINT_FAST32_MAX << boardsize);
       // This places the first two queens
       diagl[d] = bit0 << 1;
-      diagr[d] = bit0 >> 1;
+      diagr[d] = bit0 << 15;
       // we're allready two rows into the field here
       // TODO: find out why -2 is needed here
       rest[d] = static_cast<int8_t>(depth - 2);
 
       //  The variable posib contains the bitmask of possibilities we still have
       //  to try in a given row ...
-      uint_fast32_t posib = (cols[d] | diagl[d] | diagr[d]);
+      uint_fast32_t posib = (cols[d] | diagl[d] | (diagr[d] >> 16));
 
       diagl[d] <<= 1;
       diagr[d] >>= 1;
@@ -200,9 +204,9 @@ size_t cpuSolver::init_lookup(uint8_t depth, uint32_t skip_mask)
           uint_fast32_t bit = ~posib & (posib + 1);
           posib ^= bit; // Eliminate the tried possibility.
           uint_fast32_t new_diagl = (bit << 1) | diagl[d];
-          uint_fast32_t new_diagr = (bit >> 1) | diagr[d];
+          uint_fast32_t new_diagr = (bit << 15) | diagr[d];
           bit |= cols[d];
-          uint_fast32_t new_posib = (bit | new_diagl | new_diagr);
+          uint_fast32_t new_posib = (bit | new_diagl | (new_diagr >> 16));
 
           if (new_posib != UINT_FAST32_MAX) {
               if (bit & skip_mask) {
@@ -214,7 +218,7 @@ size_t cpuSolver::init_lookup(uint8_t depth, uint32_t skip_mask)
                   uint_fast32_t conv_diagl = new_diagl >> 2;
 
                   // TODO(sudden6): pulling bits out of thin air, need to fix
-                  uint_fast32_t conv_diagr = new_diagr << 2;
+                  uint_fast32_t conv_diagr = new_diagr >> 14;
                   // std::cout << std::hex << (conv & 0xFF) << std::endl;
 
                   if (__builtin_popcount(conv_diagl) != 2) {
