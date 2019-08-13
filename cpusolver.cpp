@@ -32,6 +32,7 @@ uint64_t cpuSolver::solve_subboard(const std::vector<start_condition>& starts) {
 
   uint_fast64_t stat_lookups = 0;
   uint_fast64_t stat_lookups_found = 0;
+  uint_fast64_t num_lookup = 0;
   std::cout << "Solving" << std::endl;
   // counter for the number of solutions
   // sufficient until n=29
@@ -58,7 +59,7 @@ uint64_t cpuSolver::solve_subboard(const std::vector<start_condition>& starts) {
   std::cout << "Column mask: " << std::hex << col_mask << " zeros in mask: " << std::to_string(mask) << std::endl;
 
   lookup_hash.clear();
-  const uint8_t lookup_depth = 7;
+  const uint8_t lookup_depth = 2;
   init_lookup(lookup_depth, mask);
 
 #define LOOKAHEAD 3
@@ -115,6 +116,15 @@ uint64_t cpuSolver::solve_subboard(const std::vector<start_condition>& starts) {
                 // std::cout << std::hex << (bit & 0xFF) << std::endl;
                 if(found != lookup_hash.end()) {
                     stat_lookups_found++;
+
+                    std::vector<lookup_t>& new_vec = found->second;
+                    // comparison loop
+                    for(const auto& elem: new_vec) {
+                        if(!(elem.diag_l & new_diagl || elem.diag_r & new_diagr)) {
+                            num_lookup++;
+                        }
+                    }
+
                 }
             }
 
@@ -201,17 +211,29 @@ size_t cpuSolver::init_lookup(uint8_t depth, uint32_t skip_mask)
 
               if (l_rest == 0) {
                   uint_fast32_t conv = ~bit | (UINT_FAST32_MAX << boardsize);
+                  uint_fast32_t conv_diagl = new_diagl >> 2;
+
+                  // TODO(sudden6): pulling bits out of thin air, need to fix
+                  uint_fast32_t conv_diagr = new_diagr << 2;
                   // std::cout << std::hex << (conv & 0xFF) << std::endl;
+
+                  if (__builtin_popcount(conv_diagl) != 2) {
+                      //std::cout << "Info lost in diagl" << std::endl;
+                  }
+                  if (__builtin_popcount(conv_diagr) != 2) {
+                      std::cout << "Info lost in diagr" << std::endl;
+                  }
+
+                  lookup_t new_entry = {.diag_r = conv_diagr, .diag_l = conv_diagl};
+
                   auto it = lookup_hash.find(conv);
                   if (it == lookup_hash.end()) {
-                      lookup_t new_entry = {.diag_r = new_diagr, .diag_l = new_diagl};
                       std::vector<lookup_t> new_vec = {new_entry};
                       lookup_hash.emplace(conv, new_vec);
                       num++;
                   } else {
                       auto& vec = it->second;
 
-                      lookup_t new_entry = {.diag_r = new_diagr, .diag_l = new_diagl};
                       vec.push_back(new_entry);
                       num++;
                       multiple_entries++;
