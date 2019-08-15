@@ -1,6 +1,8 @@
 #include "cpusolver.h"
 #include <iostream>
 #include <cassert>
+#include <chrono>
+
 
 cpuSolver::cpuSolver()
 {
@@ -33,11 +35,11 @@ uint64_t cpuSolver::solve_subboard(const std::vector<start_condition>& starts) {
 
   uint_fast64_t stat_lookups = 0;
   uint_fast64_t stat_lookups_found = 0;
-  uint_fast64_t num_lookup = 0;
-  std::cout << "Solving" << std::endl;
+  std::cout << "Solving N=" << std::to_string(boardsize) << std::endl;
   // counter for the number of solutions
   // sufficient until n=29
-  uint_fast64_t num = 0;
+  uint_fast64_t num_lookup = 0;
+
   const size_t start_cnt = starts.size();  
 
   uint32_t col_mask = UINT32_MAX;
@@ -60,8 +62,14 @@ uint64_t cpuSolver::solve_subboard(const std::vector<start_condition>& starts) {
   std::cout << "Column mask: " << std::hex << col_mask << " zeros in mask: " << std::to_string(mask) << std::endl;
 
   lookup_hash.clear();
-  const uint8_t lookup_depth = 2;
+  const uint8_t lookup_depth = 6;
+  auto lut_init_time_start = std::chrono::high_resolution_clock::now();
   init_lookup(lookup_depth, mask);
+  auto lut_init_time_end = std::chrono::high_resolution_clock::now();
+  std::chrono::duration<double> elapsed = lut_init_time_end - lut_init_time_start;
+
+  std::cout << "Time to init lookup table: " << std::to_string(elapsed.count()) << "s" << std::endl;
+  std::cout << "LUT depth: " << std::to_string(lookup_depth) << std::endl;
 
 #define LOOKAHEAD 3
   const int8_t rest_init = boardsize - LOOKAHEAD - this->placed;
@@ -120,9 +128,15 @@ uint64_t cpuSolver::solve_subboard(const std::vector<start_condition>& starts) {
 
                     std::vector<lookup_t>& new_vec = found->second;
                     // comparison loop
-                    for(const auto& elem: new_vec) {
-                        if(!(elem.diag_l & new_diagl || elem.diag_r & new_diagr)) {
+
+                    const size_t candidates = new_vec.size();
+
+                    #pragma omp simd //reduction(+ : num_lookup)
+                    for(size_t i = 0; i < candidates; i++) {
+                        if(!(new_vec[i].diag_l & static_cast<uint32_t>(new_diagl)
+                          || new_vec[i].diag_r & static_cast<uint32_t>(new_diagr))) {
                             num_lookup++;
+                            //num_lookup += ((UINT32_C(1) << 31) & new_vec[i].diag_r) != 0; // hack, restore count
                         }
                     }
                 }
@@ -145,9 +159,6 @@ uint64_t cpuSolver::solve_subboard(const std::vector<start_condition>& starts) {
           diagl[d] = new_diagl << 1;
           diagr[d] = new_diagr >> 1;
           rest[d] = l_rest;
-        } else {
-          // when all columns are used, we found a solution
-          num += bit == UINT_FAST32_MAX;
         }
       }
       d--;
@@ -159,9 +170,7 @@ uint64_t cpuSolver::solve_subboard(const std::vector<start_condition>& starts) {
   std::cout << "Lookups found: " << std::to_string(stat_lookups_found) << std::endl;
   std::cout << "Solutions Lookup: " << std::to_string(num_lookup*2) << std::endl;
 
-  assert(num == num_lookup);
-
-  return num * 2;
+  return num_lookup * 2;
 }
 
 size_t cpuSolver::init_lookup(uint8_t depth, uint32_t skip_mask)
@@ -184,14 +193,14 @@ size_t cpuSolver::init_lookup(uint8_t depth, uint32_t skip_mask)
       cols[d] = bit0 | (UINT_FAST32_MAX << boardsize);
       // This places the first two queens
       diagl[d] = bit0 << 1;
-      diagr[d] = bit0 << 15;
+      diagr[d] = bit0 << (depth - 1);
       // we're allready two rows into the field here
       // TODO: find out why -2 is needed here
       rest[d] = static_cast<int8_t>(depth - 2);
 
       //  The variable posib contains the bitmask of possibilities we still have
       //  to try in a given row ...
-      uint_fast32_t posib = (cols[d] | diagl[d] | (diagr[d] >> 16));
+      uint_fast32_t posib = (cols[d] | diagl[d] | (diagr[d] >> depth));
 
       diagl[d] <<= 1;
       diagr[d] >>= 1;
@@ -204,9 +213,9 @@ size_t cpuSolver::init_lookup(uint8_t depth, uint32_t skip_mask)
           uint_fast32_t bit = ~posib & (posib + 1);
           posib ^= bit; // Eliminate the tried possibility.
           uint_fast32_t new_diagl = (bit << 1) | diagl[d];
-          uint_fast32_t new_diagr = (bit << 15) | diagr[d];
+          uint_fast32_t new_diagr = (bit << (depth - 1)) | diagr[d];
           bit |= cols[d];
-          uint_fast32_t new_posib = (bit | new_diagl | (new_diagr >> 16));
+          uint_fast32_t new_posib = (bit | new_diagl | (new_diagr >> depth));
 
           if (new_posib != UINT_FAST32_MAX) {
               if (bit & skip_mask) {
@@ -215,20 +224,20 @@ size_t cpuSolver::init_lookup(uint8_t depth, uint32_t skip_mask)
 
               if (l_rest == 0) {
                   uint_fast32_t conv = ~bit | (UINT_FAST32_MAX << boardsize);
-                  uint_fast32_t conv_diagl = new_diagl >> 2;
+                  uint_fast32_t conv_diagl = new_diagl >> depth;
 
                   // TODO(sudden6): pulling bits out of thin air, need to fix
-                  uint_fast32_t conv_diagr = new_diagr >> 14;
+                  uint_fast32_t conv_diagr = new_diagr;
                   // std::cout << std::hex << (conv & 0xFF) << std::endl;
 
-                  if (__builtin_popcount(conv_diagl) != 2) {
+                  if (__builtin_popcount(conv_diagl) != depth) {
                       //std::cout << "Info lost in diagl" << std::endl;
                   }
-                  if (__builtin_popcount(conv_diagr) != 2) {
+                  if (__builtin_popcount(conv_diagr) != depth) {
                       std::cout << "Info lost in diagr" << std::endl;
                   }
 
-                  lookup_t new_entry = {.diag_r = conv_diagr, .diag_l = conv_diagl};
+                  lookup_t new_entry = {.diag_r = static_cast<uint32_t>(conv_diagr), .diag_l = static_cast<uint32_t>(conv_diagl)};
 
                   auto it = lookup_hash.find(conv);
                   if (it == lookup_hash.end()) {
@@ -238,7 +247,20 @@ size_t cpuSolver::init_lookup(uint8_t depth, uint32_t skip_mask)
                   } else {
                       auto& vec = it->second;
 
-                      vec.push_back(new_entry);
+                      bool found = false;
+
+                      for(size_t i = 0; i < vec.size(); i++) {
+                          if(vec[i].diag_r == conv_diagr
+                          && vec[i].diag_l == conv_diagl) {
+                              //found = true;
+                              //vec[i].diag_r |= UINT32_C(1) << 31; // hack store duplicate info in highest bit
+                              break;
+                          }
+                      }
+
+                      if(!found) {
+                        vec.push_back(new_entry);
+                      }
                       num++;
                       multiple_entries++;
                   }
@@ -275,10 +297,12 @@ size_t cpuSolver::init_lookup(uint8_t depth, uint32_t skip_mask)
     std::cout << "Multiple entries: " << std::to_string(multiple_entries) << std::endl;
     std::cout << "Avg Vec len: " << std::to_string(static_cast<double>(num)/lookup_hash.size()) << std::endl;
     uint_fast64_t max_len = 0;
+    uint64_t max_cnt = 0;
     for(const auto& vec : lookup_hash) {
         max_len = std::max(vec.second.size(), max_len);
     }
     std::cout << "Max Vec len: " << std::to_string(max_len) << std::endl;
+    std::cout << "Max Elem cnt: " << std::to_string(max_cnt) << std::endl;
     std::cout << "Unsolvable: " << std::to_string(unsolvable) << std::endl;
 
     return num;

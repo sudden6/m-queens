@@ -16,8 +16,8 @@ public:
 
     typedef struct
     {
-        uint_fast32_t diag_r;
-        uint_fast32_t diag_l;
+        uint32_t diag_r;
+        uint32_t diag_l;
     } lookup_t;
 
 private:
