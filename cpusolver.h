@@ -2,7 +2,7 @@
 #define CPUSOLVER_H
 
 #include "isolver.h"
-#include <unordered_map>
+#include "parallel_hashmap/phmap.h"
 #include <vector>
 
 class cpuSolver : public ISolver
@@ -20,11 +20,19 @@ public:
         uint32_t diag_l;
     } lookup_t;
 
+    typedef struct
+    {
+        std::vector<lookup_t> v0;
+        std::vector<lookup_t> v1;
+        std::vector<lookup_t> v2;
+    } bin_lookup_t;
+
 private:
     uint_fast8_t boardsize = 0;
     uint_fast8_t placed = 0;
 
-    std::unordered_map<uint_fast32_t, std::vector<lookup_t>> lookup_hash;
+    phmap::flat_hash_map<uint32_t, bin_lookup_t> lookup_hash;
+    uint64_t get_solution_cnt(uint32_t cols, uint32_t diagl, uint32_t diagr);
 };
 
 #endif // CPUSOLVER_H

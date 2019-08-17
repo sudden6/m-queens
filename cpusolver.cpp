@@ -30,11 +30,91 @@ bool cpuSolver::init(uint8_t boardsize, uint8_t placed)
     return true;
 }
 
+static constexpr uint_fast32_t switch_bit_mask_1 = 1 << 9;
+static constexpr uint_fast32_t switch_bit_mask_2 = 1 << 7;
+
+static uint_fast64_t stat_lookups = 0;
+static uint_fast64_t stat_lookups_found = 0;
+static uint_fast64_t stat_cmps = 0;
+static uint_fast64_t stat_last_0 = 0;
+static uint_fast64_t stat_last_1 = 0;
+static uint_fast64_t stat_last_2 = 0;
+
+
+uint64_t cpuSolver::get_solution_cnt(uint32_t cols, uint32_t diagl, uint32_t diagr) {
+    uint64_t solutions = 0;
+    const auto& found = lookup_hash.find(cols);
+    // std::cout << std::hex << (bit & 0xFF) << std::endl;
+    if(found != lookup_hash.end()) {
+        stat_lookups_found++;
+
+        if (!(diagl & switch_bit_mask_1)) {
+            std::vector<lookup_t>& new_vec =  found->second.v1;
+            // comparison loop
+
+            const size_t candidates = new_vec.size();
+            stat_cmps += candidates;
+
+            stat_last_1++;
+
+            #pragma omp simd //reduction(+ : num_lookup)
+            for(size_t i = 0; i < candidates; i++) {
+                if(!(new_vec[i].diag_l & diagl
+                  || new_vec[i].diag_r & diagr)) {
+                    solutions++;
+                    //num_lookup += new_vec[i].diag_r >> 31; // hack, restore count
+                }
+            }
+        }
+
+        if (!(diagr & switch_bit_mask_2)) {
+            std::vector<lookup_t>& new_vec =  found->second.v2;
+            // comparison loop
+
+            const size_t candidates = new_vec.size();
+            stat_cmps += candidates;
+
+            stat_last_2++;
+
+            #pragma omp simd //reduction(+ : num_lookup)
+            for(size_t i = 0; i < candidates; i++) {
+                if(!(new_vec[i].diag_l & diagl
+                  || new_vec[i].diag_r & diagr)) {
+                    solutions++;
+                    //num_lookup += new_vec[i].diag_r >> 31; // hack, restore count
+                }
+            }
+        }
+
+        std::vector<lookup_t>& new_vec =  found->second.v0;
+        // comparison loop
+
+        const size_t candidates = new_vec.size();
+        stat_cmps += candidates;
+
+        stat_last_0++;
+
+        #pragma omp simd //reduction(+ : num_lookup)
+        for(size_t i = 0; i < candidates; i++) {
+            if(!(new_vec[i].diag_l & diagl
+              || new_vec[i].diag_r & diagr)) {
+                solutions++;
+                //num_lookup += new_vec[i].diag_r >> 31; // hack, restore count
+            }
+        }
+    }
+
+    return solutions;
+}
 
 uint64_t cpuSolver::solve_subboard(const std::vector<start_condition>& starts) {
 
-  uint_fast64_t stat_lookups = 0;
-  uint_fast64_t stat_lookups_found = 0;
+  stat_lookups = 0;
+  stat_lookups_found = 0;
+  stat_cmps = 0;
+  stat_last_0 = 0;
+  stat_last_1 = 0;
+  stat_last_2 = 0;
   std::cout << "Solving N=" << std::to_string(boardsize) << std::endl;
   // counter for the number of solutions
   // sufficient until n=29
@@ -42,6 +122,7 @@ uint64_t cpuSolver::solve_subboard(const std::vector<start_condition>& starts) {
 
   const size_t start_cnt = starts.size();  
 
+  const uint_fast32_t board_width_mask = ~(UINT_FAST32_MAX << boardsize);
   uint32_t col_mask = UINT32_MAX;
 
   for (const auto& start : starts) {
@@ -62,7 +143,7 @@ uint64_t cpuSolver::solve_subboard(const std::vector<start_condition>& starts) {
   std::cout << "Column mask: " << std::hex << col_mask << " zeros in mask: " << std::to_string(mask) << std::endl;
 
   lookup_hash.clear();
-  const uint8_t lookup_depth = 6;
+  const uint8_t lookup_depth = 5;
   auto lut_init_time_start = std::chrono::high_resolution_clock::now();
   init_lookup(lookup_depth, mask);
   auto lut_init_time_end = std::chrono::high_resolution_clock::now();
@@ -121,26 +202,7 @@ uint64_t cpuSolver::solve_subboard(const std::vector<start_condition>& starts) {
             if (l_rest == rest_lookup) {
                 stat_lookups++;
 
-                const auto& found = lookup_hash.find(bit);
-                // std::cout << std::hex << (bit & 0xFF) << std::endl;
-                if(found != lookup_hash.end()) {
-                    stat_lookups_found++;
-
-                    std::vector<lookup_t>& new_vec = found->second;
-                    // comparison loop
-
-                    const size_t candidates = new_vec.size();
-
-                    #pragma omp simd //reduction(+ : num_lookup)
-                    for(size_t i = 0; i < candidates; i++) {
-                        if(!(new_vec[i].diag_l & static_cast<uint32_t>(new_diagl)
-                          || new_vec[i].diag_r & static_cast<uint32_t>(new_diagr))) {
-                            num_lookup++;
-                            //num_lookup += ((UINT32_C(1) << 31) & new_vec[i].diag_r) != 0; // hack, restore count
-                        }
-                    }
-                }
-
+                num_lookup += get_solution_cnt(bit, new_diagl, new_diagr);
                 continue;
             }
 
@@ -168,6 +230,10 @@ uint64_t cpuSolver::solve_subboard(const std::vector<start_condition>& starts) {
 
   std::cout << "Lookups: " << std::to_string(stat_lookups) << std::endl;
   std::cout << "Lookups found: " << std::to_string(stat_lookups_found) << std::endl;
+  std::cout << "Compares: " << std::to_string(stat_cmps) << std::endl;
+  std::cout << "Last 0: " << std::to_string(stat_last_0) << std::endl;
+  std::cout << "Last 1: " << std::to_string(stat_last_1) << std::endl;
+  std::cout << "Last 2: " << std::to_string(stat_last_2) << std::endl;
   std::cout << "Solutions Lookup: " << std::to_string(num_lookup*2) << std::endl;
 
   return num_lookup * 2;
@@ -176,6 +242,9 @@ uint64_t cpuSolver::solve_subboard(const std::vector<start_condition>& starts) {
 size_t cpuSolver::init_lookup(uint8_t depth, uint32_t skip_mask)
 {
     std::cout << "Building Lookup Table" << std::endl;
+    uint_fast64_t stat_last_0 = 0;
+    uint_fast64_t stat_last_1 = 0;
+
     // stat counter for number of elements in the lookup table
     uint_fast64_t num = 0;
     // stat counter of how many bit patterns have more than one entry
@@ -224,42 +293,56 @@ size_t cpuSolver::init_lookup(uint8_t depth, uint32_t skip_mask)
 
               if (l_rest == 0) {
                   uint_fast32_t conv = ~bit | (UINT_FAST32_MAX << boardsize);
-                  uint_fast32_t conv_diagl = new_diagl >> depth;
+                  const uint_fast32_t board_width_mask = ~(UINT_FAST32_MAX << boardsize);
+                  uint_fast32_t conv_diagl = (new_diagl >> depth) & board_width_mask;
 
                   // TODO(sudden6): pulling bits out of thin air, need to fix
-                  uint_fast32_t conv_diagr = new_diagr;
+                  uint_fast32_t conv_diagr = new_diagr & board_width_mask;
                   // std::cout << std::hex << (conv & 0xFF) << std::endl;
 
                   if (__builtin_popcount(conv_diagl) != depth) {
                       //std::cout << "Info lost in diagl" << std::endl;
                   }
                   if (__builtin_popcount(conv_diagr) != depth) {
-                      std::cout << "Info lost in diagr" << std::endl;
+                      //std::cout << "Info lost in diagr" << std::endl;
+                  }
+
+                  if(conv_diagl & switch_bit_mask_1) {
+                      stat_last_1++;
+                  } else {
+                      stat_last_0++;
                   }
 
                   lookup_t new_entry = {.diag_r = static_cast<uint32_t>(conv_diagr), .diag_l = static_cast<uint32_t>(conv_diagl)};
 
                   auto it = lookup_hash.find(conv);
                   if (it == lookup_hash.end()) {
-                      std::vector<lookup_t> new_vec = {new_entry};
+                      bin_lookup_t new_vec;
+
+                      if(conv_diagr & switch_bit_mask_2) {
+                          new_vec.v2.push_back(new_entry);
+                      } else if(conv_diagl & switch_bit_mask_1) {
+                          new_vec.v1.push_back(new_entry);
+                      } else {
+                          new_vec.v0.push_back(new_entry);
+                      }
+
                       lookup_hash.emplace(conv, new_vec);
+
                       num++;
                   } else {
                       auto& vec = it->second;
 
                       bool found = false;
 
-                      for(size_t i = 0; i < vec.size(); i++) {
-                          if(vec[i].diag_r == conv_diagr
-                          && vec[i].diag_l == conv_diagl) {
-                              //found = true;
-                              //vec[i].diag_r |= UINT32_C(1) << 31; // hack store duplicate info in highest bit
-                              break;
-                          }
-                      }
-
                       if(!found) {
-                        vec.push_back(new_entry);
+                          if(conv_diagr & switch_bit_mask_2) {
+                              vec.v2.push_back(new_entry);
+                          } else if(conv_diagl & switch_bit_mask_1) {
+                              vec.v1.push_back(new_entry);
+                          } else {
+                              vec.v0.push_back(new_entry);
+                          }
                       }
                       num++;
                       multiple_entries++;
@@ -296,14 +379,22 @@ size_t cpuSolver::init_lookup(uint8_t depth, uint32_t skip_mask)
     std::cout << "Lookup entries: " << std::to_string(num) << std::endl;
     std::cout << "Multiple entries: " << std::to_string(multiple_entries) << std::endl;
     std::cout << "Avg Vec len: " << std::to_string(static_cast<double>(num)/lookup_hash.size()) << std::endl;
-    uint_fast64_t max_len = 0;
+    uint_fast64_t max_len_0 = 0;
+    uint_fast64_t max_len_1 = 0;
+    uint_fast64_t max_len_2 = 0;
     uint64_t max_cnt = 0;
     for(const auto& vec : lookup_hash) {
-        max_len = std::max(vec.second.size(), max_len);
+        max_len_0 = std::max(vec.second.v0.size(), max_len_0);
+        max_len_1 = std::max(vec.second.v1.size(), max_len_1);
+        max_len_2 = std::max(vec.second.v2.size(), max_len_2);
     }
-    std::cout << "Max Vec len: " << std::to_string(max_len) << std::endl;
+    std::cout << "Max Vec.v0 len: " << std::to_string(max_len_0) << std::endl;
+    std::cout << "Max Vec.v1 len: " << std::to_string(max_len_1) << std::endl;
+    std::cout << "Max Vec.v2 len: " << std::to_string(max_len_2) << std::endl;
     std::cout << "Max Elem cnt: " << std::to_string(max_cnt) << std::endl;
     std::cout << "Unsolvable: " << std::to_string(unsolvable) << std::endl;
+    std::cout << "Last 0: " << std::to_string(stat_last_0) << std::endl;
+    std::cout << "Last 1: " << std::to_string(stat_last_1) << std::endl;
 
     return num;
 }

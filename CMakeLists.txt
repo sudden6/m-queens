@@ -54,6 +54,7 @@ add_executable(${PROJECT_NAME} ${${PROJECT_NAME}_SOURCES} "main.cpp")
 target_link_libraries(${PROJECT_NAME} OpenCL::OpenCL)
 target_link_libraries(${PROJECT_NAME} Threads::Threads)
 target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/cxxopts/include)
+target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/parallel_hashmap)
 
 # copy OpenCL kernel source
 configure_file(${CMAKE_SOURCE_DIR}/clqueens.cl ./ COPYONLY)
