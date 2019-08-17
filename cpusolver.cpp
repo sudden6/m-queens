@@ -30,8 +30,8 @@ bool cpuSolver::init(uint8_t boardsize, uint8_t placed)
     return true;
 }
 
-static constexpr uint_fast32_t switch_bit_mask_1 = 1 << 9;
-static constexpr uint_fast32_t switch_bit_mask_2 = 1 << 7;
+static constexpr uint_fast32_t switch_bit_mask_1 = 1 << 11;
+static constexpr uint_fast32_t switch_bit_mask_2 = 1 << 5;
 
 static uint_fast64_t stat_lookups = 0;
 static uint_fast64_t stat_lookups_found = 0;
@@ -47,9 +47,11 @@ uint64_t cpuSolver::get_solution_cnt(uint32_t cols, uint32_t diagl, uint32_t dia
     // std::cout << std::hex << (bit & 0xFF) << std::endl;
     if(found != lookup_hash.end()) {
         stat_lookups_found++;
+        uint64_t search_elem = (static_cast<uint64_t>(diagr) << 32) | diagl;
 
+        /*
         if (!(diagl & switch_bit_mask_1)) {
-            std::vector<lookup_t>& new_vec =  found->second.v1;
+            std::vector<uint64_t>& new_vec =  found->second.v1;
             // comparison loop
 
             const size_t candidates = new_vec.size();
@@ -59,8 +61,7 @@ uint64_t cpuSolver::get_solution_cnt(uint32_t cols, uint32_t diagl, uint32_t dia
 
             #pragma omp simd //reduction(+ : num_lookup)
             for(size_t i = 0; i < candidates; i++) {
-                if(!(new_vec[i].diag_l & diagl
-                  || new_vec[i].diag_r & diagr)) {
+                if(!(new_vec[i] & search_elem)) {
                     solutions++;
                     //num_lookup += new_vec[i].diag_r >> 31; // hack, restore count
                 }
@@ -68,7 +69,7 @@ uint64_t cpuSolver::get_solution_cnt(uint32_t cols, uint32_t diagl, uint32_t dia
         }
 
         if (!(diagr & switch_bit_mask_2)) {
-            std::vector<lookup_t>& new_vec =  found->second.v2;
+            std::vector<uint64_t>& new_vec =  found->second.v2;
             // comparison loop
 
             const size_t candidates = new_vec.size();
@@ -78,15 +79,14 @@ uint64_t cpuSolver::get_solution_cnt(uint32_t cols, uint32_t diagl, uint32_t dia
 
             #pragma omp simd //reduction(+ : num_lookup)
             for(size_t i = 0; i < candidates; i++) {
-                if(!(new_vec[i].diag_l & diagl
-                  || new_vec[i].diag_r & diagr)) {
+                if(!(new_vec[i] & search_elem)) {
                     solutions++;
                     //num_lookup += new_vec[i].diag_r >> 31; // hack, restore count
                 }
             }
-        }
+        }*/
 
-        std::vector<lookup_t>& new_vec =  found->second.v0;
+        std::vector<uint64_t>& new_vec =  found->second.v0;
         // comparison loop
 
         const size_t candidates = new_vec.size();
@@ -94,21 +94,40 @@ uint64_t cpuSolver::get_solution_cnt(uint32_t cols, uint32_t diagl, uint32_t dia
 
         stat_last_0++;
 
-        #pragma omp simd //reduction(+ : num_lookup)
+        #pragma omp simd reduction(+ : solutions)
         for(size_t i = 0; i < candidates; i++) {
-            if(!(new_vec[i].diag_l & diagl
-              || new_vec[i].diag_r & diagr)) {
-                solutions++;
+                solutions += (new_vec[i] & search_elem) == 0;
                 //num_lookup += new_vec[i].diag_r >> 31; // hack, restore count
-            }
         }
     }
 
     return solutions;
 }
 
+void update_bit_stats(std::vector<uint_fast64_t>& state, uint64_t bits, size_t num_bits) {
+    if (state.size() < num_bits) {
+        return;
+    }
+
+    if (sizeof(uint64_t)*8 < num_bits) {
+        return;
+    }
+    uint64_t mask = 1;
+    for(size_t i = 0; i < num_bits; i++) {
+        if(bits & mask) {
+            state[i]++;
+        }
+        mask <<= 1;
+    }
+}
+
 uint64_t cpuSolver::solve_subboard(const std::vector<start_condition>& starts) {
 
+  std::vector<uint_fast64_t> stat_diagl;
+  std::vector<uint_fast64_t> stat_diagr;
+
+  stat_diagl.resize(boardsize, 0);
+  stat_diagr.resize(boardsize, 0);
   stat_lookups = 0;
   stat_lookups_found = 0;
   stat_cmps = 0;
@@ -143,14 +162,13 @@ uint64_t cpuSolver::solve_subboard(const std::vector<start_condition>& starts) {
   std::cout << "Column mask: " << std::hex << col_mask << " zeros in mask: " << std::to_string(mask) << std::endl;
 
   lookup_hash.clear();
-  const uint8_t lookup_depth = 5;
+  const uint8_t lookup_depth = 6;
   auto lut_init_time_start = std::chrono::high_resolution_clock::now();
   init_lookup(lookup_depth, mask);
   auto lut_init_time_end = std::chrono::high_resolution_clock::now();
   std::chrono::duration<double> elapsed = lut_init_time_end - lut_init_time_start;
 
   std::cout << "Time to init lookup table: " << std::to_string(elapsed.count()) << "s" << std::endl;
-  std::cout << "LUT depth: " << std::to_string(lookup_depth) << std::endl;
 
 #define LOOKAHEAD 3
   const int8_t rest_init = boardsize - LOOKAHEAD - this->placed;
@@ -201,6 +219,8 @@ uint64_t cpuSolver::solve_subboard(const std::vector<start_condition>& starts) {
 
             if (l_rest == rest_lookup) {
                 stat_lookups++;
+                //update_bit_stats(stat_diagl, board_width_mask & new_diagl, boardsize);
+                //update_bit_stats(stat_diagr, board_width_mask & new_diagr, boardsize);
 
                 num_lookup += get_solution_cnt(bit, new_diagl, new_diagr);
                 continue;
@@ -242,8 +262,14 @@ uint64_t cpuSolver::solve_subboard(const std::vector<start_condition>& starts) {
 size_t cpuSolver::init_lookup(uint8_t depth, uint32_t skip_mask)
 {
     std::cout << "Building Lookup Table" << std::endl;
-    uint_fast64_t stat_last_0 = 0;
-    uint_fast64_t stat_last_1 = 0;
+    std::cout << "LUT depth: " << std::to_string(depth) << std::endl;
+
+    uint_fast64_t stat_total = 0;
+    std::vector<uint_fast64_t> stat_diagl;
+    std::vector<uint_fast64_t> stat_diagr;
+
+    stat_diagl.resize(boardsize, 0);
+    stat_diagr.resize(boardsize, 0);
 
     // stat counter for number of elements in the lookup table
     uint_fast64_t num = 0;
@@ -307,23 +333,21 @@ size_t cpuSolver::init_lookup(uint8_t depth, uint32_t skip_mask)
                       //std::cout << "Info lost in diagr" << std::endl;
                   }
 
-                  if(conv_diagl & switch_bit_mask_1) {
-                      stat_last_1++;
-                  } else {
-                      stat_last_0++;
-                  }
+                  stat_total++;
+                  update_bit_stats(stat_diagl, conv_diagl, boardsize);
+                  update_bit_stats(stat_diagr, conv_diagr, boardsize);
 
-                  lookup_t new_entry = {.diag_r = static_cast<uint32_t>(conv_diagr), .diag_l = static_cast<uint32_t>(conv_diagl)};
+                  uint64_t new_entry = (static_cast<uint64_t>(conv_diagr) << 32) | static_cast<uint32_t>(conv_diagl);
 
                   auto it = lookup_hash.find(conv);
                   if (it == lookup_hash.end()) {
                       bin_lookup_t new_vec;
 
-                      if(conv_diagr & switch_bit_mask_2) {
+                      /*if(conv_diagr & switch_bit_mask_2) {
                           new_vec.v2.push_back(new_entry);
                       } else if(conv_diagl & switch_bit_mask_1) {
                           new_vec.v1.push_back(new_entry);
-                      } else {
+                      } else*/ {
                           new_vec.v0.push_back(new_entry);
                       }
 
@@ -336,11 +360,11 @@ size_t cpuSolver::init_lookup(uint8_t depth, uint32_t skip_mask)
                       bool found = false;
 
                       if(!found) {
-                          if(conv_diagr & switch_bit_mask_2) {
+                          /*if(conv_diagr & switch_bit_mask_2) {
                               vec.v2.push_back(new_entry);
                           } else if(conv_diagl & switch_bit_mask_1) {
                               vec.v1.push_back(new_entry);
-                          } else {
+                          } else */{
                               vec.v0.push_back(new_entry);
                           }
                       }
@@ -393,8 +417,7 @@ size_t cpuSolver::init_lookup(uint8_t depth, uint32_t skip_mask)
     std::cout << "Max Vec.v2 len: " << std::to_string(max_len_2) << std::endl;
     std::cout << "Max Elem cnt: " << std::to_string(max_cnt) << std::endl;
     std::cout << "Unsolvable: " << std::to_string(unsolvable) << std::endl;
-    std::cout << "Last 0: " << std::to_string(stat_last_0) << std::endl;
-    std::cout << "Last 1: " << std::to_string(stat_last_1) << std::endl;
+    std::cout << "Total: " << std::to_string(stat_total) << std::endl;
 
     return num;
 }

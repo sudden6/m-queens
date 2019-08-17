@@ -22,9 +22,9 @@ public:
 
     typedef struct
     {
-        std::vector<lookup_t> v0;
-        std::vector<lookup_t> v1;
-        std::vector<lookup_t> v2;
+        std::vector<uint64_t> v0;
+        std::vector<uint64_t> v1;
+        std::vector<uint64_t> v2;
     } bin_lookup_t;
 
 private:
