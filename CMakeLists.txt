@@ -2,7 +2,8 @@ cmake_minimum_required(VERSION 2.8)
 project(m-queens2)
 
 option(BOINC_ONLY "Build only stuff needed for BOINC" OFF)
-option(BUILD_STATIC "Build static binaries" ON)
+option(BUILD_STATIC "Build static binaries" OFF)
+option(NO_BOINC "Disable BOINC components" ON)
 # for static linking a path to the boinc static build is needed
 # boinc build commands:
 # mkdir -p /build/static_boinc/
@@ -58,6 +59,8 @@ target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/c
 configure_file(${CMAKE_SOURCE_DIR}/clqueens.cl ./ COPYONLY)
 
 endif()
+
+if(NOT ${NO_BOINC})
 
 set (CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} -O2")
 set (CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O2")
@@ -125,4 +128,4 @@ else()
     target_link_libraries(${BOINC_PROJECT} boinc_api)
 endif()
 
-
+endif()
