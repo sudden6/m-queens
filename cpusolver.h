@@ -117,7 +117,7 @@ private:
     template <class T, size_t capacityA, size_t capacityB>
     class aligned_ABvec {
         static_assert(capacityA < UINT16_MAX);
-        static constexpr uint16_t Afirst_empty_mask = 0xF800;
+        static_assert(capacityB < UINT16_MAX);
 
         T* begin;
         uint16_t Bfirst_empty;
@@ -128,7 +128,7 @@ private:
             const size_t total_capacity = capacityA + capacityB;
             begin = static_cast<T*>(aligned_alloc(16, total_capacity*sizeof(T)));
             Afirst_empty = 0;
-            Bfirst_empty = capacityA;
+            Bfirst_empty = 0;
         }
 
         aligned_ABvec (aligned_ABvec&& other) {
@@ -137,7 +137,7 @@ private:
             this->Bfirst_empty = other.Bfirst_empty;
             other.begin = nullptr;
             other.Afirst_empty = 0;
-            other.Bfirst_empty = capacityA;
+            other.Bfirst_empty = 0;
         }
 
         aligned_ABvec(aligned_ABvec const&) = delete;
@@ -161,7 +161,7 @@ private:
 
         size_t sizeB() const
         {
-            return Bfirst_empty - capacityA;
+            return Bfirst_empty;
         }
 
         void clearA()
@@ -171,7 +171,7 @@ private:
 
         void clearB()
         {
-            Bfirst_empty = capacityA;
+            Bfirst_empty = 0;
         }
 
         const T*  dataA() const {
