@@ -40,25 +40,25 @@ static uint_fast64_t stat_last_0 = 0;
 static uint_fast64_t stat_last_1 = 0;
 static uint_fast64_t stat_last_2 = 0;
 
-uint64_t cpuSolver::count_solutions(const aligned_vec<uint64_t, max_candidates>& candidates, const aligned_vec<uint64_t, lut_vec_size> &solutions) {
+uint64_t cpuSolver::count_solutions(const aligned_ABvec<uint64_t, lut_vec_size, max_candidates>& candidates) {
     uint32_t solutions_cnt = 0;
     //solutions_cnt++;/*
 
-    for(size_t c_idx = 0; c_idx < candidates.size(); c_idx++) {
-        for(size_t s_idx = 0; s_idx < solutions.size(); s_idx++) {
-            solutions_cnt += (solutions[s_idx] & candidates[c_idx]) == 0;
+    for(size_t c_idx = 0; c_idx < candidates.sizeB(); c_idx++) {
+        for(size_t s_idx = 0; s_idx < candidates.sizeA(); s_idx++) {
+            solutions_cnt += (candidates.dataA()[s_idx] & candidates.dataB()[c_idx]) == 0;
         }
     }
 //*/
     return solutions_cnt;
 }
 
-uint64_t cpuSolver::count_solutions_fixed(const aligned_vec<uint64_t, max_candidates>& candidates, const aligned_vec<uint64_t, lut_vec_size> &solutions) {
+uint64_t cpuSolver::count_solutions_fixed(const aligned_ABvec<uint64_t, lut_vec_size, max_candidates>& candidates) {
     //*
     uint32_t solutions_cnt = 0;
-    size_t sol_size = solutions.size();
-    const uint64_t* sol_data = solutions.data();
-    const uint64_t* can_data = candidates.data();
+    size_t sol_size = candidates.sizeA();
+    const uint64_t* sol_data = candidates.dataA();
+    const uint64_t* can_data = candidates.dataB();
 
 #pragma omp simd aligned(sol_data, can_data:16)
     for(size_t s_idx = 0; s_idx < sol_size; s_idx++) {
@@ -75,19 +75,18 @@ uint64_t cpuSolver::count_solutions_fixed(const aligned_vec<uint64_t, max_candid
 
 uint64_t cpuSolver::get_solution_cnt(uint32_t cols, uint32_t diagl, uint32_t diagr) {
     uint64_t solutions_cnt = 0;
-    const auto& found = lookup_candidates.find(cols);
+    const auto& found = lookup_hash.find(cols);
 
-    if(found != lookup_candidates.end()) {
+    if(found != lookup_hash.end()) {
         stat_lookups_found++;
         uint64_t search_elem = (static_cast<uint64_t>(diagr) << 32) | diagl;
 
         auto& candidates_vec = found->second;
-        candidates_vec.push_back(search_elem);
+        candidates_vec.push_backB(search_elem);
 
-        if(candidates_vec.size() == max_candidates) {
-            const auto& solutions_vec = lookup_hash.find(cols)->second;
-            solutions_cnt = count_solutions_fixed(candidates_vec, solutions_vec);
-            candidates_vec.clear();
+        if(candidates_vec.sizeB() == max_candidates) {
+            solutions_cnt = count_solutions_fixed(candidates_vec);
+            candidates_vec.clearB();
         }
     }
 
@@ -151,7 +150,6 @@ uint64_t cpuSolver::solve_subboard(const std::vector<start_condition>& starts) {
 
   std::cout << "Column mask: " << std::hex << col_mask << " zeros in mask: " << std::to_string(mask) << std::endl;
 
-  lookup_candidates.clear();
   lookup_hash.clear();
 
   auto lut_init_time_start = std::chrono::high_resolution_clock::now();
@@ -241,11 +239,10 @@ uint64_t cpuSolver::solve_subboard(const std::vector<start_condition>& starts) {
 
   std::cout << "Cleaning Lookup table" << std::endl;
 
-  for (auto& it : lookup_candidates) {
+  for (auto& it : lookup_hash) {
       auto& candidates_vec = it.second;
-      if(candidates_vec.size() > 0) {
-          const auto& solutions_vec = lookup_hash.find(it.first)->second;
-          num_lookup += count_solutions(candidates_vec, solutions_vec);
+      if(candidates_vec.sizeB() > 0) {
+          num_lookup += count_solutions(candidates_vec);
       }
   }
 
@@ -265,8 +262,8 @@ size_t cpuSolver::init_lookup(uint8_t depth, uint32_t skip_mask)
 {
     std::cout << "Building Lookup Table" << std::endl;
     std::cout << "LUT depth: " << std::to_string(depth) << std::endl;
-    aligned_vec<uint64_t, max_candidates> test;
-    std::cout << "LUT element size: " << sizeof(test) << std::endl;
+    aligned_ABvec<uint64_t, lut_vec_size, max_candidates> test;
+    std::cout << "LUT element size: " << std::to_string(sizeof(test)) << std::endl;
 
     uint_fast64_t stat_total = 0;
     std::vector<uint_fast64_t> stat_diagl;
@@ -347,14 +344,12 @@ size_t cpuSolver::init_lookup(uint8_t depth, uint32_t skip_mask)
 
                   if (it != lookup_hash.end()) {
                       auto& vec = it->second;
-                      vec.push_back(new_entry);
+                      vec.push_backA(new_entry);
                       num++;
                   } else {
-                      aligned_vec<uint64_t, lut_vec_size> new_vec;
-                      new_vec.push_back(new_entry);
-                      aligned_vec<uint64_t, max_candidates> candidates;
+                      aligned_ABvec<uint64_t, lut_vec_size, max_candidates> new_vec;
+                      new_vec.push_backA(new_entry);
                       lookup_hash.emplace(conv, std::move(new_vec));
-                      lookup_candidates.emplace(conv, std::move(candidates));
 
                       num++;
                   }
@@ -394,7 +389,7 @@ size_t cpuSolver::init_lookup(uint8_t depth, uint32_t skip_mask)
     uint64_t max_cnt = 0;
     uint64_t vec_idx = 0;
     for(const auto& vec : lookup_hash) {
-        size_t vec_size = vec.second.size();
+        size_t vec_size = vec.second.sizeA();
         //std::cout << "Vec [" << std::to_string(vec_idx) << "] size: " << std::to_string(vec_size) << std::endl;
         vec_idx++;
         max_len_0 = std::max(vec_size, max_len_0);

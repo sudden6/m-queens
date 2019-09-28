@@ -36,8 +36,8 @@ private:
     // depth 4 -> vec 24
     // depth 5 -> vec 88
     // depth 6 -> vec 316
-    static constexpr uint8_t lookup_depth = 4;
-    static constexpr size_t lut_vec_size = 24;
+    static constexpr uint8_t lookup_depth = 5;
+    static constexpr size_t lut_vec_size = 88;
     static constexpr size_t max_candidates = 512;
 
     template <class T, size_t capacity>
@@ -113,14 +113,104 @@ private:
         }
     };
 
+    #pragma pack(push, 1)
+    template <class T, size_t capacityA, size_t capacityB>
+    class aligned_ABvec {
+        static_assert(capacityA < UINT16_MAX);
+        static constexpr uint16_t Afirst_empty_mask = 0xF800;
 
+        T* begin;
+        uint16_t Bfirst_empty;
+        uint16_t Afirst_empty;
+      public:
+        aligned_ABvec()
+        {
+            const size_t total_capacity = capacityA + capacityB;
+            begin = static_cast<T*>(aligned_alloc(16, total_capacity*sizeof(T)));
+            Afirst_empty = 0;
+            Bfirst_empty = capacityA;
+        }
 
+        aligned_ABvec (aligned_ABvec&& other) {
+            this->begin = other.begin;
+            this->Afirst_empty = other.Afirst_empty;
+            this->Bfirst_empty = other.Bfirst_empty;
+            other.begin = nullptr;
+            other.Afirst_empty = 0;
+            other.Bfirst_empty = capacityA;
+        }
 
-    phmap::flat_hash_map<uint32_t, aligned_vec<uint64_t, lut_vec_size>, u32_hasher> lookup_hash;
-    phmap::flat_hash_map<uint32_t, aligned_vec<uint64_t, max_candidates>> lookup_candidates;
+        aligned_ABvec(aligned_ABvec const&) = delete;
+        aligned_ABvec& operator=(aligned_ABvec const&) = delete;
+
+        ~aligned_ABvec()
+        {
+            free(begin);
+            begin = nullptr;
+        }
+
+        bool valid()
+        {
+            return begin != nullptr;
+        }
+
+        size_t sizeA() const
+        {
+            return Afirst_empty;
+        }
+
+        size_t sizeB() const
+        {
+            return Bfirst_empty - capacityA;
+        }
+
+        void clearA()
+        {
+            Afirst_empty = 0;
+        }
+
+        void clearB()
+        {
+            Bfirst_empty = capacityA;
+        }
+
+        const T*  dataA() const {
+            return begin;
+        }
+
+        T* dataA() {
+            return begin;
+        }
+
+        const T*  dataB() const {
+            return begin + capacityA;
+        }
+
+        T*  dataB() {
+            return begin + capacityA;
+        }
+
+        void push_backA(T& element)
+        {
+            assert(sizeA() < capacityA);
+            dataA()[sizeA()] = element;
+            Afirst_empty++;
+        }
+
+        void push_backB(T& element)
+        {
+            assert(sizeB() < capacityB);
+            dataB()[sizeB()] = element;
+            Bfirst_empty++;
+        }
+    };
+    #pragma pack(pop)
+
+    phmap::flat_hash_map<uint32_t, aligned_ABvec<uint64_t, lut_vec_size, max_candidates>> lookup_hash;
+    //phmap::flat_hash_map<uint32_t, aligned_vec<uint64_t, max_candidates>> lookup_candidates;
     uint64_t get_solution_cnt(uint32_t cols, uint32_t diagl, uint32_t diagr);
-    uint64_t count_solutions(const aligned_vec<uint64_t, max_candidates> &candidates, const aligned_vec<uint64_t, lut_vec_size> &solutions);
-    uint64_t count_solutions_fixed(const aligned_vec<uint64_t, max_candidates>& candidates, const aligned_vec<uint64_t, lut_vec_size> &solutions);
+    uint64_t count_solutions(const aligned_ABvec<uint64_t, lut_vec_size, max_candidates> &candidates);
+    uint64_t count_solutions_fixed(const aligned_ABvec<uint64_t, lut_vec_size, max_candidates>& candidates);
 };
 
 #endif // CPUSOLVER_H
