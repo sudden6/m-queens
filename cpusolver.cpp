@@ -242,11 +242,6 @@ size_t cpuSolver::init_lookup(uint8_t depth, uint32_t skip_mask)
     std::cout << "LUT element size: " << std::to_string(sizeof(test)) << std::endl;
 
     uint_fast64_t stat_total = 0;
-    std::vector<uint_fast64_t> stat_diagl;
-    std::vector<uint_fast64_t> stat_diagr;
-
-    stat_diagl.resize(boardsize, 0);
-    stat_diagr.resize(boardsize, 0);
 
     // stat counter for number of elements in the lookup table
     uint_fast64_t num = 0;
