@@ -30,32 +30,32 @@ bool cpuSolver::init(uint8_t boardsize, uint8_t placed)
     return true;
 }
 
-uint64_t cpuSolver::count_solutions(const aligned_ABvec<uint64_t, lut_vec_size, max_candidates>& candidates) {
+uint64_t cpuSolver::count_solutions(const aligned_ABvec<diags_packed_t, lut_vec_size, max_candidates> &candidates) {
     uint32_t solutions_cnt = 0;
     const size_t sol_size = candidates.sizeA();
     const size_t can_size = candidates.sizeB();
-    const uint64_t* sol_data = candidates.dataA();
-    const uint64_t* can_data = candidates.dataB();
+    const diags_packed_t* sol_data = candidates.dataA();
+    const diags_packed_t* can_data = candidates.dataB();
 
     for(size_t c_idx = 0; c_idx < can_size; c_idx++) {
         for(size_t s_idx = 0; s_idx < sol_size; s_idx++) {
-            solutions_cnt += (sol_data[s_idx] & can_data[c_idx]) == 0;
+            solutions_cnt += (sol_data[s_idx].diagr & can_data[c_idx].diagr) == 0 && (sol_data[s_idx].diagl & can_data[c_idx].diagl) == 0;
         }
     }
 
     return solutions_cnt;
 }
 
-uint64_t cpuSolver::count_solutions_fixed(const aligned_ABvec<uint64_t, lut_vec_size, max_candidates>& candidates) {
+uint64_t cpuSolver::count_solutions_fixed(const aligned_ABvec<diags_packed_t, lut_vec_size, max_candidates>& candidates) {
     uint32_t solutions_cnt = 0;
     const size_t sol_size = candidates.sizeA();
-    const uint64_t* sol_data = candidates.dataA();
-    const uint64_t* can_data = candidates.dataB();
+    const diags_packed_t* sol_data = candidates.dataA();
+    const diags_packed_t* can_data = candidates.dataB();
 
     for(size_t s_idx = 0; s_idx < sol_size; s_idx++) {
 #pragma omp simd reduction(+:solutions_cnt)
         for(size_t c_idx = 0; c_idx < max_candidates; c_idx++) {
-            solutions_cnt += (sol_data[s_idx] & can_data[c_idx]) == 0;
+            solutions_cnt += (sol_data[s_idx].diagr & can_data[c_idx].diagr) == 0 && (sol_data[s_idx].diagl & can_data[c_idx].diagl) == 0;
         }
     }
 
@@ -70,7 +70,7 @@ uint64_t cpuSolver::get_solution_cnt(uint32_t cols, uint32_t diagl, uint32_t dia
     // since the lookup table contains all possible combinations, we know the current one will be found
     assert(found != lookup_hash.end());
 
-    uint64_t search_elem = (static_cast<uint64_t>(diagr) << 32) | diagl;
+    diags_packed_t search_elem = {.diagr = diagr, .diagl = diagl};
 
     auto& candidates_vec = found->second;
     candidates_vec.push_backB(search_elem);
@@ -303,7 +303,7 @@ size_t cpuSolver::init_lookup(uint8_t depth, uint32_t skip_mask)
                   stat_total++;
 
                   // combine diagonals for easier handling
-                  uint64_t new_entry = (static_cast<uint64_t>(conv_diagr) << 32) | static_cast<uint32_t>(conv_diagl);
+                  diags_packed_t new_entry = {.diagr = static_cast<uint32_t>(conv_diagr), .diagl = static_cast<uint32_t>(conv_diagl);
 
                   auto it = lookup_hash.find(conv);
 
@@ -313,7 +313,7 @@ size_t cpuSolver::init_lookup(uint8_t depth, uint32_t skip_mask)
                       num++;
                   } else {
                       // column pattern doesn't yet exist, create one
-                      aligned_ABvec<uint64_t, lut_vec_size, max_candidates> new_vec;
+                      aligned_ABvec<diags_packed_t, lut_vec_size, max_candidates> new_vec;
                       new_vec.push_backA(new_entry);
                       lookup_hash.emplace(conv, std::move(new_vec));
 

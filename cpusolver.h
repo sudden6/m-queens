@@ -118,14 +118,22 @@ private:
     };
     #pragma pack(pop)
 
+#pragma pack(push, 1)
+        typedef struct
+        {
+            uint32_t diagr;
+            uint32_t diagl;
+        } diags_packed_t;
+#pragma pack(pop)
+
     uint_fast64_t stat_lookups = 0;
     uint_fast64_t stat_lookups_found = 0;
     uint_fast64_t stat_cmps = 0;
 
-    phmap::flat_hash_map<uint32_t, aligned_ABvec<uint64_t, lut_vec_size, max_candidates>> lookup_hash;
+    phmap::flat_hash_map<uint32_t, aligned_ABvec<diags_packed_t, lut_vec_size, max_candidates>> lookup_hash;
     uint64_t get_solution_cnt(uint32_t cols, uint32_t diagl, uint32_t diagr);
-    uint64_t count_solutions(const aligned_ABvec<uint64_t, lut_vec_size, max_candidates> &candidates);
-    uint64_t count_solutions_fixed(const aligned_ABvec<uint64_t, lut_vec_size, max_candidates>& candidates);
+    uint64_t count_solutions(const aligned_ABvec<diags_packed_t, lut_vec_size, max_candidates> &candidates);
+    uint64_t count_solutions_fixed(const aligned_ABvec<diags_packed_t, lut_vec_size, max_candidates> &candidates);
 };
 
 #endif // CPUSOLVER_H
