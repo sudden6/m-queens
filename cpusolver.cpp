@@ -30,45 +30,35 @@ bool cpuSolver::init(uint8_t boardsize, uint8_t placed)
     return true;
 }
 
-static constexpr uint_fast32_t switch_bit_mask_1 = 1 << 11;
-static constexpr uint_fast32_t switch_bit_mask_2 = 1 << 5;
-
-static uint_fast64_t stat_lookups = 0;
-static uint_fast64_t stat_lookups_found = 0;
-static uint_fast64_t stat_cmps = 0;
-static uint_fast64_t stat_last_0 = 0;
-static uint_fast64_t stat_last_1 = 0;
-static uint_fast64_t stat_last_2 = 0;
-
 uint64_t cpuSolver::count_solutions(const aligned_ABvec<uint64_t, lut_vec_size, max_candidates>& candidates) {
     uint32_t solutions_cnt = 0;
-    //solutions_cnt++;/*
+    const size_t sol_size = candidates.sizeA();
+    const size_t can_size = candidates.sizeB();
+    const uint64_t* sol_data = candidates.dataA();
+    const uint64_t* can_data = candidates.dataB();
 
-    for(size_t c_idx = 0; c_idx < candidates.sizeB(); c_idx++) {
-        for(size_t s_idx = 0; s_idx < candidates.sizeA(); s_idx++) {
-            solutions_cnt += (candidates.dataA()[s_idx] & candidates.dataB()[c_idx]) == 0;
+    for(size_t c_idx = 0; c_idx < can_size; c_idx++) {
+        for(size_t s_idx = 0; s_idx < sol_size; s_idx++) {
+            solutions_cnt += (sol_data[s_idx] & can_data[c_idx]) == 0;
         }
     }
-//*/
+
     return solutions_cnt;
 }
 
 uint64_t cpuSolver::count_solutions_fixed(const aligned_ABvec<uint64_t, lut_vec_size, max_candidates>& candidates) {
-    //*
     uint32_t solutions_cnt = 0;
-    size_t sol_size = candidates.sizeA();
+    const size_t sol_size = candidates.sizeA();
     const uint64_t* sol_data = candidates.dataA();
     const uint64_t* can_data = candidates.dataB();
 
-#pragma omp simd aligned(sol_data, can_data:16)
     for(size_t s_idx = 0; s_idx < sol_size; s_idx++) {
+#pragma omp simd reduction(+:solutions_cnt)
         for(size_t c_idx = 0; c_idx < max_candidates; c_idx++) {
             solutions_cnt += (sol_data[s_idx] & can_data[c_idx]) == 0;
         }
-    }//*/
+    }
 
-    stat_last_0++;
-    //return stat_last_0;
     return solutions_cnt;
 }
 
@@ -77,17 +67,17 @@ uint64_t cpuSolver::get_solution_cnt(uint32_t cols, uint32_t diagl, uint32_t dia
     uint64_t solutions_cnt = 0;
     const auto& found = lookup_hash.find(cols);
 
-    if(found != lookup_hash.end()) {
-        stat_lookups_found++;
-        uint64_t search_elem = (static_cast<uint64_t>(diagr) << 32) | diagl;
+    // since the lookup table contains all possible combinations, we know the current one will be found
+    assert(found != lookup_hash.end());
 
-        auto& candidates_vec = found->second;
-        candidates_vec.push_backB(search_elem);
+    uint64_t search_elem = (static_cast<uint64_t>(diagr) << 32) | diagl;
 
-        if(candidates_vec.sizeB() == max_candidates) {
-            solutions_cnt = count_solutions_fixed(candidates_vec);
-            candidates_vec.clearB();
-        }
+    auto& candidates_vec = found->second;
+    candidates_vec.push_backB(search_elem);
+
+    if(candidates_vec.sizeB() == max_candidates) {
+        solutions_cnt = count_solutions_fixed(candidates_vec);
+        candidates_vec.clearB();
     }
 
     return solutions_cnt;
@@ -112,17 +102,9 @@ void update_bit_stats(std::vector<uint_fast64_t>& state, uint64_t bits, size_t n
 
 uint64_t cpuSolver::solve_subboard(const std::vector<start_condition>& starts) {
 
-  std::vector<uint_fast64_t> stat_diagl;
-  std::vector<uint_fast64_t> stat_diagr;
-
-  stat_diagl.resize(boardsize, 0);
-  stat_diagr.resize(boardsize, 0);
   stat_lookups = 0;
   stat_lookups_found = 0;
   stat_cmps = 0;
-  stat_last_0 = 0;
-  stat_last_1 = 0;
-  stat_last_2 = 0;
   std::cout << "Solving N=" << std::to_string(boardsize) << std::endl;
   // counter for the number of solutions
   // sufficient until n=29
@@ -164,7 +146,7 @@ uint64_t cpuSolver::solve_subboard(const std::vector<start_condition>& starts) {
   // TODO: find out why +1 is needed
   const int8_t rest_lookup = rest_init - (boardsize - this->placed - lookup_depth) + 1;
 
-//#pragma omp parallel for reduction(+ : num) schedule(dynamic)
+//#pragma omp parallel for firstprivate(lookup_hash) reduction(+ : num_lookup) schedule(dynamic)
   for (uint_fast32_t cnt = 0; cnt < start_cnt; cnt++) {
     uint_fast32_t cols[MAXN], posibs[MAXN]; // Our backtracking 'stack'
     uint_fast32_t diagl[MAXN], diagr[MAXN];
@@ -207,10 +189,7 @@ uint64_t cpuSolver::solve_subboard(const std::vector<start_condition>& starts) {
             }
 
             if (l_rest == rest_lookup) {
-                stat_lookups++;
-                //update_bit_stats(stat_diagl, board_width_mask & new_diagl, boardsize);
-                //update_bit_stats(stat_diagr, board_width_mask & new_diagr, boardsize);
-
+                // compute final lookup_depth stages via hashtable lookup
                 num_lookup += get_solution_cnt(bit, new_diagl, new_diagr);
                 continue;
             }
@@ -250,9 +229,6 @@ uint64_t cpuSolver::solve_subboard(const std::vector<start_condition>& starts) {
   std::cout << "Lookups: " << std::to_string(stat_lookups) << std::endl;
   std::cout << "Lookups found: " << std::to_string(stat_lookups_found) << std::endl;
   std::cout << "Compares: " << std::to_string(stat_cmps) << std::endl;
-  std::cout << "Last 0: " << std::to_string(stat_last_0) << std::endl;
-  std::cout << "Last 1: " << std::to_string(stat_last_1) << std::endl;
-  std::cout << "Last 2: " << std::to_string(stat_last_2) << std::endl;
   std::cout << "Solutions Lookup: " << std::to_string(num_lookup*2) << std::endl;
 
   return num_lookup * 2;
@@ -318,26 +294,20 @@ size_t cpuSolver::init_lookup(uint8_t depth, uint32_t skip_mask)
                   continue;
               }
 
+              // check if at the correct depth to save to the lookup table
               if (l_rest == 0) {
+                  // In the solver we look for free columns, so we must invert the bits here
+                  // fill up with ones to match padding in the solver
                   uint32_t conv = ~bit | (UINT_FAST32_MAX << boardsize);
                   const uint_fast32_t board_width_mask = ~(UINT_FAST32_MAX << boardsize);
+                  // diagonals are not inverted, they have to be compared in the solver step
+                  // we loose some bits here, but they do not matter for a solution
                   uint_fast32_t conv_diagl = (new_diagl >> depth) & board_width_mask;
-
-                  // TODO(sudden6): pulling bits out of thin air, need to fix
                   uint_fast32_t conv_diagr = new_diagr & board_width_mask;
-                  // std::cout << std::hex << (conv & 0xFF) << std::endl;
-
-                  if (__builtin_popcount(conv_diagl) != depth) {
-                      //std::cout << "Info lost in diagl" << std::endl;
-                  }
-                  if (__builtin_popcount(conv_diagr) != depth) {
-                      //std::cout << "Info lost in diagr" << std::endl;
-                  }
 
                   stat_total++;
-                  update_bit_stats(stat_diagl, conv_diagl, boardsize);
-                  update_bit_stats(stat_diagr, conv_diagr, boardsize);
 
+                  // combine diagonals for easier handling
                   uint64_t new_entry = (static_cast<uint64_t>(conv_diagr) << 32) | static_cast<uint32_t>(conv_diagl);
 
                   auto it = lookup_hash.find(conv);
@@ -347,12 +317,14 @@ size_t cpuSolver::init_lookup(uint8_t depth, uint32_t skip_mask)
                       vec.push_backA(new_entry);
                       num++;
                   } else {
+                      // column pattern doesn't yet exist, create one
                       aligned_ABvec<uint64_t, lut_vec_size, max_candidates> new_vec;
                       new_vec.push_backA(new_entry);
                       lookup_hash.emplace(conv, std::move(new_vec));
 
                       num++;
                   }
+
                   continue;
               }
 
