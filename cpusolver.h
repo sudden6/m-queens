@@ -18,12 +18,12 @@ private:
     // depth 2 -> vec 2
     // depth 3 -> vec 6
     // depth 4 -> vec 24
-    // depth 5 -> vec 88 <- seems to be the optimum for now round to 96 for alignement
-    // depth 6 -> vec 316
+    // depth 5 -> vec 88
+    // depth 6 -> vec 316 <- seems to be the optimum for now
     // depth 7 -> vec 1100
-    static constexpr uint8_t lookup_depth = 5;
-    static constexpr size_t lut_vec_size = 96;
-    static constexpr size_t max_candidates = 64;
+    static constexpr uint8_t lookup_depth = 6;
+    static constexpr size_t lut_vec_size = 316;
+    static constexpr size_t max_candidates = 128;
 
     #pragma pack(push, 1)
     template <class T, size_t capacityA, size_t capacityB>
@@ -32,8 +32,8 @@ private:
         static_assert(capacityB < UINT16_MAX);
 
         T* begin;
-        uint8_t Bfirst_empty;
-        uint8_t Afirst_empty;
+        uint16_t Bfirst_empty;
+        uint16_t Afirst_empty;
       public:
         aligned_ABvec()
         {
@@ -131,7 +131,7 @@ private:
     uint_fast64_t stat_cmps = 0;
 
     phmap::flat_hash_map<uint32_t, aligned_ABvec<diags_packed_t, lut_vec_size, max_candidates>> lookup_hash;
-    uint64_t get_solution_cnt(uint32_t cols, uint32_t diagl, uint32_t diagr);
+    uint64_t get_solution_cnt(uint32_t cols, diags_packed_t search_elem);
     uint64_t count_solutions(const aligned_ABvec<diags_packed_t, lut_vec_size, max_candidates> &candidates);
     uint64_t count_solutions_fixed(const aligned_ABvec<diags_packed_t, lut_vec_size, max_candidates> &candidates);
 };

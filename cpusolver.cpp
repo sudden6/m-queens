@@ -63,14 +63,12 @@ uint64_t cpuSolver::count_solutions_fixed(const aligned_ABvec<diags_packed_t, lu
 }
 
 
-uint64_t cpuSolver::get_solution_cnt(uint32_t cols, uint32_t diagl, uint32_t diagr) {
+uint64_t cpuSolver::get_solution_cnt(uint32_t cols, diags_packed_t search_elem) {
     uint64_t solutions_cnt = 0;
     const auto& found = lookup_hash.find(cols);
 
     // since the lookup table contains all possible combinations, we know the current one will be found
     assert(found != lookup_hash.end());
-
-    diags_packed_t search_elem = {.diagr = diagr, .diagl = diagl};
 
     auto& candidates_vec = found->second;
     candidates_vec.push_backB(search_elem);
@@ -190,7 +188,7 @@ uint64_t cpuSolver::solve_subboard(const std::vector<start_condition>& starts) {
 
             if (l_rest == rest_lookup) {
                 // compute final lookup_depth stages via hashtable lookup
-                num_lookup += get_solution_cnt(bit, new_diagl, new_diagr);
+                num_lookup += get_solution_cnt(bit, {.diagr = static_cast<uint32_t>(new_diagr), .diagl = static_cast<uint32_t>(new_diagl)});
                 continue;
             }
 
@@ -303,7 +301,7 @@ size_t cpuSolver::init_lookup(uint8_t depth, uint32_t skip_mask)
                   stat_total++;
 
                   // combine diagonals for easier handling
-                  diags_packed_t new_entry = {.diagr = static_cast<uint32_t>(conv_diagr), .diagl = static_cast<uint32_t>(conv_diagl);
+                  diags_packed_t new_entry = {.diagr = static_cast<uint32_t>(conv_diagr), .diagl = static_cast<uint32_t>(conv_diagl)};
 
                   auto it = lookup_hash.find(conv);
 
