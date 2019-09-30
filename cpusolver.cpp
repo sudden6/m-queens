@@ -34,10 +34,11 @@ uint64_t cpuSolver::count_solutions(const aligned_ABvec<diags_packed_t, lut_vec_
     uint32_t solutions_cnt = 0;
     const size_t sol_size = candidates.sizeA();
     const size_t can_size = candidates.sizeB();
-    const diags_packed_t* sol_data = candidates.dataA();
-    const diags_packed_t* can_data = candidates.dataB();
+    const diags_packed_t* __restrict__ sol_data = candidates.dataA();
+    const diags_packed_t* __restrict__ can_data = candidates.dataB();
 
     for(size_t c_idx = 0; c_idx < can_size; c_idx++) {
+#pragma omp simd reduction(+:solutions_cnt)
         for(size_t s_idx = 0; s_idx < sol_size; s_idx++) {
             solutions_cnt += (sol_data[s_idx].diagr & can_data[c_idx].diagr) == 0 && (sol_data[s_idx].diagl & can_data[c_idx].diagl) == 0;
         }
@@ -49,8 +50,8 @@ uint64_t cpuSolver::count_solutions(const aligned_ABvec<diags_packed_t, lut_vec_
 uint64_t cpuSolver::count_solutions_fixed(const aligned_ABvec<diags_packed_t, lut_vec_size, max_candidates>& candidates) {
     uint32_t solutions_cnt = 0;
     const size_t sol_size = candidates.sizeA();
-    const diags_packed_t* sol_data = candidates.dataA();
-    const diags_packed_t* can_data = candidates.dataB();
+    const diags_packed_t* __restrict__ sol_data = candidates.dataA();
+    const diags_packed_t* __restrict__ can_data = candidates.dataB();
 
     for(size_t s_idx = 0; s_idx < sol_size; s_idx++) {
 #pragma omp simd reduction(+:solutions_cnt)
@@ -188,6 +189,7 @@ uint64_t cpuSolver::solve_subboard(const std::vector<start_condition>& starts) {
 
             if (l_rest == rest_lookup) {
                 // compute final lookup_depth stages via hashtable lookup
+                stat_lookups++;
                 num_lookup += get_solution_cnt(bit, {.diagr = static_cast<uint32_t>(new_diagr), .diagl = static_cast<uint32_t>(new_diagl)});
                 continue;
             }
