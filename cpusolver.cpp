@@ -3,6 +3,8 @@
 #include <cassert>
 #include <chrono>
 
+#include <emmintrin.h>
+#include <xmmintrin.h>
 
 cpuSolver::cpuSolver()
 {
@@ -47,20 +49,59 @@ uint64_t cpuSolver::count_solutions(const aligned_ABvec<diags_packed_t, lut_vec_
     return solutions_cnt;
 }
 
-uint64_t cpuSolver::count_solutions_fixed(const aligned_ABvec<diags_packed_t, lut_vec_size, max_candidates>& candidates) {
-    uint32_t solutions_cnt = 0;
+uint32_t cpuSolver::count_solutions_fixed(const aligned_ABvec<diags_packed_t, lut_vec_size, max_candidates>& candidates) {
     const size_t sol_size = candidates.sizeA();
     const diags_packed_t* __restrict__ sol_data = candidates.dataA();
     const diags_packed_t* __restrict__ can_data = candidates.dataB();
 
+    /*
     for(size_t s_idx = 0; s_idx < sol_size; s_idx++) {
 #pragma omp simd reduction(+:solutions_cnt)
         for(size_t c_idx = 0; c_idx < max_candidates; c_idx++) {
             solutions_cnt += (sol_data[s_idx].diagr & can_data[c_idx].diagr) == 0 && (sol_data[s_idx].diagl & can_data[c_idx].diagl) == 0;
         }
     }
+    */
 
-    return solutions_cnt;
+    /*
+    uint32_t solutions_cnt = sol_size * max_candidates;
+    for(size_t s_idx = 0; s_idx < sol_size; s_idx++) {
+#pragma omp simd reduction(+:solutions_cnt)
+        for(size_t c_idx = 0; c_idx < max_candidates; c_idx++) {
+            solutions_cnt -= (sol_data[s_idx].diagr & can_data[c_idx].diagr) || (sol_data[s_idx].diagl & can_data[c_idx].diagl);
+        }
+    }
+    */
+
+    __m128i sol_cnt_0_1_2_3 = _mm_setzero_si128();
+    __m128i zero_vec = _mm_setzero_si128();
+
+    for(size_t s_idx = 0; s_idx < sol_size; s_idx += 2) {
+        __m128i sol_data_0_1 = _mm_load_si128((const __m128i*) &sol_data[s_idx]);
+        __m128i sol_data_1_0 = _mm_castpd_si128(_mm_shuffle_pd(_mm_castsi128_pd(sol_data_0_1), _mm_castsi128_pd(sol_data_0_1), 1));
+
+        for(size_t c_idx = 0; c_idx < max_candidates; c_idx += 2) {
+            __m128i can_data_0_1 = _mm_load_si128((const __m128i*) &can_data[c_idx]);
+            __m128i and_res_0_1 = _mm_and_si128(sol_data_0_1, can_data_0_1);
+            __m128i and_res_2_3 = _mm_and_si128(sol_data_1_0, can_data_0_1);
+
+            __m128 and_res_0_1_2_3r = _mm_shuffle_ps(_mm_castsi128_ps(and_res_0_1), _mm_castsi128_ps(and_res_2_3), _MM_SHUFFLE(2, 0, 2, 0));
+            __m128 and_res_0_1_2_3l = _mm_shuffle_ps(_mm_castsi128_ps(and_res_0_1), _mm_castsi128_ps(and_res_2_3), _MM_SHUFFLE(3, 1, 3, 1));
+
+            __m128i or_res = _mm_or_si128(_mm_castps_si128(and_res_0_1_2_3r), _mm_castps_si128(and_res_0_1_2_3l));
+            __m128i cmp_res = _mm_cmpgt_epi32(or_res, zero_vec);
+
+            sol_cnt_0_1_2_3 = _mm_add_epi32(cmp_res, sol_cnt_0_1_2_3);
+        }
+    }
+
+    uint32_t sol_cnt_vec[4];
+
+    _mm_store_si128((__m128i*)sol_cnt_vec, sol_cnt_0_1_2_3);
+
+    uint32_t sol_sum = sol_cnt_vec[0] + sol_cnt_vec[1] + sol_cnt_vec[2] + sol_cnt_vec[3];
+
+    return sol_size * max_candidates + sol_sum;
 }
 
 
@@ -352,17 +393,20 @@ size_t cpuSolver::init_lookup(uint8_t depth, uint32_t skip_mask)
     std::cout << "Lookup entries: " << std::to_string(num) << std::endl;
     std::cout << "Multiple entries: " << std::to_string(multiple_entries) << std::endl;
     std::cout << "Avg Vec len: " << std::to_string(static_cast<double>(num)/lookup_hash.size()) << std::endl;
-    uint_fast64_t max_len_0 = 0;
-    uint64_t max_cnt = 0;
+    size_t max_len = 0;
+    size_t min_len = SIZE_MAX;
+    size_t align_check = 0;
     uint64_t vec_idx = 0;
     for(const auto& vec : lookup_hash) {
         size_t vec_size = vec.second.sizeA();
         //std::cout << "Vec [" << std::to_string(vec_idx) << "] size: " << std::to_string(vec_size) << std::endl;
         vec_idx++;
-        max_len_0 = std::max(vec_size, max_len_0);
+        max_len = std::max(vec_size, max_len);
+        min_len = std::min(vec_size, min_len);
+        align_check |= vec_size;
     }
-    std::cout << "Max Vec len: " << std::to_string(max_len_0) << std::endl;
-    std::cout << "Max Elem cnt: " << std::to_string(max_cnt) << std::endl;
+    std::cout << "Max Vec len: " << std::to_string(max_len) << std::endl;
+    std::cout << "Min Vec len: " << std::to_string(max_len) << std::endl;
     std::cout << "Unsolvable: " << std::to_string(unsolvable) << std::endl;
     std::cout << "Total: " << std::to_string(stat_total) << std::endl;
 

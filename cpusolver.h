@@ -24,7 +24,7 @@ private:
     // depth 7 -> vec 1100
     static constexpr uint8_t lookup_depth = 6;
     static constexpr size_t lut_vec_size = 552;
-    static constexpr size_t max_candidates = 128;
+    static constexpr size_t max_candidates = 512;
 
     #pragma pack(push, 1)
     template <class T, size_t capacityA, size_t capacityB>
@@ -134,7 +134,7 @@ private:
     phmap::flat_hash_map<uint32_t, aligned_ABvec<diags_packed_t, lut_vec_size, max_candidates>> lookup_hash;
     uint64_t get_solution_cnt(uint32_t cols, diags_packed_t search_elem);
     uint64_t count_solutions(const aligned_ABvec<diags_packed_t, lut_vec_size, max_candidates> &candidates);
-    uint64_t count_solutions_fixed(const aligned_ABvec<diags_packed_t, lut_vec_size, max_candidates> &candidates);
+    uint32_t count_solutions_fixed(const aligned_ABvec<diags_packed_t, lut_vec_size, max_candidates> &candidates);
 };
 
 #endif // CPUSOLVER_H
