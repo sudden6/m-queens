@@ -36,6 +36,7 @@ private:
         aligned_vec(size_t size, size_t init_size = 0)
         {
             begin = static_cast<T*>(aligned_alloc(AVX2_alignment, size*sizeof(T)));
+            assert(begin);
             first_empty = begin + init_size;
         }
 

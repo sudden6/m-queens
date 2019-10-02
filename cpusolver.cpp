@@ -2,6 +2,7 @@
 #include <iostream>
 #include <cassert>
 #include <chrono>
+#include <omp.h>
 
 #include <emmintrin.h>
 #include <immintrin.h>
@@ -248,15 +249,24 @@ uint64_t cpuSolver::solve_subboard(const std::vector<start_condition>& starts) {
   // TODO: find out why +1 is needed
   const int8_t rest_lookup = rest_init - (boardsize - this->placed - lookup_depth) + 1;
 
+  const size_t thread_cnt = 8;
+
   // first index: lookup table index
-  lut_t lookup_candidates;
-  for (size_t i = 0; i < lookup_solutions.size(); i++) {
-      aligned_vec<diags_packed_t> new_vec(max_candidates);
-      lookup_candidates.emplace_back(std::move(new_vec));
+  std::vector<lut_t> thread_luts;
+  for(size_t t = 0; t < thread_cnt; t++) {
+      lut_t new_lut;
+      new_lut.reserve(lookup_solutions.size());
+      for (size_t i = 0; i < lookup_solutions.size(); i++) {
+          new_lut.emplace_back(aligned_vec<diags_packed_t>(max_candidates));
+      }
+
+      thread_luts.push_back(std::move(new_lut));
   }
 
-#pragma omp parallel for private(lookup_candidates) reduction(+ : num_lookup) schedule(dynamic)
+#pragma omp parallel for reduction(+ : num_lookup) num_threads(thread_cnt) schedule(dynamic)
   for (uint_fast32_t cnt = 0; cnt < start_cnt; cnt++) {
+    const size_t thread_num = omp_get_thread_num();
+    lut_t& lookup_candidates = thread_luts[thread_num];
     uint_fast32_t cols[MAXN], posibs[MAXN]; // Our backtracking 'stack'
     uint_fast32_t diagl[MAXN], diagr[MAXN];
     int8_t rest[MAXN]; // number of rows left
@@ -329,12 +339,16 @@ uint64_t cpuSolver::solve_subboard(const std::vector<start_condition>& starts) {
 
   std::cout << "Cleaning Lookup table" << std::endl;
   auto lut_clean_time_start = std::chrono::high_resolution_clock::now();
-  for (auto& it : lookup_hash) {
+#pragma omp parallel for reduction(+ : num_lookup) num_threads(thread_cnt) schedule(dynamic)
+  for(size_t t = 0; t < thread_luts.size(); t++) {
+      for (auto& it : lookup_hash) {
       auto lookup_idx = it.second;
-      if(lookup_candidates[lookup_idx].size() > 0) {
-          num_lookup += count_solutions(lookup_solutions[lookup_idx], lookup_candidates[lookup_idx]);
+          if(thread_luts[t][lookup_idx].size() > 0) {
+              num_lookup += count_solutions(lookup_solutions[lookup_idx], thread_luts[t][lookup_idx]);
+          }
       }
   }
+
   auto lut_clean_time_end = std::chrono::high_resolution_clock::now();
   elapsed = lut_clean_time_end - lut_clean_time_start;
 
