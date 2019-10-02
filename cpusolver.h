@@ -3,6 +3,7 @@
 
 #include "isolver.h"
 #include "parallel_hashmap/phmap.h"
+#include <vector>
 
 class cpuSolver : public ISolver
 {
@@ -25,41 +26,34 @@ private:
     static constexpr uint8_t lookup_depth = 6;
     static constexpr size_t lut_vec_size = 552;
     static constexpr size_t max_candidates = 512;
+    static constexpr size_t AVX2_alignment = 32;
 
-    #pragma pack(push, 1)
-    template <class T, size_t capacityA, size_t capacityB>
-    class aligned_ABvec {
-        static_assert(capacityA < UINT16_MAX);
-        static_assert(capacityB < UINT16_MAX);
-
+    template <class T>
+    class aligned_vec {
         T* begin;
-        uint16_t Bfirst_empty;
-        uint16_t Afirst_empty;
+        T* first_empty;
       public:
-        aligned_ABvec()
+        aligned_vec(size_t size, size_t init_size = 0)
         {
-            const size_t total_capacity = capacityA + capacityB;
-            begin = static_cast<T*>(aligned_alloc(16, total_capacity*sizeof(T)));
-            Afirst_empty = 0;
-            Bfirst_empty = 0;
+            begin = static_cast<T*>(aligned_alloc(AVX2_alignment, size*sizeof(T)));
+            first_empty = begin + init_size;
         }
 
-        aligned_ABvec (aligned_ABvec&& other) {
+        aligned_vec (aligned_vec&& other) {
             this->begin = other.begin;
-            this->Afirst_empty = other.Afirst_empty;
-            this->Bfirst_empty = other.Bfirst_empty;
+            this->first_empty = other.first_empty;
             other.begin = nullptr;
-            other.Afirst_empty = 0;
-            other.Bfirst_empty = 0;
+            other.first_empty = nullptr;
         }
 
-        aligned_ABvec(aligned_ABvec const&) = delete;
-        aligned_ABvec& operator=(aligned_ABvec const&) = delete;
+        aligned_vec(aligned_vec const&) = delete;
+        aligned_vec& operator=(aligned_vec const&) = delete;
 
-        ~aligned_ABvec()
+        ~aligned_vec()
         {
             free(begin);
             begin = nullptr;
+            first_empty = nullptr;
         }
 
         bool valid()
@@ -67,60 +61,47 @@ private:
             return begin != nullptr;
         }
 
-        size_t sizeA() const
+        size_t size() const
         {
-            return Afirst_empty;
+            return first_empty - begin;
         }
 
-        size_t sizeB() const
+        void clear()
         {
-            return Bfirst_empty;
+            first_empty = begin;
         }
 
-        void clearA()
+        T* data()
         {
-            Afirst_empty = 0;
-        }
-
-        void clearB()
-        {
-            Bfirst_empty = 0;
-        }
-
-        const T*  dataA() const {
             return begin;
         }
 
-        T* dataA() {
+        const T* data() const
+        {
             return begin;
         }
 
-        const T*  dataB() const {
-            return begin + capacityA;
-        }
-
-        T*  dataB() {
-            return begin + capacityA;
-        }
-
-        void push_backA(T& element)
+        T& operator[] (size_t index)
         {
-            assert(sizeA() < capacityA);
-            dataA()[sizeA()] = element;
-            Afirst_empty++;
+            assert(index < size());
+            return begin[index];
         }
 
-        void push_backB(T& element)
+        const T& operator[] (size_t index) const
         {
-            assert(sizeB() < capacityB);
-            dataB()[sizeB()] = element;
-            Bfirst_empty++;
+            assert(index < size());
+            return begin[index];
+        }
+
+        void push_back(T& element)
+        {
+            *first_empty = element;
+            first_empty++;
         }
     };
-    #pragma pack(pop)
 
 #pragma pack(push, 1)
-        typedef struct
+        typedef struct alignas(8)
         {
             uint32_t diagr;
             uint32_t diagl;
@@ -131,10 +112,15 @@ private:
     uint_fast64_t stat_lookups_found = 0;
     uint_fast64_t stat_cmps = 0;
 
-    phmap::flat_hash_map<uint32_t, aligned_ABvec<diags_packed_t, lut_vec_size, max_candidates>> lookup_hash;
-    uint64_t get_solution_cnt(uint32_t cols, diags_packed_t search_elem);
-    uint64_t count_solutions(const aligned_ABvec<diags_packed_t, lut_vec_size, max_candidates> &candidates);
-    uint32_t count_solutions_fixed(const aligned_ABvec<diags_packed_t, lut_vec_size, max_candidates> &candidates);
+    using lut_t = std::vector<aligned_vec<diags_packed_t>>;
+
+    // maps column patterns to index in lookup_solutions;
+    phmap::flat_hash_map<uint32_t, uint32_t> lookup_hash;
+    // store solutions, this is constant after initializing the lookup table
+    lut_t lookup_solutions;
+    uint64_t get_solution_cnt(uint32_t cols, diags_packed_t search_elem, lut_t &lookup_candidates);
+    uint64_t count_solutions(const aligned_vec<diags_packed_t> &solutions, const aligned_vec<diags_packed_t> &candidates);
+    uint32_t count_solutions_fixed(const aligned_vec<diags_packed_t> &solutions, const aligned_vec<diags_packed_t> &candidates);
 };
 
 #endif // CPUSOLVER_H
