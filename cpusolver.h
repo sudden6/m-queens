@@ -13,21 +13,6 @@ public:
     uint64_t solve_subboard(const std::vector<start_condition>& starts);
     size_t init_lookup(uint8_t depth, uint32_t skip_mask);
 
-private:
-    uint_fast8_t boardsize = 0;
-    uint_fast8_t placed = 0;
-    // TODO(sudden6): find the maximum values that can be reached with this solver
-    // depth 2 -> vec 2
-    // depth 3 -> vec 6
-    // depth 4 -> vec 24
-    // depth 5 -> vec 88
-    // depth 6 -> vec 552 for max N=27 <- seems to be the optimum for now
-    // depth 7 -> vec 1100
-    static constexpr uint8_t lookup_depth = 6;
-    static constexpr size_t lut_vec_size = 552;
-    static constexpr size_t max_candidates = 512;
-    static constexpr size_t AVX2_alignment = 32;
-
     template <class T>
     class aligned_vec {
         T* begin;
@@ -109,6 +94,25 @@ private:
         } diags_packed_t;
 #pragma pack(pop)
 
+private:
+    uint_fast8_t boardsize = 0;
+    uint_fast8_t placed = 0;
+    // TODO(sudden6): find the maximum values that can be reached with this solver
+    // depth 2 -> vec 2
+    // depth 3 -> vec 6
+    // depth 4 -> vec 24
+    // depth 5 -> vec 88
+    // depth 6 -> vec 552 for max N=27 <- seems to be the optimum for now
+    // depth 7 -> vec 1100
+    static constexpr uint8_t lookup_depth = 6;
+    static constexpr size_t lut_vec_size = 552;
+    static constexpr size_t max_candidates = 512;
+    static constexpr size_t AVX2_alignment = 32;
+
+
+
+
+
     uint_fast64_t stat_lookups = 0;
     uint_fast64_t stat_lookups_found = 0;
     uint_fast64_t stat_cmps = 0;
@@ -121,7 +125,14 @@ private:
     lut_t lookup_solutions;
     uint64_t get_solution_cnt(uint32_t cols, diags_packed_t search_elem, lut_t &lookup_candidates);
     uint64_t count_solutions(const aligned_vec<diags_packed_t> &solutions, const aligned_vec<diags_packed_t> &candidates);
+    __attribute__ ((target ("default")))
     uint32_t count_solutions_fixed(const aligned_vec<diags_packed_t> &solutions, const aligned_vec<diags_packed_t> &candidates);
+    __attribute__ ((target ("avx2")))
+    uint32_t count_solutions_fixed(const aligned_vec<diags_packed_t>& solutions, const aligned_vec<diags_packed_t>& candidates);
+    __attribute__ ((target ("sse4.2")))
+    uint32_t count_solutions_fixed(const aligned_vec<diags_packed_t>& solutions, const aligned_vec<diags_packed_t>& candidates);
+    __attribute__ ((target ("sse2")))
+    uint32_t count_solutions_fixed(const aligned_vec<diags_packed_t>& solutions, const aligned_vec<diags_packed_t>& candidates);
 };
 
 #endif // CPUSOLVER_H

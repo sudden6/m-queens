@@ -58,6 +58,7 @@ static inline void avx2_cnt_core(__m256i sol_0_1_0_1i, __m256i sol_1_0_1_0i,
 
     __m256i and_0_1_2_3 = _mm256_and_si256(sol_0_1_0_1i, can_0_1_2_3);
     __m256i and_4_5_6_7 = _mm256_and_si256(sol_1_0_1_0i, can_0_1_2_3);
+    /*
     __m256i and_4_5_6_7_rev = _mm256_shuffle_epi32(and_4_5_6_7, _MM_SHUFFLE(2, 3, 0, 1));
     __m256i and_0_1_2_3_rev = _mm256_shuffle_epi32(and_0_1_2_3, _MM_SHUFFLE(2, 3, 0, 1));
     __m256i and_0_1_2_3_4_5_6_7r = _mm256_blend_epi32(and_4_5_6_7_rev, and_0_1_2_3, 0x55);
@@ -66,6 +67,11 @@ static inline void avx2_cnt_core(__m256i sol_0_1_0_1i, __m256i sol_1_0_1_0i,
     __m256i or_res = _mm256_or_si256(and_0_1_2_3_4_5_6_7r, and_0_1_2_3_4_5_6_7l);
     __m256i cmp_res = _mm256_cmpgt_epi32(or_res, _mm256_setzero_si256());
     *sol_cnt_0_1_2_3_4_5_6_7 = _mm256_add_epi32(*sol_cnt_0_1_2_3_4_5_6_7, cmp_res);
+    */
+    __m256i cmp_res1 = _mm256_cmpgt_epi64(and_0_1_2_3, _mm256_setzero_si256());
+    __m256i cmp_res2 = _mm256_cmpgt_epi64(and_4_5_6_7, _mm256_setzero_si256());
+    *sol_cnt_0_1_2_3_4_5_6_7 = _mm256_add_epi64(*sol_cnt_0_1_2_3_4_5_6_7, cmp_res1);
+    *sol_cnt_0_1_2_3_4_5_6_7 = _mm256_add_epi64(*sol_cnt_0_1_2_3_4_5_6_7, cmp_res2);
 }
 
 static inline void sse2_cnt_core(__m128i sol_data_0_1, __m128i sol_data_1_0,
@@ -84,32 +90,104 @@ static inline void sse2_cnt_core(__m128i sol_data_0_1, __m128i sol_data_1_0,
     *sol_cnt_0_1_2_3 = _mm_add_epi32(cmp_res, *sol_cnt_0_1_2_3);
 }
 
+static inline void sse42_cnt_core(__m128i sol_data_0_1, __m128i sol_data_1_0,
+                                 __m128i* __restrict__ sol_cnt_0_1_2_3,
+                                 const __m128i* __restrict__ can_data) {
+    __m128i can_data_0_1 = _mm_load_si128(can_data);
+    __m128i and_res_0_1 = _mm_and_si128(sol_data_0_1, can_data_0_1);
+    __m128i and_res_2_3 = _mm_and_si128(sol_data_1_0, can_data_0_1);
+
+    /*
+    __m128 and_res_0_1_2_3r = _mm_shuffle_ps(_mm_castsi128_ps(and_res_0_1), _mm_castsi128_ps(and_res_2_3), _MM_SHUFFLE(2, 0, 2, 0));
+    __m128 and_res_0_1_2_3l = _mm_shuffle_ps(_mm_castsi128_ps(and_res_0_1), _mm_castsi128_ps(and_res_2_3), _MM_SHUFFLE(3, 1, 3, 1));
+
+    __m128i or_res = _mm_or_si128(_mm_castps_si128(and_res_0_1_2_3r), _mm_castps_si128(and_res_0_1_2_3l));
+    __m128i cmp_res = _mm_cmpgt_epi32(or_res, _mm_setzero_si128());
+
+    *sol_cnt_0_1_2_3 = _mm_add_epi32(cmp_res, *sol_cnt_0_1_2_3);
+    */
+
+    __m128i cmp_res1 = _mm_cmpgt_epi64(and_res_0_1, _mm_setzero_si128());
+    __m128i cmp_res2 = _mm_cmpgt_epi64(and_res_2_3, _mm_setzero_si128());
+    *sol_cnt_0_1_2_3 =_mm_add_epi64(*sol_cnt_0_1_2_3, cmp_res1);
+    *sol_cnt_0_1_2_3 =_mm_add_epi64(*sol_cnt_0_1_2_3, cmp_res2);
+}
+
+__attribute__ ((target ("avx2")))
 uint32_t cpuSolver::count_solutions_fixed(const aligned_vec<diags_packed_t>& solutions, const aligned_vec<diags_packed_t>& candidates) {
     const size_t sol_size = solutions.size();
     assert(sol_size % 2 == 0);
     const diags_packed_t* __restrict__ sol_data = solutions.data();
     const diags_packed_t* __restrict__ can_data = candidates.data();
 
-    /*
-    for(size_t s_idx = 0; s_idx < sol_size; s_idx++) {
-#pragma omp simd reduction(+:solutions_cnt)
-        for(size_t c_idx = 0; c_idx < max_candidates; c_idx++) {
-            solutions_cnt += (sol_data[s_idx].diagr & can_data[c_idx].diagr) == 0 && (sol_data[s_idx].diagl & can_data[c_idx].diagl) == 0;
+    __m256i sol_cnt_0_1_2_3_4_5_6_7 = _mm256_setzero_si256();
+
+    for(size_t s_idx = 0; s_idx < sol_size; s_idx += 2) {
+
+        __m256d sol_0_1_0_1 = _mm256_broadcast_pd((const __m128d*) &sol_data[s_idx]);
+        __m256d sol_1_0_1_0 = _mm256_shuffle_pd(sol_0_1_0_1, sol_0_1_0_1, 0x05);
+
+        __m256i sol_0_1_0_1i = _mm256_castpd_si256(sol_0_1_0_1);
+        __m256i sol_1_0_1_0i = _mm256_castpd_si256(sol_1_0_1_0);
+
+        for(size_t c_idx = 0; c_idx < max_candidates; c_idx += 16) {
+            avx2_cnt_core(sol_0_1_0_1i, sol_1_0_1_0i, &sol_cnt_0_1_2_3_4_5_6_7, (const __m256i*) &can_data[c_idx +  0]);
+            avx2_cnt_core(sol_0_1_0_1i, sol_1_0_1_0i, &sol_cnt_0_1_2_3_4_5_6_7, (const __m256i*) &can_data[c_idx +  4]);
+            avx2_cnt_core(sol_0_1_0_1i, sol_1_0_1_0i, &sol_cnt_0_1_2_3_4_5_6_7, (const __m256i*) &can_data[c_idx +  8]);
+            avx2_cnt_core(sol_0_1_0_1i, sol_1_0_1_0i, &sol_cnt_0_1_2_3_4_5_6_7, (const __m256i*) &can_data[c_idx + 12]);
         }
     }
-    */
 
-    /*
-    uint32_t solutions_cnt = sol_size * max_candidates;
-    for(size_t s_idx = 0; s_idx < sol_size; s_idx++) {
-#pragma omp simd reduction(-:solutions_cnt)
-        for(size_t c_idx = 0; c_idx < max_candidates; c_idx++) {
-            solutions_cnt -= (sol_data[s_idx].diagr & can_data[c_idx].diagr) || (sol_data[s_idx].diagl & can_data[c_idx].diagl);
+    uint64_t sol_cnt_vec[4];
+
+    _mm256_storeu_si256((__m256i *) sol_cnt_vec, sol_cnt_0_1_2_3_4_5_6_7);
+
+    uint64_t sol_sum = 0;
+
+    for(int i = 0; i < 4; i++) {
+        sol_sum += sol_cnt_vec[i];
+    }
+
+    return sol_size * max_candidates + sol_sum;
+}
+
+__attribute__ ((target ("sse4.2")))
+uint32_t cpuSolver::count_solutions_fixed(const aligned_vec<diags_packed_t>& solutions, const aligned_vec<diags_packed_t>& candidates) {
+    const size_t sol_size = solutions.size();
+    assert(sol_size % 2 == 0);
+    const diags_packed_t* __restrict__ sol_data = solutions.data();
+    const diags_packed_t* __restrict__ can_data = candidates.data();
+
+    __m128i sol_cnt_0_1_2_3 = _mm_setzero_si128();
+
+    for(size_t s_idx = 0; s_idx < sol_size; s_idx += 2) {
+        __m128i sol_data_0_1 = _mm_load_si128((const __m128i*) &sol_data[s_idx]);
+        __m128i sol_data_1_0 = _mm_castpd_si128(_mm_shuffle_pd(_mm_castsi128_pd(sol_data_0_1), _mm_castsi128_pd(sol_data_0_1), 1));
+
+        for(size_t c_idx = 0; c_idx < max_candidates; c_idx += 8) {
+            sse42_cnt_core(sol_data_0_1, sol_data_1_0, &sol_cnt_0_1_2_3, (const __m128i*) &can_data[c_idx + 0]);
+            sse42_cnt_core(sol_data_0_1, sol_data_1_0, &sol_cnt_0_1_2_3, (const __m128i*) &can_data[c_idx + 2]);
+            sse42_cnt_core(sol_data_0_1, sol_data_1_0, &sol_cnt_0_1_2_3, (const __m128i*) &can_data[c_idx + 4]);
+            sse42_cnt_core(sol_data_0_1, sol_data_1_0, &sol_cnt_0_1_2_3, (const __m128i*) &can_data[c_idx + 6]);
         }
     }
-    */
 
-    //*
+    uint64_t sol_cnt_vec[2];
+
+    _mm_store_si128((__m128i*)sol_cnt_vec, sol_cnt_0_1_2_3);
+
+    uint32_t sol_sum = sol_cnt_vec[0] + sol_cnt_vec[1];
+
+    return sol_size * max_candidates + sol_sum;
+}
+
+__attribute__ ((target ("sse2")))
+uint32_t cpuSolver::count_solutions_fixed(const aligned_vec<diags_packed_t>& solutions, const aligned_vec<diags_packed_t>& candidates) {
+    const size_t sol_size = solutions.size();
+    assert(sol_size % 2 == 0);
+    const diags_packed_t* __restrict__ sol_data = solutions.data();
+    const diags_packed_t* __restrict__ can_data = candidates.data();
+
     __m128i sol_cnt_0_1_2_3 = _mm_setzero_si128();
 
     for(size_t s_idx = 0; s_idx < sol_size; s_idx += 2) {
@@ -131,40 +209,36 @@ uint32_t cpuSolver::count_solutions_fixed(const aligned_vec<diags_packed_t>& sol
     uint32_t sol_sum = sol_cnt_vec[0] + sol_cnt_vec[1] + sol_cnt_vec[2] + sol_cnt_vec[3];
 
     return sol_size * max_candidates + sol_sum;
-    //*/
+}
+
+
+
+__attribute__ ((target ("default")))
+uint32_t cpuSolver::count_solutions_fixed(const aligned_vec<diags_packed_t>& solutions, const aligned_vec<diags_packed_t>& candidates) {
+    const size_t sol_size = solutions.size();
+    assert(sol_size % 2 == 0);
+    const diags_packed_t* __restrict__ sol_data = solutions.data();
+    const diags_packed_t* __restrict__ can_data = candidates.data();
 
     /*
-    __m256i sol_cnt_0_1_2_3_4_5_6_7 = _mm256_setzero_si256();
-
-    for(size_t s_idx = 0; s_idx < sol_size; s_idx += 2) {
-
-        __m256d sol_0_1_0_1 = _mm256_broadcast_pd((const __m128d*) &sol_data[s_idx]);
-        __m256d sol_1_0_1_0 = _mm256_shuffle_pd(sol_0_1_0_1, sol_0_1_0_1, 0x05);
-
-        __m256i sol_0_1_0_1i = _mm256_castpd_si256(sol_0_1_0_1);
-        __m256i sol_1_0_1_0i = _mm256_castpd_si256(sol_1_0_1_0);
-
-        for(size_t c_idx = 0; c_idx < max_candidates; c_idx += 16) {
-            avx2_cnt_core(sol_0_1_0_1i, sol_1_0_1_0i, &sol_cnt_0_1_2_3_4_5_6_7, (const __m256i*) &can_data[c_idx +  0]);
-            avx2_cnt_core(sol_0_1_0_1i, sol_1_0_1_0i, &sol_cnt_0_1_2_3_4_5_6_7, (const __m256i*) &can_data[c_idx +  4]);
-            avx2_cnt_core(sol_0_1_0_1i, sol_1_0_1_0i, &sol_cnt_0_1_2_3_4_5_6_7, (const __m256i*) &can_data[c_idx +  8]);
-            avx2_cnt_core(sol_0_1_0_1i, sol_1_0_1_0i, &sol_cnt_0_1_2_3_4_5_6_7, (const __m256i*) &can_data[c_idx + 12]);
+    for(size_t s_idx = 0; s_idx < sol_size; s_idx++) {
+#pragma omp simd reduction(+:solutions_cnt)
+        for(size_t c_idx = 0; c_idx < max_candidates; c_idx++) {
+            solutions_cnt += (sol_data[s_idx].diagr & can_data[c_idx].diagr) == 0 && (sol_data[s_idx].diagl & can_data[c_idx].diagl) == 0;
         }
     }
-
-    uint32_t sol_cnt_vec[8];
-
-    _mm256_storeu_si256((__m256i *) sol_cnt_vec, sol_cnt_0_1_2_3_4_5_6_7);
-
-    uint32_t sol_sum = 0;
-
-    for(int i = 0; i < 8; i++) {
-        sol_sum += sol_cnt_vec[i];
-    }
-
-    return sol_size * max_candidates + sol_sum;
     */
+
+    uint32_t solutions_cnt = sol_size * max_candidates;
+    for(size_t s_idx = 0; s_idx < sol_size; s_idx++) {
+#pragma omp simd reduction(-:solutions_cnt)
+        for(size_t c_idx = 0; c_idx < max_candidates; c_idx++) {
+            solutions_cnt -= (sol_data[s_idx].diagr & can_data[c_idx].diagr) || (sol_data[s_idx].diagl & can_data[c_idx].diagl);
+        }
+    }
+    return solutions_cnt;
 }
+
 
 
 uint64_t cpuSolver::get_solution_cnt(uint32_t cols, diags_packed_t search_elem, lut_t &lookup_candidates) {
@@ -263,7 +337,7 @@ uint64_t cpuSolver::solve_subboard(const std::vector<start_condition>& starts) {
       thread_luts.push_back(std::move(new_lut));
   }
 
-#pragma omp parallel for reduction(+ : num_lookup) num_threads(thread_cnt) schedule(dynamic)
+//#pragma omp parallel for reduction(+ : num_lookup) num_threads(thread_cnt) schedule(dynamic)
   for (uint_fast32_t cnt = 0; cnt < start_cnt; cnt++) {
     const size_t thread_num = omp_get_thread_num();
     lut_t& lookup_candidates = thread_luts[thread_num];
