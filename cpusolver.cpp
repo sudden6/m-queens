@@ -114,7 +114,10 @@ static inline void sse42_cnt_core(__m128i sol_data_0_1, __m128i sol_data_1_0,
 }
 
 __attribute__ ((target ("avx2")))
-uint32_t cpuSolver::count_solutions_fixed(const aligned_vec<diags_packed_t>& solutions, const aligned_vec<diags_packed_t>& candidates) {
+static uint32_t count_solutions_fixed(size_t batch,
+                                          const aligned_vec<diags_packed_t>& solutions,
+                                          const aligned_vec<diags_packed_t>& candidates) {
+    assert(batch % 16 == 0);
     const size_t sol_size = solutions.size();
     assert(sol_size % 2 == 0);
     const diags_packed_t* __restrict__ sol_data = solutions.data();
@@ -130,7 +133,7 @@ uint32_t cpuSolver::count_solutions_fixed(const aligned_vec<diags_packed_t>& sol
         __m256i sol_0_1_0_1i = _mm256_castpd_si256(sol_0_1_0_1);
         __m256i sol_1_0_1_0i = _mm256_castpd_si256(sol_1_0_1_0);
 
-        for(size_t c_idx = 0; c_idx < max_candidates; c_idx += 16) {
+        for(size_t c_idx = 0; c_idx < batch; c_idx += 16) {
             avx2_cnt_core(sol_0_1_0_1i, sol_1_0_1_0i, &sol_cnt_0_1_2_3_4_5_6_7, (const __m256i*) &can_data[c_idx +  0]);
             avx2_cnt_core(sol_0_1_0_1i, sol_1_0_1_0i, &sol_cnt_0_1_2_3_4_5_6_7, (const __m256i*) &can_data[c_idx +  4]);
             avx2_cnt_core(sol_0_1_0_1i, sol_1_0_1_0i, &sol_cnt_0_1_2_3_4_5_6_7, (const __m256i*) &can_data[c_idx +  8]);
@@ -148,11 +151,14 @@ uint32_t cpuSolver::count_solutions_fixed(const aligned_vec<diags_packed_t>& sol
         sol_sum += sol_cnt_vec[i];
     }
 
-    return sol_size * max_candidates + sol_sum;
+    return sol_size * batch + sol_sum;
 }
 
 __attribute__ ((target ("sse4.2")))
-uint32_t cpuSolver::count_solutions_fixed(const aligned_vec<diags_packed_t>& solutions, const aligned_vec<diags_packed_t>& candidates) {
+uint32_t count_solutions_fixed(size_t batch,
+                                          const aligned_vec<diags_packed_t>& solutions,
+                                          const aligned_vec<diags_packed_t>& candidates) {
+    assert(batch % 8 == 0);
     const size_t sol_size = solutions.size();
     assert(sol_size % 2 == 0);
     const diags_packed_t* __restrict__ sol_data = solutions.data();
@@ -164,7 +170,7 @@ uint32_t cpuSolver::count_solutions_fixed(const aligned_vec<diags_packed_t>& sol
         __m128i sol_data_0_1 = _mm_load_si128((const __m128i*) &sol_data[s_idx]);
         __m128i sol_data_1_0 = _mm_castpd_si128(_mm_shuffle_pd(_mm_castsi128_pd(sol_data_0_1), _mm_castsi128_pd(sol_data_0_1), 1));
 
-        for(size_t c_idx = 0; c_idx < max_candidates; c_idx += 8) {
+        for(size_t c_idx = 0; c_idx < batch; c_idx += 8) {
             sse42_cnt_core(sol_data_0_1, sol_data_1_0, &sol_cnt_0_1_2_3, (const __m128i*) &can_data[c_idx + 0]);
             sse42_cnt_core(sol_data_0_1, sol_data_1_0, &sol_cnt_0_1_2_3, (const __m128i*) &can_data[c_idx + 2]);
             sse42_cnt_core(sol_data_0_1, sol_data_1_0, &sol_cnt_0_1_2_3, (const __m128i*) &can_data[c_idx + 4]);
@@ -178,11 +184,14 @@ uint32_t cpuSolver::count_solutions_fixed(const aligned_vec<diags_packed_t>& sol
 
     uint32_t sol_sum = sol_cnt_vec[0] + sol_cnt_vec[1];
 
-    return sol_size * max_candidates + sol_sum;
+    return sol_size * batch + sol_sum;
 }
 
 __attribute__ ((target ("sse2")))
-uint32_t cpuSolver::count_solutions_fixed(const aligned_vec<diags_packed_t>& solutions, const aligned_vec<diags_packed_t>& candidates) {
+uint32_t count_solutions_fixed(size_t batch,
+                                          const aligned_vec<diags_packed_t>& solutions,
+                                          const aligned_vec<diags_packed_t>& candidates) {
+    assert(batch % 8 == 0);
     const size_t sol_size = solutions.size();
     assert(sol_size % 2 == 0);
     const diags_packed_t* __restrict__ sol_data = solutions.data();
@@ -194,7 +203,7 @@ uint32_t cpuSolver::count_solutions_fixed(const aligned_vec<diags_packed_t>& sol
         __m128i sol_data_0_1 = _mm_load_si128((const __m128i*) &sol_data[s_idx]);
         __m128i sol_data_1_0 = _mm_castpd_si128(_mm_shuffle_pd(_mm_castsi128_pd(sol_data_0_1), _mm_castsi128_pd(sol_data_0_1), 1));
 
-        for(size_t c_idx = 0; c_idx < max_candidates; c_idx += 8) {
+        for(size_t c_idx = 0; c_idx < batch; c_idx += 8) {
             sse2_cnt_core(sol_data_0_1, sol_data_1_0, &sol_cnt_0_1_2_3, (const __m128i*) &can_data[c_idx + 0]);
             sse2_cnt_core(sol_data_0_1, sol_data_1_0, &sol_cnt_0_1_2_3, (const __m128i*) &can_data[c_idx + 2]);
             sse2_cnt_core(sol_data_0_1, sol_data_1_0, &sol_cnt_0_1_2_3, (const __m128i*) &can_data[c_idx + 4]);
@@ -208,13 +217,15 @@ uint32_t cpuSolver::count_solutions_fixed(const aligned_vec<diags_packed_t>& sol
 
     uint32_t sol_sum = sol_cnt_vec[0] + sol_cnt_vec[1] + sol_cnt_vec[2] + sol_cnt_vec[3];
 
-    return sol_size * max_candidates + sol_sum;
+    return sol_size * batch + sol_sum;
 }
 
 
 
 __attribute__ ((target ("default")))
-uint32_t cpuSolver::count_solutions_fixed(const aligned_vec<diags_packed_t>& solutions, const aligned_vec<diags_packed_t>& candidates) {
+uint32_t count_solutions_fixed(size_t batch,
+                                          const aligned_vec<diags_packed_t>& solutions,
+                                          const aligned_vec<diags_packed_t>& candidates) {
     const size_t sol_size = solutions.size();
     assert(sol_size % 2 == 0);
     const diags_packed_t* __restrict__ sol_data = solutions.data();
@@ -229,10 +240,10 @@ uint32_t cpuSolver::count_solutions_fixed(const aligned_vec<diags_packed_t>& sol
     }
     */
 
-    uint32_t solutions_cnt = sol_size * max_candidates;
+    uint32_t solutions_cnt = sol_size * batch;
     for(size_t s_idx = 0; s_idx < sol_size; s_idx++) {
-#pragma omp simd reduction(-:solutions_cnt)
-        for(size_t c_idx = 0; c_idx < max_candidates; c_idx++) {
+#pragma omp simd reduction(-:solutions_cnt) aligned(sol_data, can_data: 32)
+        for(size_t c_idx = 0; c_idx < batch; c_idx++) {
             solutions_cnt -= (sol_data[s_idx].diagr & can_data[c_idx].diagr) || (sol_data[s_idx].diagl & can_data[c_idx].diagl);
         }
     }
@@ -253,7 +264,7 @@ uint64_t cpuSolver::get_solution_cnt(uint32_t cols, diags_packed_t search_elem, 
     candidates_vec.push_back(search_elem);
 
     if(candidates_vec.size() == max_candidates) {
-        solutions_cnt = count_solutions_fixed(lookup_solutions[lookup_idx], candidates_vec);
+        solutions_cnt = count_solutions_fixed(max_candidates, lookup_solutions[lookup_idx], candidates_vec);
         candidates_vec.clear();
     }
 
@@ -337,7 +348,7 @@ uint64_t cpuSolver::solve_subboard(const std::vector<start_condition>& starts) {
       thread_luts.push_back(std::move(new_lut));
   }
 
-//#pragma omp parallel for reduction(+ : num_lookup) num_threads(thread_cnt) schedule(dynamic)
+#pragma omp parallel for reduction(+ : num_lookup) num_threads(thread_cnt) schedule(dynamic)
   for (uint_fast32_t cnt = 0; cnt < start_cnt; cnt++) {
     const size_t thread_num = omp_get_thread_num();
     lut_t& lookup_candidates = thread_luts[thread_num];
