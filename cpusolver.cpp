@@ -51,6 +51,7 @@ uint64_t cpuSolver::count_solutions(const aligned_vec<diags_packed_t>& solutions
     return solutions_cnt;
 }
 
+__attribute__ ((__target__ ("avx2")))
 static inline void avx2_cnt_core(__m256i sol_0_1_0_1i, __m256i sol_1_0_1_0i,
                                  __m256i* __restrict__ sol_cnt_0_1_2_3_4_5_6_7,
                                  const __m256i* __restrict__ can_data) {
@@ -74,6 +75,7 @@ static inline void avx2_cnt_core(__m256i sol_0_1_0_1i, __m256i sol_1_0_1_0i,
     *sol_cnt_0_1_2_3_4_5_6_7 = _mm256_add_epi64(*sol_cnt_0_1_2_3_4_5_6_7, cmp_res2);
 }
 
+__attribute__ ((__target__ ("sse2")))
 static inline void sse2_cnt_core(__m128i sol_data_0_1, __m128i sol_data_1_0,
                                  __m128i* __restrict__ sol_cnt_0_1_2_3,
                                  const __m128i* __restrict__ can_data) {
@@ -90,6 +92,7 @@ static inline void sse2_cnt_core(__m128i sol_data_0_1, __m128i sol_data_1_0,
     *sol_cnt_0_1_2_3 = _mm_add_epi32(cmp_res, *sol_cnt_0_1_2_3);
 }
 
+__attribute__ ((__target__ ("sse4.2")))
 static inline void sse42_cnt_core(__m128i sol_data_0_1, __m128i sol_data_1_0,
                                  __m128i* __restrict__ sol_cnt_0_1_2_3,
                                  const __m128i* __restrict__ can_data) {
@@ -120,30 +123,30 @@ static uint32_t count_solutions_fixed(size_t batch,
     assert(batch % 16 == 0);
     const size_t sol_size = solutions.size();
     assert(sol_size % 2 == 0);
-    const diags_packed_t* __restrict__ sol_data = solutions.data();
-    const diags_packed_t* __restrict__ can_data = candidates.data();
+    const __m128d* __restrict__ sol_data = reinterpret_cast<const __m128d*> (solutions.data());
+    const __m256i* __restrict__ can_data = reinterpret_cast<const __m256i*> (candidates.data());
 
     __m256i sol_cnt_0_1_2_3_4_5_6_7 = _mm256_setzero_si256();
 
-    for(size_t s_idx = 0; s_idx < sol_size; s_idx += 2) {
+    for(size_t s_idx = 0; s_idx < sol_size/2; s_idx++) {
 
-        __m256d sol_0_1_0_1 = _mm256_broadcast_pd((const __m128d*) &sol_data[s_idx]);
+        __m256d sol_0_1_0_1 = _mm256_broadcast_pd(&sol_data[s_idx]);
         __m256d sol_1_0_1_0 = _mm256_shuffle_pd(sol_0_1_0_1, sol_0_1_0_1, 0x05);
 
         __m256i sol_0_1_0_1i = _mm256_castpd_si256(sol_0_1_0_1);
         __m256i sol_1_0_1_0i = _mm256_castpd_si256(sol_1_0_1_0);
 
-        for(size_t c_idx = 0; c_idx < batch; c_idx += 16) {
-            avx2_cnt_core(sol_0_1_0_1i, sol_1_0_1_0i, &sol_cnt_0_1_2_3_4_5_6_7, (const __m256i*) &can_data[c_idx +  0]);
-            avx2_cnt_core(sol_0_1_0_1i, sol_1_0_1_0i, &sol_cnt_0_1_2_3_4_5_6_7, (const __m256i*) &can_data[c_idx +  4]);
-            avx2_cnt_core(sol_0_1_0_1i, sol_1_0_1_0i, &sol_cnt_0_1_2_3_4_5_6_7, (const __m256i*) &can_data[c_idx +  8]);
-            avx2_cnt_core(sol_0_1_0_1i, sol_1_0_1_0i, &sol_cnt_0_1_2_3_4_5_6_7, (const __m256i*) &can_data[c_idx + 12]);
+        for(size_t c_idx = 0; c_idx < (batch/4); c_idx += 4) {
+            avx2_cnt_core(sol_0_1_0_1i, sol_1_0_1_0i, &sol_cnt_0_1_2_3_4_5_6_7, &can_data[c_idx +  0]);
+            avx2_cnt_core(sol_0_1_0_1i, sol_1_0_1_0i, &sol_cnt_0_1_2_3_4_5_6_7, &can_data[c_idx +  1]);
+            avx2_cnt_core(sol_0_1_0_1i, sol_1_0_1_0i, &sol_cnt_0_1_2_3_4_5_6_7, &can_data[c_idx +  2]);
+            avx2_cnt_core(sol_0_1_0_1i, sol_1_0_1_0i, &sol_cnt_0_1_2_3_4_5_6_7, &can_data[c_idx +  3]);
         }
     }
 
-    uint64_t sol_cnt_vec[4];
+    uint64_t sol_cnt_vec[4] __attribute__((aligned(AVX2_alignment)));
 
-    _mm256_storeu_si256((__m256i *) sol_cnt_vec, sol_cnt_0_1_2_3_4_5_6_7);
+    _mm256_storeu_si256(reinterpret_cast<__m256i *>(sol_cnt_vec), sol_cnt_0_1_2_3_4_5_6_7);
 
     uint64_t sol_sum = 0;
 
@@ -155,30 +158,30 @@ static uint32_t count_solutions_fixed(size_t batch,
 }
 
 __attribute__ ((target ("sse4.2")))
-uint32_t count_solutions_fixed(size_t batch,
+static uint32_t count_solutions_fixed(size_t batch,
                                           const aligned_vec<diags_packed_t>& solutions,
                                           const aligned_vec<diags_packed_t>& candidates) {
     assert(batch % 8 == 0);
     const size_t sol_size = solutions.size();
     assert(sol_size % 2 == 0);
-    const diags_packed_t* __restrict__ sol_data = solutions.data();
-    const diags_packed_t* __restrict__ can_data = candidates.data();
+    const __m128i* __restrict__ sol_data = reinterpret_cast<const __m128i*> (solutions.data());
+    const __m128i* __restrict__ can_data = reinterpret_cast<const __m128i*> (candidates.data());
 
     __m128i sol_cnt_0_1_2_3 = _mm_setzero_si128();
 
-    for(size_t s_idx = 0; s_idx < sol_size; s_idx += 2) {
-        __m128i sol_data_0_1 = _mm_load_si128((const __m128i*) &sol_data[s_idx]);
+    for(size_t s_idx = 0; s_idx < sol_size/2; s_idx++) {
+        __m128i sol_data_0_1 = _mm_load_si128(&sol_data[s_idx]);
         __m128i sol_data_1_0 = _mm_castpd_si128(_mm_shuffle_pd(_mm_castsi128_pd(sol_data_0_1), _mm_castsi128_pd(sol_data_0_1), 1));
 
-        for(size_t c_idx = 0; c_idx < batch; c_idx += 8) {
-            sse42_cnt_core(sol_data_0_1, sol_data_1_0, &sol_cnt_0_1_2_3, (const __m128i*) &can_data[c_idx + 0]);
-            sse42_cnt_core(sol_data_0_1, sol_data_1_0, &sol_cnt_0_1_2_3, (const __m128i*) &can_data[c_idx + 2]);
-            sse42_cnt_core(sol_data_0_1, sol_data_1_0, &sol_cnt_0_1_2_3, (const __m128i*) &can_data[c_idx + 4]);
-            sse42_cnt_core(sol_data_0_1, sol_data_1_0, &sol_cnt_0_1_2_3, (const __m128i*) &can_data[c_idx + 6]);
+        for(size_t c_idx = 0; c_idx < batch/2; c_idx += 4) {
+            sse42_cnt_core(sol_data_0_1, sol_data_1_0, &sol_cnt_0_1_2_3, &can_data[c_idx + 0]);
+            sse42_cnt_core(sol_data_0_1, sol_data_1_0, &sol_cnt_0_1_2_3, &can_data[c_idx + 1]);
+            sse42_cnt_core(sol_data_0_1, sol_data_1_0, &sol_cnt_0_1_2_3, &can_data[c_idx + 2]);
+            sse42_cnt_core(sol_data_0_1, sol_data_1_0, &sol_cnt_0_1_2_3, &can_data[c_idx + 3]);
         }
     }
 
-    uint64_t sol_cnt_vec[2];
+    uint64_t sol_cnt_vec[2] __attribute__((aligned(AVX2_alignment)));
 
     _mm_store_si128((__m128i*)sol_cnt_vec, sol_cnt_0_1_2_3);
 
@@ -188,30 +191,30 @@ uint32_t count_solutions_fixed(size_t batch,
 }
 
 __attribute__ ((target ("sse2")))
-uint32_t count_solutions_fixed(size_t batch,
+static uint32_t count_solutions_fixed(size_t batch,
                                           const aligned_vec<diags_packed_t>& solutions,
                                           const aligned_vec<diags_packed_t>& candidates) {
     assert(batch % 8 == 0);
     const size_t sol_size = solutions.size();
     assert(sol_size % 2 == 0);
-    const diags_packed_t* __restrict__ sol_data = solutions.data();
-    const diags_packed_t* __restrict__ can_data = candidates.data();
+    const __m128i* __restrict__ sol_data = reinterpret_cast<const __m128i*> (solutions.data());
+    const __m128i* __restrict__ can_data = reinterpret_cast<const __m128i*> (candidates.data());
 
     __m128i sol_cnt_0_1_2_3 = _mm_setzero_si128();
 
-    for(size_t s_idx = 0; s_idx < sol_size; s_idx += 2) {
-        __m128i sol_data_0_1 = _mm_load_si128((const __m128i*) &sol_data[s_idx]);
+    for(size_t s_idx = 0; s_idx < sol_size/2; s_idx++) {
+        __m128i sol_data_0_1 = _mm_load_si128(&sol_data[s_idx]);
         __m128i sol_data_1_0 = _mm_castpd_si128(_mm_shuffle_pd(_mm_castsi128_pd(sol_data_0_1), _mm_castsi128_pd(sol_data_0_1), 1));
 
-        for(size_t c_idx = 0; c_idx < batch; c_idx += 8) {
-            sse2_cnt_core(sol_data_0_1, sol_data_1_0, &sol_cnt_0_1_2_3, (const __m128i*) &can_data[c_idx + 0]);
-            sse2_cnt_core(sol_data_0_1, sol_data_1_0, &sol_cnt_0_1_2_3, (const __m128i*) &can_data[c_idx + 2]);
-            sse2_cnt_core(sol_data_0_1, sol_data_1_0, &sol_cnt_0_1_2_3, (const __m128i*) &can_data[c_idx + 4]);
-            sse2_cnt_core(sol_data_0_1, sol_data_1_0, &sol_cnt_0_1_2_3, (const __m128i*) &can_data[c_idx + 6]);
+        for(size_t c_idx = 0; c_idx < batch/2; c_idx += 4) {
+            sse2_cnt_core(sol_data_0_1, sol_data_1_0, &sol_cnt_0_1_2_3, &can_data[c_idx + 0]);
+            sse2_cnt_core(sol_data_0_1, sol_data_1_0, &sol_cnt_0_1_2_3, &can_data[c_idx + 1]);
+            sse2_cnt_core(sol_data_0_1, sol_data_1_0, &sol_cnt_0_1_2_3, &can_data[c_idx + 2]);
+            sse2_cnt_core(sol_data_0_1, sol_data_1_0, &sol_cnt_0_1_2_3, &can_data[c_idx + 3]);
         }
     }
 
-    uint32_t sol_cnt_vec[4];
+    uint32_t sol_cnt_vec[4] __attribute__((aligned(AVX2_alignment)));
 
     _mm_store_si128((__m128i*)sol_cnt_vec, sol_cnt_0_1_2_3);
 
@@ -220,10 +223,8 @@ uint32_t count_solutions_fixed(size_t batch,
     return sol_size * batch + sol_sum;
 }
 
-
-
 __attribute__ ((target ("default")))
-uint32_t count_solutions_fixed(size_t batch,
+static uint32_t count_solutions_fixed(size_t batch,
                                           const aligned_vec<diags_packed_t>& solutions,
                                           const aligned_vec<diags_packed_t>& candidates) {
     const size_t sol_size = solutions.size();
