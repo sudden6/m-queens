@@ -83,6 +83,8 @@ uint64_t cpuSolver::count_solutions(const aligned_vec<diags_packed_t>& solutions
         }
     }
 
+    // prevent overflow in result variable
+    assert(sol_size * batch < UINT32_MAX);
     return solutions_cnt;
 }
 
@@ -158,6 +160,7 @@ static uint32_t count_solutions_fixed(size_t batch,
     assert(batch % 16 == 0);
     const size_t sol_size = solutions.size();
     assert(sol_size % 2 == 0);
+
     const __m128d* __restrict__ sol_data = reinterpret_cast<const __m128d*> (solutions.data());
     const __m256i* __restrict__ can_data = reinterpret_cast<const __m256i*> (candidates.data());
 
@@ -181,7 +184,7 @@ static uint32_t count_solutions_fixed(size_t batch,
 
     uint64_t sol_cnt_vec[4] __attribute__((aligned(AVX2_alignment)));
 
-    _mm256_storeu_si256(reinterpret_cast<__m256i *>(sol_cnt_vec), sol_cnt_0_1_2_3_4_5_6_7);
+    _mm256_store_si256(reinterpret_cast<__m256i *>(sol_cnt_vec), sol_cnt_0_1_2_3_4_5_6_7);
 
     uint64_t sol_sum = 0;
 
@@ -189,6 +192,8 @@ static uint32_t count_solutions_fixed(size_t batch,
         sol_sum += sol_cnt_vec[i];
     }
 
+    // prevent overflow in result variable
+    assert(sol_size * batch < UINT32_MAX);
     return sol_size * batch + sol_sum;
 }
 
@@ -222,6 +227,8 @@ static uint32_t count_solutions_fixed(size_t batch,
 
     uint32_t sol_sum = sol_cnt_vec[0] + sol_cnt_vec[1];
 
+    // prevent overflow in result variable
+    assert(sol_size * batch < UINT32_MAX);
     return sol_size * batch + sol_sum;
 }
 
@@ -255,6 +262,8 @@ static uint32_t count_solutions_fixed(size_t batch,
 
     uint32_t sol_sum = sol_cnt_vec[0] + sol_cnt_vec[1] + sol_cnt_vec[2] + sol_cnt_vec[3];
 
+    // prevent overflow in result variable
+    assert(sol_size * batch < UINT32_MAX);
     return sol_size * batch + sol_sum;
 }
 
@@ -267,6 +276,8 @@ static uint32_t count_solutions_fixed(size_t batch,
     const diags_packed_t* __restrict__ sol_data = solutions.data();
     const diags_packed_t* __restrict__ can_data = candidates.data();
 
+    // prevent overflow in result variable
+    assert(sol_size * batch < UINT32_MAX);
     uint32_t solutions_cnt = sol_size * batch;
     for(size_t s_idx = 0; s_idx < sol_size; s_idx++) {
 #pragma omp simd reduction(-:solutions_cnt) aligned(sol_data, can_data: 32)
@@ -274,6 +285,7 @@ static uint32_t count_solutions_fixed(size_t batch,
             solutions_cnt -= (sol_data[s_idx].diagr & can_data[c_idx].diagr) || (sol_data[s_idx].diagl & can_data[c_idx].diagl);
         }
     }
+
     return solutions_cnt;
 }
 
@@ -281,9 +293,9 @@ uint64_t cpuSolver::get_solution_cnt(uint32_t cols, diags_packed_t search_elem, 
     uint64_t solutions_cnt = 0;
     const auto& found = lookup_hash.find(cols);
 
-    // TODO(sudden6): determine the exact conditions where the below comment is true
+    // TODO(sudden6): determine the exact conditions where the below comment is true, since this is in the critical path
     //      since the lookup table contains all possible combinations, we know the current one will be found
-    // meanwhile handle that case gracefully
+    // meanwhile handle that case gracefully at the cost of some performance
     if(found == lookup_hash.end()) {
         stat_lookups_not_found++;
         return 0;
@@ -328,7 +340,6 @@ uint64_t cpuSolver::solve_subboard(const std::vector<start_condition>& starts) {
 
   const size_t start_cnt = starts.size();  
 
-  const uint_fast32_t board_width_mask = ~(UINT_FAST32_MAX << boardsize);
   uint32_t col_mask = UINT32_MAX;
 
   for (const auto& start : starts) {
@@ -627,6 +638,11 @@ size_t cpuSolver::init_lookup(uint8_t depth, uint32_t skip_mask)
         std::memcpy(new_vec.data(), lookup_vec.data(), elemen_cnt * sizeof (diags_packed_t));
         // put in final lookup table
         lookup_solutions.push_back(std::move(new_vec));
+    }
+
+    if (stat_max_len * max_candidates > UINT32_MAX) {
+        std::cout << "ERROR: Possible overflow in count_solutions_fixed(...)" << std::endl;
+        return 0;
     }
 
     std::cout << "Hashtable keys: " << std::to_string(lookup_hash.size()) << std::endl;
