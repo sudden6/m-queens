@@ -13,9 +13,13 @@ class aligned_vec {
     T* first_empty;
   public:
     aligned_vec(size_t size, size_t init_size = 0)
+        : begin{nullptr}
     {
-        begin = static_cast<T*>(aligned_alloc(AVX2_alignment, size*sizeof(T)));
-        assert(begin);
+        // handle zero size allocations
+        if (size > 0) {
+            begin = static_cast<T*>(aligned_alloc(AVX2_alignment, size*sizeof(T)));
+            assert(begin);
+        }
         first_empty = begin + init_size;
     }
 
@@ -36,11 +40,6 @@ class aligned_vec {
         first_empty = nullptr;
     }
 
-    bool valid()
-    {
-        return begin != nullptr;
-    }
-
     size_t size() const
     {
         return first_empty - begin;
@@ -53,28 +52,33 @@ class aligned_vec {
 
     T* data()
     {
+        assert(begin);
         return begin;
     }
 
     const T* data() const
     {
+        assert(begin);
         return begin;
     }
 
     T& operator[] (size_t index)
     {
+        assert(begin);
         assert(index < size());
         return begin[index];
     }
 
     const T& operator[] (size_t index) const
     {
+        assert(begin);
         assert(index < size());
         return begin[index];
     }
 
     void push_back(T& element)
     {
+        assert(begin);
         *first_empty = element;
         first_empty++;
     }
@@ -105,7 +109,7 @@ private:
     static constexpr size_t max_candidates = 512;
 
     uint_fast64_t stat_lookups = 0;
-    uint_fast64_t stat_lookups_found = 0;
+    uint_fast64_t stat_lookups_not_found = 0;
     uint_fast64_t stat_cmps = 0;
 
     using lut_t = std::vector<aligned_vec<diags_packed_t>>;
@@ -116,7 +120,7 @@ private:
     lut_t lookup_solutions;
     uint64_t get_solution_cnt(uint32_t cols, diags_packed_t search_elem, lut_t &lookup_candidates);
     uint64_t count_solutions(const aligned_vec<diags_packed_t> &solutions, const aligned_vec<diags_packed_t> &candidates);
-    uint8_t lookup_depth(uint8_t boardsize);
+    uint8_t lookup_depth(uint8_t boardsize, uint8_t placed);
 };
 
 #endif // CPUSOLVER_H

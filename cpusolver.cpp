@@ -16,39 +16,39 @@ cpuSolver::cpuSolver()
 constexpr uint_fast8_t MINN = 2;
 constexpr uint_fast8_t MAXN = 29;
 
-uint8_t cpuSolver::lookup_depth(uint8_t boardsize)
+uint8_t cpuSolver::lookup_depth(uint8_t boardsize, uint8_t placed)
 {
-    uint8_t result = 2;
-    // TODO(sudden6): find the maximum values that can be reached with this solver
-    // depth 2
-    // depth 3
-    // depth 4
-    // depth 5
-    // depth 6 for max N=27 <- seems to be the optimum for now
+    assert(boardsize > placed);
+    uint8_t available_depth = boardsize - placed;
+    available_depth -= 1; // main solver needs at least 1 queen to work with
+
+    uint8_t limit = 0;
+    // TODO(sudden6): it is not yet clear why these seemingly arbitrary limits exist
     switch (boardsize) {
-        // board sizes lower than 5 are not supported by this solver
+        // board sizes lower than 6 are not supported by this solver
         case 6:
+            limit = 2;
+            break;
         case 7:
         case 8:
-            result = 2;
-        break;
         case 9:
         case 10:
-            result = 3;
-        break;
+            limit = 3;
+            break;
         case 11:
         case 12:
         case 13:
-            result = 4;
+            limit = 4;
         break;
         case 14:
-            result = 5;
+            limit = 5;
         break;
+        // this limit seems to be optimal (speed wise) for higher board sizes
         default:
-            result = 6;
+            limit = 6;
     }
 
-    return result;
+    return std::min(available_depth, limit);
 }
 
 bool cpuSolver::init(uint8_t boardsize, uint8_t placed)
@@ -267,15 +267,6 @@ static uint32_t count_solutions_fixed(size_t batch,
     const diags_packed_t* __restrict__ sol_data = solutions.data();
     const diags_packed_t* __restrict__ can_data = candidates.data();
 
-    /*
-    for(size_t s_idx = 0; s_idx < sol_size; s_idx++) {
-#pragma omp simd reduction(+:solutions_cnt)
-        for(size_t c_idx = 0; c_idx < max_candidates; c_idx++) {
-            solutions_cnt += (sol_data[s_idx].diagr & can_data[c_idx].diagr) == 0 && (sol_data[s_idx].diagl & can_data[c_idx].diagl) == 0;
-        }
-    }
-    */
-
     uint32_t solutions_cnt = sol_size * batch;
     for(size_t s_idx = 0; s_idx < sol_size; s_idx++) {
 #pragma omp simd reduction(-:solutions_cnt) aligned(sol_data, can_data: 32)
@@ -286,18 +277,17 @@ static uint32_t count_solutions_fixed(size_t batch,
     return solutions_cnt;
 }
 
-
-
 uint64_t cpuSolver::get_solution_cnt(uint32_t cols, diags_packed_t search_elem, lut_t &lookup_candidates) {
     uint64_t solutions_cnt = 0;
     const auto& found = lookup_hash.find(cols);
 
     // TODO(sudden6): determine the exact conditions where the below comment is true
-    // since the lookup table contains all possible combinations, we know the current one will be found
+    //      since the lookup table contains all possible combinations, we know the current one will be found
+    // meanwhile handle that case gracefully
     if(found == lookup_hash.end()) {
+        stat_lookups_not_found++;
         return 0;
     }
-
     auto lookup_idx = found->second;
     auto& candidates_vec = lookup_candidates[lookup_idx];
     candidates_vec.push_back(search_elem);
@@ -328,9 +318,8 @@ void update_bit_stats(std::vector<uint_fast64_t>& state, uint64_t bits, size_t n
 }
 
 uint64_t cpuSolver::solve_subboard(const std::vector<start_condition>& starts) {
-
   stat_lookups = 0;
-  stat_lookups_found = 0;
+  stat_lookups_not_found = 0;
   stat_cmps = 0;
   std::cout << "Solving N=" << std::to_string(boardsize) << std::endl;
   // counter for the number of solutions
@@ -363,7 +352,7 @@ uint64_t cpuSolver::solve_subboard(const std::vector<start_condition>& starts) {
   lookup_solutions.clear();
 
   auto lut_init_time_start = std::chrono::high_resolution_clock::now();
-  size_t lut_size = init_lookup(lookup_depth(boardsize), mask);
+  size_t lut_size = init_lookup(lookup_depth(boardsize, placed), mask);
   auto lut_init_time_end = std::chrono::high_resolution_clock::now();
   std::chrono::duration<double> elapsed = lut_init_time_end - lut_init_time_start;
 
@@ -377,7 +366,7 @@ uint64_t cpuSolver::solve_subboard(const std::vector<start_condition>& starts) {
 #define LOOKAHEAD 3
   const int8_t rest_init = boardsize - LOOKAHEAD - this->placed;
   // TODO: find out why +1 is needed
-  const int8_t rest_lookup = rest_init - (boardsize - this->placed - lookup_depth(boardsize)) + 1;
+  const int8_t rest_lookup = rest_init - (boardsize - this->placed - lookup_depth(boardsize, placed)) + 1;
 
   const size_t thread_cnt = 8;
 
@@ -484,11 +473,9 @@ uint64_t cpuSolver::solve_subboard(const std::vector<start_condition>& starts) {
 
   std::cout << "Time to clean lookup table: " << std::to_string(elapsed.count()) << "s" << std::endl;
 
-
   std::cout << "Lookups: " << std::to_string(stat_lookups) << std::endl;
-  std::cout << "Lookups found: " << std::to_string(stat_lookups_found) << std::endl;
+  std::cout << "Lookups not found: " << std::to_string(stat_lookups_not_found) << std::endl;
   std::cout << "Compares: " << std::to_string(stat_cmps) << std::endl;
-  std::cout << "Solutions Lookup: " << std::to_string(num_lookup*2) << std::endl;
 
   return num_lookup * 2;
 }
