@@ -19,7 +19,7 @@
 #include <regex>
 
 constexpr uint8_t MAXN = 29;
-constexpr uint8_t MINN = 4;
+constexpr uint8_t MINN = 5;
 constexpr uint8_t MIN_PRE_PLACED = 3;
 
 // expected results from https://oeis.org/A000170
@@ -233,7 +233,7 @@ int main(int argc, char **argv) {
         solve_from_file(*solver, presolve_file_name);
     } else {
         if(start <= MINN || start > MAXN) {
-          std::cout << "[start] must be greater 4 and smaller than " << std::to_string(MAXN) << std::endl;
+          std::cout << "[start] must be greater " << std::to_string(MINN) << " and smaller than " << std::to_string(MAXN) << std::endl;
           exit(EXIT_FAILURE);
         }
 

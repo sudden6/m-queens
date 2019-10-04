@@ -7,7 +7,6 @@
 
 static constexpr size_t AVX2_alignment = 32;
 
-
 template <class T>
 class aligned_vec {
     T* begin;
@@ -101,15 +100,8 @@ public:
 private:
     uint_fast8_t boardsize = 0;
     uint_fast8_t placed = 0;
-    // TODO(sudden6): find the maximum values that can be reached with this solver
-    // depth 2 -> vec 2
-    // depth 3 -> vec 6
-    // depth 4 -> vec 24
-    // depth 5 -> vec 88
-    // depth 6 -> vec 552 for max N=27 <- seems to be the optimum for now
-    // depth 7 -> vec 1100
-    static constexpr uint8_t lookup_depth = 6;
-    static constexpr size_t lut_vec_size = 552;
+
+    static constexpr uint8_t max_lookup_depth = 6;
     static constexpr size_t max_candidates = 512;
 
     uint_fast64_t stat_lookups = 0;
@@ -124,6 +116,7 @@ private:
     lut_t lookup_solutions;
     uint64_t get_solution_cnt(uint32_t cols, diags_packed_t search_elem, lut_t &lookup_candidates);
     uint64_t count_solutions(const aligned_vec<diags_packed_t> &solutions, const aligned_vec<diags_packed_t> &candidates);
+    uint8_t lookup_depth(uint8_t boardsize);
 };
 
 #endif // CPUSOLVER_H

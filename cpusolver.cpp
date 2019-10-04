@@ -16,6 +16,41 @@ cpuSolver::cpuSolver()
 constexpr uint_fast8_t MINN = 2;
 constexpr uint_fast8_t MAXN = 29;
 
+uint8_t cpuSolver::lookup_depth(uint8_t boardsize)
+{
+    uint8_t result = 2;
+    // TODO(sudden6): find the maximum values that can be reached with this solver
+    // depth 2
+    // depth 3
+    // depth 4
+    // depth 5
+    // depth 6 for max N=27 <- seems to be the optimum for now
+    switch (boardsize) {
+        // board sizes lower than 5 are not supported by this solver
+        case 6:
+        case 7:
+        case 8:
+            result = 2;
+        break;
+        case 9:
+        case 10:
+            result = 3;
+        break;
+        case 11:
+        case 12:
+        case 13:
+            result = 4;
+        break;
+        case 14:
+            result = 5;
+        break;
+        default:
+            result = 6;
+    }
+
+    return result;
+}
+
 bool cpuSolver::init(uint8_t boardsize, uint8_t placed)
 {
     if(boardsize > MAXN || boardsize < MINN) {
@@ -257,8 +292,11 @@ uint64_t cpuSolver::get_solution_cnt(uint32_t cols, diags_packed_t search_elem, 
     uint64_t solutions_cnt = 0;
     const auto& found = lookup_hash.find(cols);
 
+    // TODO(sudden6): determine the exact conditions where the below comment is true
     // since the lookup table contains all possible combinations, we know the current one will be found
-    assert(found != lookup_hash.end());
+    if(found == lookup_hash.end()) {
+        return 0;
+    }
 
     auto lookup_idx = found->second;
     auto& candidates_vec = lookup_candidates[lookup_idx];
@@ -322,18 +360,24 @@ uint64_t cpuSolver::solve_subboard(const std::vector<start_condition>& starts) {
   std::cout << "Column mask: " << std::hex << col_mask << " zeros in mask: " << std::to_string(mask) << std::endl;
 
   lookup_hash.clear();
+  lookup_solutions.clear();
 
   auto lut_init_time_start = std::chrono::high_resolution_clock::now();
-  init_lookup(lookup_depth, mask);
+  size_t lut_size = init_lookup(lookup_depth(boardsize), mask);
   auto lut_init_time_end = std::chrono::high_resolution_clock::now();
   std::chrono::duration<double> elapsed = lut_init_time_end - lut_init_time_start;
 
   std::cout << "Time to init lookup table: " << std::to_string(elapsed.count()) << "s" << std::endl;
 
+  if (lut_size == 0) {
+      std::cout << "Empty lookup table, can't work with that" << std::endl;
+      return 0;
+  }
+
 #define LOOKAHEAD 3
   const int8_t rest_init = boardsize - LOOKAHEAD - this->placed;
   // TODO: find out why +1 is needed
-  const int8_t rest_lookup = rest_init - (boardsize - this->placed - lookup_depth) + 1;
+  const int8_t rest_lookup = rest_init - (boardsize - this->placed - lookup_depth(boardsize)) + 1;
 
   const size_t thread_cnt = 8;
 
@@ -454,6 +498,11 @@ size_t cpuSolver::init_lookup(uint8_t depth, uint32_t skip_mask)
     std::cout << "Building Lookup Table" << std::endl;
     std::cout << "LUT depth: " << std::to_string(depth) << std::endl;
 
+    if (depth < 2) {
+        std::cout << "ERROR: Minimum depth for lookup table is 2" << std::endl;
+        return 0;
+    }
+
     uint_fast64_t stat_total = 0;
 
     // stat counter for number of elements in the lookup table
@@ -564,6 +613,11 @@ size_t cpuSolver::init_lookup(uint8_t depth, uint32_t skip_mask)
         d--;
         posib = posibs[d]; // backtrack ...
       }
+    }
+
+    if(unsolvable > 0) {
+        std::cout << "ERROR: Lookuptable is not complete" << std::endl;
+        return 0;
     }
 
     size_t stat_max_len = 0;
