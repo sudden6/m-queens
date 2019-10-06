@@ -376,7 +376,8 @@ uint64_t cpuSolver::solve_subboard(const std::vector<start_condition_t> &starts)
   // TODO: find out why +1 is needed
   const int8_t rest_lookup = rest_init - (boardsize - this->placed - lookup_depth(boardsize, placed)) + 1;
 
-  const size_t thread_cnt = 8;
+  const size_t omp_threads = omp_get_max_threads();
+  const size_t thread_cnt = std::min(omp_threads, start_cnt);
 
   // first index: lookup table index
   std::vector<lut_t> thread_luts;
