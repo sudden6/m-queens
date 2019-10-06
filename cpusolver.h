@@ -84,21 +84,12 @@ class aligned_vec {
     }
 };
 
-#pragma pack(push, 1)
-    typedef struct alignas(8)
-    {
-        uint32_t diagr;
-        uint32_t diagl;
-    } diags_packed_t;
-#pragma pack(pop)
-
-
 class cpuSolver : public ISolver
 {
 public:
     cpuSolver();
     bool init(uint8_t boardsize, uint8_t placed);
-    uint64_t solve_subboard(const std::vector<start_condition>& starts);
+    uint64_t solve_subboard(const std::vector<start_condition_t>& starts);
     size_t init_lookup(uint8_t depth, uint32_t skip_mask);
 
 private:

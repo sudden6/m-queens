@@ -8,7 +8,7 @@
 class ISolver {
 public:
     virtual bool init(uint8_t boardsize, uint8_t placed) = 0;
-    virtual uint64_t solve_subboard(const std::vector<start_condition>& starts) = 0;
+    virtual uint64_t solve_subboard(const std::vector<start_condition_t>& starts) = 0;
     virtual ~ISolver(){}
 };
 

@@ -6,7 +6,7 @@
 #include <fstream>
 #include <regex>
 
-std::vector<start_condition> start_file::load_all(const std::string& filename)
+std::vector<start_condition_t> start_file::load_all(const std::string& filename)
 {
     std::ifstream file;
     file.open(filename, std::ifstream::in | std::ifstream::binary);
@@ -43,7 +43,7 @@ std::vector<start_condition> start_file::load_all(const std::string& filename)
 }
 
 // expects an opened file in binary read mode
-std::vector<start_condition> start_file::load_all(FILE* file)
+std::vector<start_condition_t> start_file::load_all(FILE* file)
 {
     if(!file) {
         std::cout << "Error reading file" << std::endl;

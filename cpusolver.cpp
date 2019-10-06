@@ -10,10 +10,9 @@
 
 cpuSolver::cpuSolver()
 {
-
 }
 
-constexpr uint_fast8_t MINN = 2;
+constexpr uint_fast8_t MINN = 6;
 constexpr uint_fast8_t MAXN = 29;
 
 uint8_t cpuSolver::lookup_depth(uint8_t boardsize, uint8_t placed)
@@ -182,19 +181,19 @@ static uint32_t count_solutions_fixed(size_t batch,
         }
     }
 
-    uint64_t sol_cnt_vec[4] __attribute__((aligned(AVX2_alignment)));
+    __m256i sol_cnt_vec;
 
-    _mm256_store_si256(reinterpret_cast<__m256i *>(sol_cnt_vec), sol_cnt_0_1_2_3_4_5_6_7);
+    _mm256_store_si256(&sol_cnt_vec, sol_cnt_0_1_2_3_4_5_6_7);
 
     uint64_t sol_sum = 0;
 
     for(int i = 0; i < 4; i++) {
-        sol_sum += sol_cnt_vec[i];
+        sol_sum += static_cast<uint64_t>(sol_cnt_vec[i]);
     }
 
     // prevent overflow in result variable
     assert(sol_size * batch < UINT32_MAX);
-    return sol_size * batch + sol_sum;
+    return static_cast<uint32_t>(sol_size * batch + sol_sum);
 }
 
 __attribute__ ((target ("sse4.2")))
@@ -221,15 +220,15 @@ static uint32_t count_solutions_fixed(size_t batch,
         }
     }
 
-    uint64_t sol_cnt_vec[2] __attribute__((aligned(AVX2_alignment)));
+    __m128i sol_cnt_vec;
 
-    _mm_store_si128((__m128i*)sol_cnt_vec, sol_cnt_0_1_2_3);
+    _mm_store_si128(&sol_cnt_vec, sol_cnt_0_1_2_3);
 
-    uint32_t sol_sum = sol_cnt_vec[0] + sol_cnt_vec[1];
+    uint64_t sol_sum = static_cast<uint64_t>(sol_cnt_vec[0]) + static_cast<uint64_t>(sol_cnt_vec[1]);
 
     // prevent overflow in result variable
     assert(sol_size * batch < UINT32_MAX);
-    return sol_size * batch + sol_sum;
+    return static_cast<uint32_t>(sol_size * batch + sol_sum);
 }
 
 __attribute__ ((target ("sse2")))
@@ -257,14 +256,12 @@ static uint32_t count_solutions_fixed(size_t batch,
     }
 
     uint32_t sol_cnt_vec[4] __attribute__((aligned(AVX2_alignment)));
-
-    _mm_store_si128((__m128i*)sol_cnt_vec, sol_cnt_0_1_2_3);
-
+    _mm_store_si128(reinterpret_cast<__m128i*>(sol_cnt_vec), sol_cnt_0_1_2_3);
     uint32_t sol_sum = sol_cnt_vec[0] + sol_cnt_vec[1] + sol_cnt_vec[2] + sol_cnt_vec[3];
 
     // prevent overflow in result variable
     assert(sol_size * batch < UINT32_MAX);
-    return sol_size * batch + sol_sum;
+    return static_cast<uint32_t>(sol_size * batch + sol_sum);
 }
 
 __attribute__ ((target ("default")))
@@ -278,7 +275,7 @@ static uint32_t count_solutions_fixed(size_t batch,
 
     // prevent overflow in result variable
     assert(sol_size * batch < UINT32_MAX);
-    uint32_t solutions_cnt = sol_size * batch;
+    uint32_t solutions_cnt = static_cast<uint32_t>(sol_size * batch);
     for(size_t s_idx = 0; s_idx < sol_size; s_idx++) {
 #pragma omp simd reduction(-:solutions_cnt) aligned(sol_data, can_data: 32)
         for(size_t c_idx = 0; c_idx < batch; c_idx++) {
@@ -329,7 +326,7 @@ void update_bit_stats(std::vector<uint_fast64_t>& state, uint64_t bits, size_t n
     }
 }
 
-uint64_t cpuSolver::solve_subboard(const std::vector<start_condition>& starts) {
+uint64_t cpuSolver::solve_subboard(const std::vector<start_condition_t> &starts) {
   stat_lookups = 0;
   stat_lookups_not_found = 0;
   stat_cmps = 0;
@@ -374,8 +371,10 @@ uint64_t cpuSolver::solve_subboard(const std::vector<start_condition>& starts) {
       return 0;
   }
 
-#define LOOKAHEAD 3
-  const int8_t rest_init = boardsize - LOOKAHEAD - this->placed;
+  assert(this->boardsize > this->placed);
+
+  constexpr uint8_t LOOKAHEAD = 3;
+  const int8_t rest_init = static_cast<int8_t>(boardsize - LOOKAHEAD - this->placed);
   // TODO: find out why +1 is needed
   const int8_t rest_lookup = rest_init - (boardsize - this->placed - lookup_depth(boardsize, placed)) + 1;
 
@@ -395,7 +394,7 @@ uint64_t cpuSolver::solve_subboard(const std::vector<start_condition>& starts) {
 
 #pragma omp parallel for reduction(+ : num_lookup) num_threads(thread_cnt) schedule(dynamic)
   for (uint_fast32_t cnt = 0; cnt < start_cnt; cnt++) {
-    const size_t thread_num = omp_get_thread_num();
+    const size_t thread_num = static_cast<size_t>(omp_get_thread_num());
     lut_t& lookup_candidates = thread_luts[thread_num];
     uint_fast32_t cols[MAXN], posibs[MAXN]; // Our backtracking 'stack'
     uint_fast32_t diagl[MAXN], diagr[MAXN];
@@ -431,7 +430,7 @@ uint64_t cpuSolver::solve_subboard(const std::vector<start_condition>& starts) {
         if (new_posib != UINT_FAST32_MAX) {
             uint_fast32_t lookahead1 = (bit | (new_diagl << (LOOKAHEAD - 2)) | (new_diagr >> (LOOKAHEAD - 2)));
             uint_fast32_t lookahead2 = (bit | (new_diagl << (LOOKAHEAD - 1)) | (new_diagr >> (LOOKAHEAD - 1)));
-            uint_fast32_t allowed2 = l_rest > (int8_t)0;
+            uint_fast32_t allowed2 = l_rest > static_cast<int8_t>(0);
 
             if(allowed2 && ((lookahead2 == UINT_FAST32_MAX) || (lookahead1 == UINT_FAST32_MAX))) {
                 continue;
@@ -440,8 +439,8 @@ uint64_t cpuSolver::solve_subboard(const std::vector<start_condition>& starts) {
             if (l_rest == rest_lookup) {
                 // compute final lookup_depth stages via hashtable lookup
                 stat_lookups++;
-                diags_packed_t candidate = {.diagr = static_cast<uint32_t>(new_diagr), .diagl = static_cast<uint32_t>(new_diagl)};
-                num_lookup += get_solution_cnt(bit, candidate, lookup_candidates);
+                diags_packed_t candidate = {static_cast<uint32_t>(new_diagr), static_cast<uint32_t>(new_diagl)};
+                num_lookup += get_solution_cnt(static_cast<uint32_t>(bit), candidate, lookup_candidates);
                 continue;
             }
 
@@ -557,7 +556,7 @@ size_t cpuSolver::init_lookup(uint8_t depth, uint32_t skip_mask)
               if (l_rest == 0) {
                   // In the solver we look for free columns, so we must invert the bits here
                   // fill up with ones to match padding in the solver
-                  uint32_t conv = ~bit | (UINT_FAST32_MAX << boardsize);
+                  uint_fast32_t conv = ~bit | (UINT_FAST32_MAX << boardsize);
                   const uint_fast32_t board_width_mask = ~(UINT_FAST32_MAX << boardsize);
                   // diagonals are not inverted, they have to be compared in the solver step
                   // we loose some bits here, but they do not matter for a solution
@@ -567,9 +566,9 @@ size_t cpuSolver::init_lookup(uint8_t depth, uint32_t skip_mask)
                   stat_total++;
 
                   // combine diagonals for easier handling
-                  diags_packed_t new_entry = {.diagr = static_cast<uint32_t>(conv_diagr), .diagl = static_cast<uint32_t>(conv_diagl)};
+                  diags_packed_t new_entry = {static_cast<uint32_t>(conv_diagr), static_cast<uint32_t>(conv_diagl)};
 
-                  auto it = lookup_hash.find(conv);
+                  auto it = lookup_hash.find(static_cast<uint32_t>(conv));
 
                   if (it != lookup_hash.end()) {
                       auto pattern_idx = it->second;

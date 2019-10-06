@@ -15,7 +15,7 @@ PreSolver::PreSolver()
  * @param depth queens to place until done
  * @param start initial condition
  */
-PreSolver::PreSolver(uint_fast8_t n, uint_fast8_t placed, uint_fast8_t depth, start_condition start)
+PreSolver::PreSolver(uint_fast8_t n, uint_fast8_t placed, uint_fast8_t depth, start_condition_t start)
 {
     if(n < 2) {
         return;
@@ -61,17 +61,17 @@ PreSolver::PreSolver(uint_fast8_t n, uint_fast8_t placed, uint_fast8_t depth, st
 
 }
 
-std::vector<start_condition> PreSolver::getNext(size_t count)
+std::vector<start_condition_t> PreSolver::getNext(size_t count)
 {
-    std::vector<start_condition> result;
+    std::vector<start_condition_t> result;
     result.resize(count);
-    std::vector<start_condition>::iterator end = getNext(result.begin(), result.cend());
+    std::vector<start_condition_t>::iterator end = getNext(result.begin(), result.cend());
     result.resize(std::distance(result.begin(), end));
     return result;
 }
 
-std::vector<start_condition>::iterator PreSolver::getNext(std::vector<start_condition>::iterator it,
-                        const std::vector<start_condition>::const_iterator end)
+std::vector<start_condition_t>::iterator PreSolver::getNext(std::vector<start_condition_t>::iterator it,
+                        const std::vector<start_condition_t>::const_iterator end)
 {
     if(it == end) {
         return it;
@@ -169,8 +169,8 @@ size_t PreSolver::possibs_at_depth(size_t current, uint8_t placed, uint8_t board
     return result;
 }
 
-std::vector<start_condition> PreSolver::create_preplacement(uint_fast8_t n) {
-    std::vector<start_condition> result;
+std::vector<start_condition_t> PreSolver::create_preplacement(uint_fast8_t n) {
+    std::vector<start_condition_t> result;
 
     if(n < 2) {
         return  result;

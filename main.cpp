@@ -58,7 +58,7 @@ static void solve_from_range(ISolver& solver, uint8_t start, uint8_t end) {
 
         uint64_t result = 0;
         auto time_start = std::chrono::high_resolution_clock::now();
-        std::vector<start_condition> st = PreSolver::create_preplacement(i);
+        std::vector<start_condition_t> st = PreSolver::create_preplacement(i);
 
         result = solver.solve_subboard(st);
         auto time_end = std::chrono::high_resolution_clock::now();

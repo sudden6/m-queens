@@ -9,22 +9,22 @@ class PreSolver
 {
 public:
     PreSolver();
-    PreSolver(uint_fast8_t n, uint_fast8_t placed, uint_fast8_t depth, start_condition start);
-    std::vector<start_condition> getNext(size_t count);
-    std::vector<start_condition>::iterator getNext(std::vector<start_condition>::iterator it,
-                 const std::vector<start_condition>::const_iterator end);
+    PreSolver(uint_fast8_t n, uint_fast8_t placed, uint_fast8_t depth, start_condition_t start);
+    std::vector<start_condition_t> getNext(size_t count);
+    std::vector<start_condition_t>::iterator getNext(std::vector<start_condition_t>::iterator it,
+                 const std::vector<start_condition_t>::const_iterator end);
     bool empty() const;
     std::vector<uint8_t> save() const;
     bool load(std::vector<uint8_t> data);
 
     static size_t possibs_at_depth(size_t current, uint8_t placed, uint8_t boardsize, uint8_t depth);
-    static std::vector<start_condition> create_preplacement(uint_fast8_t n);
+    static std::vector<start_condition_t> create_preplacement(uint_fast8_t n);
 private:
     uint_fast8_t n = 0;
     uint_fast8_t placed = 0;
     uint_fast8_t depth = 0;
     bool valid = false;
-    start_condition start;
+    start_condition_t start;
 
     static constexpr unsigned MAXD = 20;
 
@@ -48,7 +48,7 @@ private:
         uint_fast8_t placed = 0;
         uint_fast8_t depth = 0;
         bool valid = false;
-        start_condition start;
+        start_condition_t start;
         uint_fast32_t cols[PreSolver::MAXD], posibs[PreSolver::MAXD];
         uint_fast32_t diagl[PreSolver::MAXD], diagr[PreSolver::MAXD];
         int_fast8_t rest[MAXD];
