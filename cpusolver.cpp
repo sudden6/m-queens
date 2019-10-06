@@ -82,8 +82,6 @@ uint64_t cpuSolver::count_solutions(const aligned_vec<diags_packed_t>& solutions
         }
     }
 
-    // prevent overflow in result variable
-    assert(sol_size * batch < UINT32_MAX);
     return solutions_cnt;
 }
 
