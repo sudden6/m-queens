@@ -96,7 +96,6 @@ private:
     uint_fast8_t boardsize = 0;
     uint_fast8_t placed = 0;
 
-    static constexpr uint8_t max_lookup_depth = 6;
     static constexpr size_t max_candidates = 256;
 
     uint_fast64_t stat_lookups = 0;

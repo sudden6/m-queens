@@ -125,7 +125,7 @@ void ClSolver::threadWorker(uint32_t id, std::mutex &pre_lock)
         b.hostStartBuf.resize(BATCH_SIZE);
         // Allocate start condition buffer on device
         b.clStartBuf = cl::Buffer(context, CL_MEM_READ_ONLY | CL_MEM_HOST_WRITE_ONLY | CL_MEM_USE_HOST_PTR,
-            b.hostStartBuf.size() * sizeof(start_condition), b.hostStartBuf.data(), &err);
+            b.hostStartBuf.size() * sizeof(start_condition_t), b.hostStartBuf.data(), &err);
         if(err != CL_SUCCESS) {
             std::cout << "cl::Buffer start_buf failed: " << err << std::endl;
         }
@@ -184,7 +184,7 @@ void ClSolver::threadWorker(uint32_t id, std::mutex &pre_lock)
         cur_batch %= NUM_BATCHES;
 
         void* clStart = cmdQueue.enqueueMapBuffer(b.clStartBuf, CL_TRUE, CL_MAP_WRITE_INVALIDATE_REGION,
-                                                  0, BATCH_SIZE * sizeof(start_condition), nullptr, nullptr, &err);
+                                                  0, BATCH_SIZE * sizeof(start_condition_t), nullptr, nullptr, &err);
         if(err != CL_SUCCESS) {
             std::cout << "Failed to map start buffer: " << err << std::endl;
         }
@@ -286,7 +286,7 @@ PreSolver ClSolver::nextPre(std::mutex& pre_lock)
     return result;
 }
 
-uint64_t ClSolver::solve_subboard(const std::vector<start_condition> &start)
+uint64_t ClSolver::solve_subboard(const std::vector<start_condition_t> &start)
 {
     this->start = start;
     solved = 0;
@@ -299,7 +299,7 @@ uint64_t ClSolver::solve_subboard(const std::vector<start_condition> &start)
     std::mutex pre_lock{};
 
     std::cout << "Number of Threads: " << NUM_CMDQUEUES << std::endl;
-    std::cout << "Buffer per Thread: " << BATCH_SIZE * sizeof(start_condition)/(1024*1024) << "MB" << std::endl;
+    std::cout << "Buffer per Thread: " << BATCH_SIZE * sizeof(start_condition_t)/(1024*1024) << "MB" << std::endl;
 
     for(size_t i = 0; i < NUM_CMDQUEUES; i++) {
         // init result

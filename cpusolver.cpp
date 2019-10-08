@@ -8,8 +8,29 @@
 #include <immintrin.h>
 #include <xmmintrin.h>
 
+__attribute__ ((__target__ ("default")))
+static void print_optimization() {
+    std::cout << "Optimizing for: None" << std::endl;
+}
+
+__attribute__ ((__target__ ("avx2")))
+static void print_optimization() {
+    std::cout << "Optimizing for: AVX2" << std::endl;
+}
+
+__attribute__ ((__target__ ("sse4.2")))
+static void print_optimization() {
+    std::cout << "Optimizing for: SSE4.2" << std::endl;
+}
+
+__attribute__ ((__target__ ("sse2")))
+static void print_optimization() {
+    std::cout << "Optimizing for: SSE2" << std::endl;
+}
+
 cpuSolver::cpuSolver()
 {
+    print_optimization();
 }
 
 constexpr uint_fast8_t MINN = 6;

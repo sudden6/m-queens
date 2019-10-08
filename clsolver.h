@@ -14,7 +14,7 @@ class ClSolver : public ISolver
 {
 public:
     bool init(uint8_t boardsize, uint8_t placed);
-    uint64_t solve_subboard(const std::vector<start_condition>& start);
+    uint64_t solve_subboard(const std::vector<start_condition_t>& start);
     static void enumerate_devices();
 
     static ClSolver* makeClSolver(unsigned int platform, unsigned int device);
@@ -25,7 +25,7 @@ private:
     static constexpr size_t NUM_CMDQUEUES = 16;
     PreSolver nextPre(std::mutex &pre_lock);
 
-    std::vector<start_condition> start;
+    std::vector<start_condition_t> start;
     size_t solved = 0;
 
     uint8_t presolve_depth = 0;
