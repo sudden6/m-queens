@@ -362,6 +362,9 @@ uint64_t cpuSolver::solve_subboard(const std::vector<start_condition_t> &starts)
       col_mask &= start.cols;
   }
 
+  // clear highest padding bits
+  col_mask &= ~(UINT32_MAX << boardsize);
+
   // count fixed bits overall
   uint8_t mask = 0;
   for (uint8_t i = 0; i < 32; i++) {
@@ -370,16 +373,13 @@ uint64_t cpuSolver::solve_subboard(const std::vector<start_condition_t> &starts)
       }
   }
 
-  // subtract overhead bits
-  mask -= 32 - boardsize;
-
   std::cout << "Column mask: " << std::hex << col_mask << " zeros in mask: " << std::to_string(mask) << std::endl;
 
   lookup_hash.clear();
   lookup_solutions.clear();
 
   auto lut_init_time_start = std::chrono::high_resolution_clock::now();
-  size_t lut_size = init_lookup(lookup_depth(boardsize, placed), mask);
+  size_t lut_size = init_lookup(lookup_depth(boardsize, placed), col_mask);
   auto lut_init_time_end = std::chrono::high_resolution_clock::now();
   std::chrono::duration<double> elapsed = lut_init_time_end - lut_init_time_start;
 
