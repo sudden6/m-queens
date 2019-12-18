@@ -70,13 +70,29 @@ uint64_t cpuSolver::solve_subboard(const std::vector<start_condition>& starts) {
         uint_fast32_t new_posib = (bit | new_diagl | new_diagr);
 
         if (new_posib != UINT_FAST32_MAX) {
+            /* Optimizations from "Putting Queens in Carry Chains" {Thomas B. Preußer, Bernd Nägel, and Rainer G. Spallek} */
+
             uint_fast32_t lookahead1 = (bit | (new_diagl << (LOOKAHEAD - 2)) | (new_diagr >> (LOOKAHEAD - 2)));
             uint_fast32_t lookahead2 = (bit | (new_diagl << (LOOKAHEAD - 1)) | (new_diagr >> (LOOKAHEAD - 1)));
-            uint_fast32_t allowed2 = l_rest > (int8_t)0;
+            uint_fast32_t allowed2 = l_rest > 0;
 
+#if 1
+            // Page 8, 1)
             if(allowed2 && ((lookahead2 == UINT_FAST32_MAX) || (lookahead1 == UINT_FAST32_MAX))) {
                 continue;
             }
+#endif
+
+#if 0
+            // Page 8, 2)
+            if(allowed2 && (lookahead1 == lookahead2)) {
+                uint_fast32_t adjacent = ~lookahead1 & (~lookahead1 << 1);
+                if ((adjacent != 0) && (__builtin_popcount(~lookahead1) == 2)) {
+                    continue;
+                }
+
+            }
+#endif
 
           // The next two lines save stack depth + backtrack operations
           // when we passed the last possibility in a row.
@@ -102,5 +118,6 @@ uint64_t cpuSolver::solve_subboard(const std::vector<start_condition>& starts) {
       posib = posibs[d]; // backtrack ...
     }
   }
+
   return num * 2;
 }
