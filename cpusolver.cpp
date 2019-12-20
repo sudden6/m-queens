@@ -53,7 +53,7 @@ uint8_t cpuSolver::lookup_depth(uint8_t boardsize, uint8_t placed)
         case 8:
         case 9:
         case 10:
-            limit = 3;
+            limit = 4;
             break;
         case 11:
         case 12:
@@ -61,11 +61,11 @@ uint8_t cpuSolver::lookup_depth(uint8_t boardsize, uint8_t placed)
             limit = 4;
         break;
         case 14:
-            limit = 5;
+            limit = 6;
         break;
         // this limit seems to be optimal (speed wise) for higher board sizes
         default:
-            limit = 6;
+            limit = 7;
     }
 
     return std::min(available_depth, limit);
@@ -456,6 +456,16 @@ uint64_t cpuSolver::solve_subboard(const std::vector<start_condition_t> &starts)
                 continue;
             }
 
+#if 0
+            if(allowed2 && (lookahead1 == lookahead2)) {
+                uint_fast32_t adjacent = ~lookahead1 & (~lookahead1 << 1);
+                if ((adjacent != 0) && (__builtin_popcount(~lookahead1) == 2)) {
+                    continue;
+                }
+
+            }
+#endif
+
             if (l_rest == rest_lookup) {
                 // compute final lookup_depth stages via hashtable lookup
                 stat_lookups++;
@@ -567,21 +577,49 @@ size_t cpuSolver::init_lookup(uint8_t depth, uint32_t skip_mask)
           bit |= cols[d];
           uint_fast32_t new_posib = (bit | new_diagl | (new_diagr >> depth));
 
+          // In the solver we look for free columns, so we must invert the bits here
+          // fill up with ones to match padding in the solver
+          uint_fast32_t conv = ~bit | (UINT_FAST32_MAX << boardsize);
+          const uint_fast32_t board_width_mask = ~(UINT_FAST32_MAX << boardsize);
+          // diagonals are not inverted, they have to be compared in the solver step
+          // we loose some bits here, but they do not matter for a solution
+          uint_fast32_t conv_diagl = (new_diagl >> depth) & board_width_mask;
+          uint_fast32_t conv_diagr = new_diagr & board_width_mask;
+
+          if (new_posib == UINT_FAST32_MAX) {
+              std::cout << "Hit" << std::endl;
+          }
+
           if (new_posib != UINT_FAST32_MAX) {
               if (bit & skip_mask) {
                   continue;
               }
+#if 0
+#define LOOKAHEAD 3
+
+              uint_fast32_t lookahead1 = (bit | (new_diagl << (LOOKAHEAD - 2)) | (new_diagr >> (LOOKAHEAD - 2)));
+              uint_fast32_t lookahead2 = (bit | (new_diagl << (LOOKAHEAD - 1)) | (new_diagr >> (LOOKAHEAD - 1)));
+
+              if (l_rest != 0) {
+                  if((lookahead2 == UINT_FAST32_MAX) || (lookahead1 == UINT_FAST32_MAX)) {
+                      continue;
+                  }
+
+      #if 1
+                  if(lookahead1 == lookahead2) {
+                      uint_fast32_t adjacent = ~lookahead1 & (~lookahead1 << 1);
+                      if ((adjacent != 0) && (__builtin_popcount(~lookahead1) == 2)) {
+                          continue;
+                      }
+                  }
+      #endif
+              }
+#endif
+
 
               // check if at the correct depth to save to the lookup table
               if (l_rest == 0) {
-                  // In the solver we look for free columns, so we must invert the bits here
-                  // fill up with ones to match padding in the solver
-                  uint_fast32_t conv = ~bit | (UINT_FAST32_MAX << boardsize);
-                  const uint_fast32_t board_width_mask = ~(UINT_FAST32_MAX << boardsize);
-                  // diagonals are not inverted, they have to be compared in the solver step
-                  // we loose some bits here, but they do not matter for a solution
-                  uint_fast32_t conv_diagl = (new_diagl >> depth) & board_width_mask;
-                  uint_fast32_t conv_diagr = new_diagr & board_width_mask;
+
 
                   stat_total++;
 
@@ -634,7 +672,7 @@ size_t cpuSolver::init_lookup(uint8_t depth, uint32_t skip_mask)
 
     if(unsolvable > 0) {
         std::cout << "ERROR: Lookuptable is not complete" << std::endl;
-        return 0;
+        //return 0;
     }
 
     size_t stat_max_len = 0;
