@@ -43,29 +43,10 @@ uint8_t cpuSolver::lookup_depth(uint8_t boardsize, uint8_t placed)
     available_depth -= 1; // main solver needs at least 1 queen to work with
 
     uint8_t limit = 0;
-    // TODO(sudden6): it is not yet clear why these seemingly arbitrary limits exist
-    switch (boardsize) {
-        // board sizes lower than 6 are not supported by this solver
-        case 6:
-            limit = 2;
-            break;
-        case 7:
-        case 8:
-        case 9:
-        case 10:
-            limit = 4;
-            break;
-        case 11:
-        case 12:
-        case 13:
-            limit = 4;
-        break;
-        case 14:
-            limit = 6;
-        break;
-        // this limit seems to be optimal (speed wise) for higher board sizes
-        default:
-            limit = 7;
+    if (boardsize < 16) {
+        limit = boardsize /2;
+    } else {
+        limit = 6;
     }
 
     return std::min(available_depth, limit);
@@ -586,64 +567,39 @@ size_t cpuSolver::init_lookup(uint8_t depth, uint32_t skip_mask)
           uint_fast32_t conv_diagl = (new_diagl >> depth) & board_width_mask;
           uint_fast32_t conv_diagr = new_diagr & board_width_mask;
 
-          if (new_posib == UINT_FAST32_MAX) {
-              std::cout << "Hit" << std::endl;
+          if (bit & skip_mask) {
+              continue;
           }
 
-          if (new_posib != UINT_FAST32_MAX) {
-              if (bit & skip_mask) {
-                  continue;
+          // check if at the correct depth to save to the lookup table
+          if (l_rest == 0) {
+              stat_total++;
+
+              // combine diagonals for easier handling
+              diags_packed_t new_entry = {static_cast<uint32_t>(conv_diagr), static_cast<uint32_t>(conv_diagl)};
+
+              auto it = lookup_hash.find(static_cast<uint32_t>(conv));
+
+              if (it != lookup_hash.end()) {
+                  auto pattern_idx = it->second;
+                  lookup_proto[pattern_idx].push_back(new_entry);
+                  num++;
+              } else {
+                  // column pattern doesn't yet exist, create one
+                  lookup_hash.emplace(conv, lookup_proto.size());
+                  // create element in the lookup table too
+                  std::vector<diags_packed_t> new_vec{new_entry};
+                  lookup_proto.push_back(new_vec);
+
+                  num++;
               }
-#if 0
-#define LOOKAHEAD 3
 
-              uint_fast32_t lookahead1 = (bit | (new_diagl << (LOOKAHEAD - 2)) | (new_diagr >> (LOOKAHEAD - 2)));
-              uint_fast32_t lookahead2 = (bit | (new_diagl << (LOOKAHEAD - 1)) | (new_diagr >> (LOOKAHEAD - 1)));
+              continue;
+          }
 
-              if (l_rest != 0) {
-                  if((lookahead2 == UINT_FAST32_MAX) || (lookahead1 == UINT_FAST32_MAX)) {
-                      continue;
-                  }
-
-      #if 1
-                  if(lookahead1 == lookahead2) {
-                      uint_fast32_t adjacent = ~lookahead1 & (~lookahead1 << 1);
-                      if ((adjacent != 0) && (__builtin_popcount(~lookahead1) == 2)) {
-                          continue;
-                      }
-                  }
-      #endif
-              }
-#endif
-
-
-              // check if at the correct depth to save to the lookup table
-              if (l_rest == 0) {
-
-
-                  stat_total++;
-
-                  // combine diagonals for easier handling
-                  diags_packed_t new_entry = {static_cast<uint32_t>(conv_diagr), static_cast<uint32_t>(conv_diagl)};
-
-                  auto it = lookup_hash.find(static_cast<uint32_t>(conv));
-
-                  if (it != lookup_hash.end()) {
-                      auto pattern_idx = it->second;
-                      lookup_proto[pattern_idx].push_back(new_entry);
-                      num++;
-                  } else {
-                      // column pattern doesn't yet exist, create one
-                      lookup_hash.emplace(conv, lookup_proto.size());
-                      // create element in the lookup table too
-                      std::vector<diags_packed_t> new_vec{new_entry};
-                      lookup_proto.push_back(new_vec);
-
-                      num++;
-                  }
-
-                  continue;
-              }
+          if (new_posib == UINT_FAST32_MAX) {
+              continue;
+          }
 
             // The next two lines save stack depth + backtrack operations
             // when we passed the last possibility in a row.
@@ -660,19 +616,10 @@ size_t cpuSolver::init_lookup(uint8_t depth, uint32_t skip_mask)
             diagl[d] = new_diagl << 1;
             diagr[d] = new_diagr >> 1;
             rest[d] = l_rest;
-          } else {
-            // reached a point where we can't place more queens
-            unsolvable++;
-          }
         }
         d--;
         posib = posibs[d]; // backtrack ...
       }
-    }
-
-    if(unsolvable > 0) {
-        std::cout << "ERROR: Lookuptable is not complete" << std::endl;
-        //return 0;
     }
 
     size_t stat_max_len = 0;
