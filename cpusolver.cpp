@@ -21,7 +21,7 @@ uint8_t cpuSolver::lookup_depth(uint8_t boardsize, uint8_t placed)
     if (boardsize < 16) {
         limit = boardsize /2;
     } else {
-        limit = 6;
+        limit = 7;
     }
 
     return std::min(available_depth, limit);
@@ -100,8 +100,7 @@ uint64_t cpuSolver::get_solution_cnt(uint32_t cols, diags_packed_t search_elem, 
     candidates_vec.push_back(search_elem);
 
     if(candidates_vec.size() == max_candidates) {
-        solutions_cnt = count_solutions(lookup_solutions_single[lookup_idx], candidates_vec);
-        solutions_cnt += 2 * count_solutions(lookup_solutions_double[lookup_idx], candidates_vec);
+        solutions_cnt = count_solutions_fixed(max_candidates, lookup_solutions[lookup_idx], candidates_vec);
         candidates_vec.clear();
     }
 
@@ -156,8 +155,7 @@ uint64_t cpuSolver::solve_subboard(const std::vector<start_condition_t> &starts)
   std::cout << "Column mask: " << std::hex << col_mask << " zeros in mask: " << std::to_string(mask) << std::endl;
 
   lookup_hash.clear();
-  lookup_solutions_single.clear();
-  lookup_solutions_double.clear();
+  lookup_solutions.clear();
 
   auto lut_init_time_start = std::chrono::high_resolution_clock::now();
   size_t lut_size = init_lookup(lookup_depth(boardsize, placed), col_mask);
@@ -185,8 +183,8 @@ uint64_t cpuSolver::solve_subboard(const std::vector<start_condition_t> &starts)
   std::vector<lut_t> thread_luts;
   for(size_t t = 0; t < thread_cnt; t++) {
       lut_t new_lut;
-      new_lut.reserve(lookup_solutions_single.size());
-      for (size_t i = 0; i < lookup_solutions_single.size(); i++) {
+      new_lut.reserve(lookup_solutions.size());
+      for (size_t i = 0; i < lookup_solutions.size(); i++) {
           new_lut.emplace_back(aligned_vec<diags_packed_t>(max_candidates));
       }
 
@@ -284,8 +282,7 @@ uint64_t cpuSolver::solve_subboard(const std::vector<start_condition_t> &starts)
       for (auto& it : lookup_hash) {
       auto lookup_idx = it.second;
           if(thread_luts[t][lookup_idx].size() > 0) {
-              num_lookup += count_solutions(lookup_solutions_single[lookup_idx], thread_luts[t][lookup_idx]);
-              num_lookup += 2*count_solutions(lookup_solutions_double[lookup_idx], thread_luts[t][lookup_idx]);
+              num_lookup += count_solutions(lookup_solutions[lookup_idx], thread_luts[t][lookup_idx]);
           }
       }
   }
@@ -431,47 +428,18 @@ size_t cpuSolver::init_lookup(uint8_t depth, uint32_t skip_mask)
         stat_max_len = std::max(stat_max_len, elemen_cnt);
         stat_min_len = std::min(stat_min_len, elemen_cnt);
 
-        std::vector<diags_packed_t> lookup_vec_single;
-        std::vector<diags_packed_t> lookup_vec_double;
-
-        std::sort(lookup_vec.begin(), lookup_vec.end());
-        assert(elemen_cnt > 1);
-
-        for (size_t j = 1; j < elemen_cnt; j++) {
-            if(lookup_vec[j - 1] == lookup_vec[j]) {
-                lookup_vec_double.push_back(lookup_vec[j - 1]);
-                j++;
-            } else {
-                lookup_vec_single.push_back(lookup_vec[j - 1]);
-            }
-
-            if (j == (elemen_cnt - 1)) {
-                lookup_vec_single.push_back(lookup_vec[j]);
-            }
-        }
-
-        assert(lookup_vec_single.size() + 2*lookup_vec_double.size() == elemen_cnt);
-
         // check if elements are sufficiently alligned
         constexpr diags_packed_t dummy_element {UINT32_MAX, UINT32_MAX};
 
-        if (lookup_vec_single.size() % 2 != 0) {
-            lookup_vec_single.push_back(dummy_element);
-        }
-        if (lookup_vec_double.size() % 2 != 0) {
-            lookup_vec_double.push_back(dummy_element);
+        if (lookup_vec.size() % 2 != 0) {
+            lookup_vec.push_back(dummy_element);
         }
 
-        stat_final_lut_size += lookup_vec_single.size() + lookup_vec_double.size();
 
         // put in final lookup table
-        aligned_vec<diags_packed_t> new_vec_single(lookup_vec_single.size(), lookup_vec_single.size());
-        std::memcpy(new_vec_single.data(), lookup_vec_single.data(), lookup_vec_single.size() * sizeof (diags_packed_t));
-        lookup_solutions_single.push_back(std::move(new_vec_single));
-
-        aligned_vec<diags_packed_t> new_vec_double(lookup_vec_double.size(), lookup_vec_double.size());
-        std::memcpy(new_vec_double.data(), lookup_vec_double.data(), lookup_vec_double.size() * sizeof (diags_packed_t));
-        lookup_solutions_double.push_back(std::move(new_vec_double));
+        aligned_vec<diags_packed_t> new_vec_single(lookup_vec.size(), lookup_vec.size());
+        std::memcpy(new_vec_single.data(), lookup_vec.data(), lookup_vec.size() * sizeof (diags_packed_t));
+        lookup_solutions.push_back(std::move(new_vec_single));
     }
 
     if (stat_max_len * max_candidates > UINT32_MAX) {
