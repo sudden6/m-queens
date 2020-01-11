@@ -4,6 +4,7 @@
 #include "isolver.h"
 #include "parallel_hashmap/phmap.h"
 #include <vector>
+#include <stddef.h>
 
 static constexpr size_t AVX2_alignment = 32;
 
@@ -110,6 +111,8 @@ private:
     uint64_t get_solution_cnt(uint32_t cols, diags_packed_t search_elem, lut_t &lookup_candidates);
     uint64_t count_solutions(const aligned_vec<diags_packed_t> &solutions, const aligned_vec<diags_packed_t> &candidates);
     uint8_t lookup_depth(uint8_t boardsize, uint8_t placed);
+    __uint128_t factorial(uint8_t n);
+    bool is_perfect_lut(uint8_t lut_depth, uint8_t free_bits, uint64_t entries);
 };
 
 #endif // CPUSOLVER_H

@@ -157,12 +157,15 @@ uint64_t cpuSolver::solve_subboard(const std::vector<start_condition_t> &starts)
   lookup_hash.clear();
   lookup_solutions.clear();
 
+  uint8_t lut_depth = lookup_depth(boardsize, placed);
   auto lut_init_time_start = std::chrono::high_resolution_clock::now();
-  size_t lut_size = init_lookup(lookup_depth(boardsize, placed), col_mask);
+  size_t lut_size = init_lookup(lut_depth, col_mask);
   auto lut_init_time_end = std::chrono::high_resolution_clock::now();
   std::chrono::duration<double> elapsed = lut_init_time_end - lut_init_time_start;
 
   std::cout << "Time to init lookup table: " << std::to_string(elapsed.count()) << "s" << std::endl;
+
+  std::cout << "LUT is: " << (is_perfect_lut(lut_depth, boardsize - mask, lut_size) ? "PERFECT" : "IMPERFECT") << std::endl;
 
   if (lut_size == 0) {
       std::cout << "Empty lookup table, can't work with that" << std::endl;
@@ -297,6 +300,24 @@ uint64_t cpuSolver::solve_subboard(const std::vector<start_condition_t> &starts)
   std::cout << "Compares: " << std::to_string(stat_cmps) << std::endl;
 
   return num_lookup * 2;
+}
+
+
+__uint128_t cpuSolver::factorial(uint8_t n)
+{
+    // prevent the result from overflowing
+    assert(n <= 34);
+    if(n > 1) {
+        return n * factorial(n - 1);
+    } else {
+        return 1;
+    }
+}
+
+bool cpuSolver::is_perfect_lut(uint8_t lut_depth, uint8_t free_bits, uint64_t entries)
+{
+    uint64_t max = factorial(free_bits) / (factorial(lut_depth) * factorial(free_bits - lut_depth));
+    return max == entries;
 }
 
 size_t cpuSolver::init_lookup(uint8_t depth, uint32_t skip_mask)
@@ -457,5 +478,5 @@ size_t cpuSolver::init_lookup(uint8_t depth, uint32_t skip_mask)
     std::cout << "Unsolvable: " << std::to_string(unsolvable) << std::endl;
     std::cout << "Total: " << std::to_string(stat_total) << std::endl;
 
-    return num;
+    return lookup_hash.size();
 }
