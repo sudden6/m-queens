@@ -12,11 +12,19 @@
 #pragma pack(pop)
 
 #pragma pack(push, 1)
-    typedef struct alignas(8)
+    struct alignas(8) diags_packed_t
     {
         uint32_t diagr;
         uint32_t diagl;
-    } diags_packed_t;
+
+        bool operator<(struct diags_packed_t other) {
+            return diagr < other.diagr && diagl < other.diagl;
+        }
+
+        bool operator==(struct diags_packed_t other) {
+            return diagr == other.diagr && diagl == other.diagl;
+        }
+    } ;
 #pragma pack(pop)
 
 #endif // SOLVERSTRUCTS_H

@@ -52,13 +52,11 @@ class aligned_vec {
 
     T* data()
     {
-        assert(begin);
         return begin;
     }
 
     const T* data() const
     {
-        assert(begin);
         return begin;
     }
 
@@ -107,7 +105,9 @@ private:
     // maps column patterns to index in lookup_solutions;
     phmap::flat_hash_map<uint32_t, uint32_t> lookup_hash;
     // store solutions, this is constant after initializing the lookup table
-    lut_t lookup_solutions;
+    lut_t lookup_solutions_single;
+    lut_t lookup_solutions_double;
+
     uint64_t get_solution_cnt(uint32_t cols, diags_packed_t search_elem, lut_t &lookup_candidates);
     uint64_t count_solutions(const aligned_vec<diags_packed_t> &solutions, const aligned_vec<diags_packed_t> &candidates);
     uint8_t lookup_depth(uint8_t boardsize, uint8_t placed);

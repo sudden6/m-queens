@@ -4,33 +4,8 @@
 #include <chrono>
 #include <omp.h>
 
-#include <emmintrin.h>
-#include <immintrin.h>
-#include <xmmintrin.h>
-
-__attribute__ ((__target__ ("default")))
-static void print_optimization() {
-    std::cout << "Optimizing for: None" << std::endl;
-}
-
-__attribute__ ((__target__ ("avx2")))
-static void print_optimization() {
-    std::cout << "Optimizing for: AVX2" << std::endl;
-}
-
-__attribute__ ((__target__ ("sse4.2")))
-static void print_optimization() {
-    std::cout << "Optimizing for: SSE4.2" << std::endl;
-}
-
-__attribute__ ((__target__ ("sse2")))
-static void print_optimization() {
-    std::cout << "Optimizing for: SSE2" << std::endl;
-}
-
 cpuSolver::cpuSolver()
 {
-    print_optimization();
 }
 
 constexpr uint_fast8_t MINN = 6;
@@ -87,184 +62,7 @@ uint64_t cpuSolver::count_solutions(const aligned_vec<diags_packed_t>& solutions
     return solutions_cnt;
 }
 
-__attribute__ ((__target__ ("avx2")))
-static inline void avx2_cnt_core(__m256i sol_0_1_0_1i, __m256i sol_1_0_1_0i,
-                                 __m256i* __restrict__ sol_cnt_0_1_2_3_4_5_6_7,
-                                 const __m256i* __restrict__ can_data) {
-    __m256i can_0_1_2_3 = _mm256_load_si256(can_data);
-
-    __m256i and_0_1_2_3 = _mm256_and_si256(sol_0_1_0_1i, can_0_1_2_3);
-    __m256i and_4_5_6_7 = _mm256_and_si256(sol_1_0_1_0i, can_0_1_2_3);
-    /*
-    __m256i and_4_5_6_7_rev = _mm256_shuffle_epi32(and_4_5_6_7, _MM_SHUFFLE(2, 3, 0, 1));
-    __m256i and_0_1_2_3_rev = _mm256_shuffle_epi32(and_0_1_2_3, _MM_SHUFFLE(2, 3, 0, 1));
-    __m256i and_0_1_2_3_4_5_6_7r = _mm256_blend_epi32(and_4_5_6_7_rev, and_0_1_2_3, 0x55);
-    __m256i and_0_1_2_3_4_5_6_7l = _mm256_blend_epi32(and_0_1_2_3_rev, and_4_5_6_7, 0xAA);
-
-    __m256i or_res = _mm256_or_si256(and_0_1_2_3_4_5_6_7r, and_0_1_2_3_4_5_6_7l);
-    __m256i cmp_res = _mm256_cmpgt_epi32(or_res, _mm256_setzero_si256());
-    *sol_cnt_0_1_2_3_4_5_6_7 = _mm256_add_epi32(*sol_cnt_0_1_2_3_4_5_6_7, cmp_res);
-    */
-    __m256i cmp_res1 = _mm256_cmpgt_epi64(and_0_1_2_3, _mm256_setzero_si256());
-    __m256i cmp_res2 = _mm256_cmpgt_epi64(and_4_5_6_7, _mm256_setzero_si256());
-    *sol_cnt_0_1_2_3_4_5_6_7 = _mm256_add_epi64(*sol_cnt_0_1_2_3_4_5_6_7, cmp_res1);
-    *sol_cnt_0_1_2_3_4_5_6_7 = _mm256_add_epi64(*sol_cnt_0_1_2_3_4_5_6_7, cmp_res2);
-}
-
-__attribute__ ((__target__ ("sse2")))
-static inline void sse2_cnt_core(__m128i sol_data_0_1, __m128i sol_data_1_0,
-                                 __m128i* __restrict__ sol_cnt_0_1_2_3,
-                                 const __m128i* __restrict__ can_data) {
-    __m128i can_data_0_1 = _mm_load_si128(can_data);
-    __m128i and_res_0_1 = _mm_and_si128(sol_data_0_1, can_data_0_1);
-    __m128i and_res_2_3 = _mm_and_si128(sol_data_1_0, can_data_0_1);
-
-    __m128 and_res_0_1_2_3r = _mm_shuffle_ps(_mm_castsi128_ps(and_res_0_1), _mm_castsi128_ps(and_res_2_3), _MM_SHUFFLE(2, 0, 2, 0));
-    __m128 and_res_0_1_2_3l = _mm_shuffle_ps(_mm_castsi128_ps(and_res_0_1), _mm_castsi128_ps(and_res_2_3), _MM_SHUFFLE(3, 1, 3, 1));
-
-    __m128i or_res = _mm_or_si128(_mm_castps_si128(and_res_0_1_2_3r), _mm_castps_si128(and_res_0_1_2_3l));
-    __m128i cmp_res = _mm_cmpgt_epi32(or_res, _mm_setzero_si128());
-
-    *sol_cnt_0_1_2_3 = _mm_add_epi32(cmp_res, *sol_cnt_0_1_2_3);
-}
-
-__attribute__ ((__target__ ("sse4.2")))
-static inline void sse42_cnt_core(__m128i sol_data_0_1, __m128i sol_data_1_0,
-                                 __m128i* __restrict__ sol_cnt_0_1_2_3,
-                                 const __m128i* __restrict__ can_data) {
-    __m128i can_data_0_1 = _mm_load_si128(can_data);
-    __m128i and_res_0_1 = _mm_and_si128(sol_data_0_1, can_data_0_1);
-    __m128i and_res_2_3 = _mm_and_si128(sol_data_1_0, can_data_0_1);
-
-    /*
-    __m128 and_res_0_1_2_3r = _mm_shuffle_ps(_mm_castsi128_ps(and_res_0_1), _mm_castsi128_ps(and_res_2_3), _MM_SHUFFLE(2, 0, 2, 0));
-    __m128 and_res_0_1_2_3l = _mm_shuffle_ps(_mm_castsi128_ps(and_res_0_1), _mm_castsi128_ps(and_res_2_3), _MM_SHUFFLE(3, 1, 3, 1));
-
-    __m128i or_res = _mm_or_si128(_mm_castps_si128(and_res_0_1_2_3r), _mm_castps_si128(and_res_0_1_2_3l));
-    __m128i cmp_res = _mm_cmpgt_epi32(or_res, _mm_setzero_si128());
-
-    *sol_cnt_0_1_2_3 = _mm_add_epi32(cmp_res, *sol_cnt_0_1_2_3);
-    */
-
-    __m128i cmp_res1 = _mm_cmpgt_epi64(and_res_0_1, _mm_setzero_si128());
-    __m128i cmp_res2 = _mm_cmpgt_epi64(and_res_2_3, _mm_setzero_si128());
-    *sol_cnt_0_1_2_3 =_mm_add_epi64(*sol_cnt_0_1_2_3, cmp_res1);
-    *sol_cnt_0_1_2_3 =_mm_add_epi64(*sol_cnt_0_1_2_3, cmp_res2);
-}
-
-__attribute__ ((target ("avx2")))
-static uint32_t count_solutions_fixed(size_t batch,
-                                          const aligned_vec<diags_packed_t>& solutions,
-                                          const aligned_vec<diags_packed_t>& candidates) {
-    assert(batch % 16 == 0);
-    const size_t sol_size = solutions.size();
-    assert(sol_size % 2 == 0);
-
-    const __m128d* __restrict__ sol_data = reinterpret_cast<const __m128d*> (solutions.data());
-    const __m256i* __restrict__ can_data = reinterpret_cast<const __m256i*> (candidates.data());
-
-    __m256i sol_cnt_0_1_2_3_4_5_6_7 = _mm256_setzero_si256();
-
-    for(size_t s_idx = 0; s_idx < sol_size/2; s_idx++) {
-
-        __m256d sol_0_1_0_1 = _mm256_broadcast_pd(&sol_data[s_idx]);
-        __m256d sol_1_0_1_0 = _mm256_shuffle_pd(sol_0_1_0_1, sol_0_1_0_1, 0x05);
-
-        __m256i sol_0_1_0_1i = _mm256_castpd_si256(sol_0_1_0_1);
-        __m256i sol_1_0_1_0i = _mm256_castpd_si256(sol_1_0_1_0);
-
-        for(size_t c_idx = 0; c_idx < (batch/4); c_idx += 4) {
-            avx2_cnt_core(sol_0_1_0_1i, sol_1_0_1_0i, &sol_cnt_0_1_2_3_4_5_6_7, &can_data[c_idx +  0]);
-            avx2_cnt_core(sol_0_1_0_1i, sol_1_0_1_0i, &sol_cnt_0_1_2_3_4_5_6_7, &can_data[c_idx +  1]);
-            avx2_cnt_core(sol_0_1_0_1i, sol_1_0_1_0i, &sol_cnt_0_1_2_3_4_5_6_7, &can_data[c_idx +  2]);
-            avx2_cnt_core(sol_0_1_0_1i, sol_1_0_1_0i, &sol_cnt_0_1_2_3_4_5_6_7, &can_data[c_idx +  3]);
-        }
-    }
-
-    __m256i sol_cnt_vec;
-
-    _mm256_store_si256(&sol_cnt_vec, sol_cnt_0_1_2_3_4_5_6_7);
-
-    uint64_t sol_sum = 0;
-
-    for(int i = 0; i < 4; i++) {
-        sol_sum += static_cast<uint64_t>(sol_cnt_vec[i]);
-    }
-
-    // prevent overflow in result variable
-    assert(sol_size * batch < UINT32_MAX);
-    return static_cast<uint32_t>(sol_size * batch + sol_sum);
-}
-
-__attribute__ ((target ("sse4.2")))
-static uint32_t count_solutions_fixed(size_t batch,
-                                          const aligned_vec<diags_packed_t>& solutions,
-                                          const aligned_vec<diags_packed_t>& candidates) {
-    assert(batch % 8 == 0);
-    const size_t sol_size = solutions.size();
-    assert(sol_size % 2 == 0);
-    const __m128i* __restrict__ sol_data = reinterpret_cast<const __m128i*> (solutions.data());
-    const __m128i* __restrict__ can_data = reinterpret_cast<const __m128i*> (candidates.data());
-
-    __m128i sol_cnt_0_1_2_3 = _mm_setzero_si128();
-
-    for(size_t s_idx = 0; s_idx < sol_size/2; s_idx++) {
-        __m128i sol_data_0_1 = _mm_load_si128(&sol_data[s_idx]);
-        __m128i sol_data_1_0 = _mm_castpd_si128(_mm_shuffle_pd(_mm_castsi128_pd(sol_data_0_1), _mm_castsi128_pd(sol_data_0_1), 1));
-
-        for(size_t c_idx = 0; c_idx < batch/2; c_idx += 4) {
-            sse42_cnt_core(sol_data_0_1, sol_data_1_0, &sol_cnt_0_1_2_3, &can_data[c_idx + 0]);
-            sse42_cnt_core(sol_data_0_1, sol_data_1_0, &sol_cnt_0_1_2_3, &can_data[c_idx + 1]);
-            sse42_cnt_core(sol_data_0_1, sol_data_1_0, &sol_cnt_0_1_2_3, &can_data[c_idx + 2]);
-            sse42_cnt_core(sol_data_0_1, sol_data_1_0, &sol_cnt_0_1_2_3, &can_data[c_idx + 3]);
-        }
-    }
-
-    __m128i sol_cnt_vec;
-
-    _mm_store_si128(&sol_cnt_vec, sol_cnt_0_1_2_3);
-
-    uint64_t sol_sum = static_cast<uint64_t>(sol_cnt_vec[0]) + static_cast<uint64_t>(sol_cnt_vec[1]);
-
-    // prevent overflow in result variable
-    assert(sol_size * batch < UINT32_MAX);
-    return static_cast<uint32_t>(sol_size * batch + sol_sum);
-}
-
-__attribute__ ((target ("sse2")))
-static uint32_t count_solutions_fixed(size_t batch,
-                                          const aligned_vec<diags_packed_t>& solutions,
-                                          const aligned_vec<diags_packed_t>& candidates) {
-    assert(batch % 8 == 0);
-    const size_t sol_size = solutions.size();
-    assert(sol_size % 2 == 0);
-    const __m128i* __restrict__ sol_data = reinterpret_cast<const __m128i*> (solutions.data());
-    const __m128i* __restrict__ can_data = reinterpret_cast<const __m128i*> (candidates.data());
-
-    __m128i sol_cnt_0_1_2_3 = _mm_setzero_si128();
-
-    for(size_t s_idx = 0; s_idx < sol_size/2; s_idx++) {
-        __m128i sol_data_0_1 = _mm_load_si128(&sol_data[s_idx]);
-        __m128i sol_data_1_0 = _mm_castpd_si128(_mm_shuffle_pd(_mm_castsi128_pd(sol_data_0_1), _mm_castsi128_pd(sol_data_0_1), 1));
-
-        for(size_t c_idx = 0; c_idx < batch/2; c_idx += 4) {
-            sse2_cnt_core(sol_data_0_1, sol_data_1_0, &sol_cnt_0_1_2_3, &can_data[c_idx + 0]);
-            sse2_cnt_core(sol_data_0_1, sol_data_1_0, &sol_cnt_0_1_2_3, &can_data[c_idx + 1]);
-            sse2_cnt_core(sol_data_0_1, sol_data_1_0, &sol_cnt_0_1_2_3, &can_data[c_idx + 2]);
-            sse2_cnt_core(sol_data_0_1, sol_data_1_0, &sol_cnt_0_1_2_3, &can_data[c_idx + 3]);
-        }
-    }
-
-    uint32_t sol_cnt_vec[4] __attribute__((aligned(AVX2_alignment)));
-    _mm_store_si128(reinterpret_cast<__m128i*>(sol_cnt_vec), sol_cnt_0_1_2_3);
-    uint32_t sol_sum = sol_cnt_vec[0] + sol_cnt_vec[1] + sol_cnt_vec[2] + sol_cnt_vec[3];
-
-    // prevent overflow in result variable
-    assert(sol_size * batch < UINT32_MAX);
-    return static_cast<uint32_t>(sol_size * batch + sol_sum);
-}
-
-__attribute__ ((target ("default")))
+__attribute__ ((target_clones("default", "sse2", "sse4.2", "avx2")))
 static uint32_t count_solutions_fixed(size_t batch,
                                           const aligned_vec<diags_packed_t>& solutions,
                                           const aligned_vec<diags_packed_t>& candidates) {
@@ -277,7 +75,7 @@ static uint32_t count_solutions_fixed(size_t batch,
     assert(sol_size * batch < UINT32_MAX);
     uint32_t solutions_cnt = static_cast<uint32_t>(sol_size * batch);
     for(size_t s_idx = 0; s_idx < sol_size; s_idx++) {
-#pragma omp simd reduction(-:solutions_cnt) aligned(sol_data, can_data: 32)
+#pragma omp simd reduction(-:solutions_cnt) aligned(sol_data, can_data: AVX2_alignment)
         for(size_t c_idx = 0; c_idx < batch; c_idx++) {
             solutions_cnt -= (sol_data[s_idx].diagr & can_data[c_idx].diagr) || (sol_data[s_idx].diagl & can_data[c_idx].diagl);
         }
@@ -302,7 +100,8 @@ uint64_t cpuSolver::get_solution_cnt(uint32_t cols, diags_packed_t search_elem, 
     candidates_vec.push_back(search_elem);
 
     if(candidates_vec.size() == max_candidates) {
-        solutions_cnt = count_solutions_fixed(max_candidates, lookup_solutions[lookup_idx], candidates_vec);
+        solutions_cnt = count_solutions(lookup_solutions_single[lookup_idx], candidates_vec);
+        solutions_cnt += 2 * count_solutions(lookup_solutions_double[lookup_idx], candidates_vec);
         candidates_vec.clear();
     }
 
@@ -357,7 +156,8 @@ uint64_t cpuSolver::solve_subboard(const std::vector<start_condition_t> &starts)
   std::cout << "Column mask: " << std::hex << col_mask << " zeros in mask: " << std::to_string(mask) << std::endl;
 
   lookup_hash.clear();
-  lookup_solutions.clear();
+  lookup_solutions_single.clear();
+  lookup_solutions_double.clear();
 
   auto lut_init_time_start = std::chrono::high_resolution_clock::now();
   size_t lut_size = init_lookup(lookup_depth(boardsize, placed), col_mask);
@@ -385,8 +185,8 @@ uint64_t cpuSolver::solve_subboard(const std::vector<start_condition_t> &starts)
   std::vector<lut_t> thread_luts;
   for(size_t t = 0; t < thread_cnt; t++) {
       lut_t new_lut;
-      new_lut.reserve(lookup_solutions.size());
-      for (size_t i = 0; i < lookup_solutions.size(); i++) {
+      new_lut.reserve(lookup_solutions_single.size());
+      for (size_t i = 0; i < lookup_solutions_single.size(); i++) {
           new_lut.emplace_back(aligned_vec<diags_packed_t>(max_candidates));
       }
 
@@ -484,7 +284,8 @@ uint64_t cpuSolver::solve_subboard(const std::vector<start_condition_t> &starts)
       for (auto& it : lookup_hash) {
       auto lookup_idx = it.second;
           if(thread_luts[t][lookup_idx].size() > 0) {
-              num_lookup += count_solutions(lookup_solutions[lookup_idx], thread_luts[t][lookup_idx]);
+              num_lookup += count_solutions(lookup_solutions_single[lookup_idx], thread_luts[t][lookup_idx]);
+              num_lookup += 2*count_solutions(lookup_solutions_double[lookup_idx], thread_luts[t][lookup_idx]);
           }
       }
   }
@@ -525,105 +326,103 @@ size_t cpuSolver::init_lookup(uint8_t depth, uint32_t skip_mask)
     std::vector<std::vector<diags_packed_t>> lookup_proto;
 
     for (uint_fast8_t q0 = 0; q0 < boardsize; q0++) {
-      uint_fast32_t bit0 = 1 << q0; // The first queen placed
-      uint_fast32_t cols[MAXN], posibs[MAXN]; // Our backtracking 'stack'
-      uint_fast32_t diagl[MAXN], diagr[MAXN];
-      int8_t rest[MAXN]; // number of rows left
-      int_fast16_t d = 1; // d is our depth in the backtrack stack
-      // The UINT_FAST32_MAX here is used to fill all 'coloumn' bits after n ...
-      cols[d] = bit0 | (UINT_FAST32_MAX << boardsize);
-      // This places the first two queens
-      diagl[d] = bit0 << 1;
-      diagr[d] = bit0 << (depth - 1);
-      // we're allready two rows into the field here
-      // TODO: find out why -2 is needed here
-      rest[d] = static_cast<int8_t>(depth - 2);
+        uint_fast32_t bit0 = 1 << q0; // The first queen placed
+        uint_fast32_t cols[MAXN], posibs[MAXN]; // Our backtracking 'stack'
+        uint_fast32_t diagl[MAXN], diagr[MAXN];
+        int8_t rest[MAXN]; // number of rows left
+        int_fast16_t d = 1; // d is our depth in the backtrack stack
+        // The UINT_FAST32_MAX here is used to fill all 'coloumn' bits after n ...
+        cols[d] = bit0 | (UINT_FAST32_MAX << boardsize);
+        // This places the first two queens
+        diagl[d] = bit0 << 1;
+        diagr[d] = bit0 << (depth - 1);
+        // we're allready two rows into the field here
+        // TODO: find out why -2 is needed here
+        rest[d] = static_cast<int8_t>(depth - 2);
 
-      //  The variable posib contains the bitmask of possibilities we still have
-      //  to try in a given row ...
-      uint_fast32_t posib = (cols[d] | diagl[d] | (diagr[d] >> depth));
+        //  The variable posib contains the bitmask of possibilities we still have
+        //  to try in a given row ...
+        uint_fast32_t posib = (cols[d] | diagl[d] | (diagr[d] >> depth));
 
-      diagl[d] <<= 1;
-      diagr[d] >>= 1;
+        diagl[d] <<= 1;
+        diagr[d] >>= 1;
 
-      while (d > 0) {
-        int8_t l_rest = rest[d];
+        while (d > 0) {
+            int8_t l_rest = rest[d];
 
-        while (posib != UINT_FAST32_MAX) {
-          // The standard trick for getting the rightmost bit in the mask
-          uint_fast32_t bit = ~posib & (posib + 1);
-          posib ^= bit; // Eliminate the tried possibility.
-          uint_fast32_t new_diagl = (bit << 1) | diagl[d];
-          uint_fast32_t new_diagr = (bit << (depth - 1)) | diagr[d];
-          bit |= cols[d];
-          uint_fast32_t new_posib = (bit | new_diagl | (new_diagr >> depth));
+            while (posib != UINT_FAST32_MAX) {
+                // The standard trick for getting the rightmost bit in the mask
+                uint_fast32_t bit = ~posib & (posib + 1);
+                posib ^= bit; // Eliminate the tried possibility.
+                uint_fast32_t new_diagl = (bit << 1) | diagl[d];
+                uint_fast32_t new_diagr = (bit << (depth - 1)) | diagr[d];
+                bit |= cols[d];
+                uint_fast32_t new_posib = (bit | new_diagl | (new_diagr >> depth));
 
-          // In the solver we look for free columns, so we must invert the bits here
-          // fill up with ones to match padding in the solver
-          uint_fast32_t conv = ~bit | (UINT_FAST32_MAX << boardsize);
-          const uint_fast32_t board_width_mask = ~(UINT_FAST32_MAX << boardsize);
-          // diagonals are not inverted, they have to be compared in the solver step
-          // we loose some bits here, but they do not matter for a solution
-          uint_fast32_t conv_diagl = (new_diagl >> depth) & board_width_mask;
-          uint_fast32_t conv_diagr = new_diagr & board_width_mask;
+                // In the solver we look for free columns, so we must invert the bits here
+                // fill up with ones to match padding in the solver
+                uint_fast32_t conv = ~bit | (UINT_FAST32_MAX << boardsize);
+                const uint_fast32_t board_width_mask = ~(UINT_FAST32_MAX << boardsize);
+                // diagonals are not inverted, they have to be compared in the solver step
+                // we loose some bits here, but they do not matter for a solution
+                uint_fast32_t conv_diagl = (new_diagl >> depth) & board_width_mask;
+                uint_fast32_t conv_diagr = new_diagr & board_width_mask;
 
-          if (bit & skip_mask) {
-              continue;
-          }
+                if (bit & skip_mask) {
+                    continue;
+                }
 
-          // check if at the correct depth to save to the lookup table
-          if (l_rest == 0) {
-              stat_total++;
+                // check if at the correct depth to save to the lookup table
+                if (l_rest == 0) {
+                    stat_total++;
 
-              // combine diagonals for easier handling
-              diags_packed_t new_entry = {static_cast<uint32_t>(conv_diagr), static_cast<uint32_t>(conv_diagl)};
+                    // combine diagonals for easier handling
+                    diags_packed_t new_entry = {static_cast<uint32_t>(conv_diagr), static_cast<uint32_t>(conv_diagl)};
 
-              auto it = lookup_hash.find(static_cast<uint32_t>(conv));
+                    auto it = lookup_hash.find(static_cast<uint32_t>(conv));
 
-              if (it != lookup_hash.end()) {
-                  auto pattern_idx = it->second;
-                  lookup_proto[pattern_idx].push_back(new_entry);
-                  num++;
-              } else {
-                  // column pattern doesn't yet exist, create one
-                  lookup_hash.emplace(conv, lookup_proto.size());
-                  // create element in the lookup table too
-                  std::vector<diags_packed_t> new_vec{new_entry};
-                  lookup_proto.push_back(new_vec);
+                    if (it != lookup_hash.end()) {
+                        auto pattern_idx = it->second;
+                        lookup_proto[pattern_idx].push_back(new_entry);
+                        num++;
+                    } else {
+                        // column pattern doesn't yet exist, create one
+                        lookup_hash.emplace(conv, lookup_proto.size());
+                        // create element in the lookup table too
+                        std::vector<diags_packed_t> new_vec{new_entry};
+                        lookup_proto.push_back(new_vec);
 
-                  num++;
-              }
+                        num++;
+                    }
 
-              continue;
-          }
+                    continue;
+                }
 
-          if (new_posib == UINT_FAST32_MAX) {
-              continue;
-          }
+                // The next two lines save stack depth + backtrack operations
+                // when we passed the last possibility in a row.
+                // Go lower in the stack, avoid branching by writing above the current
+                // position
+                posibs[d] = posib;
+                d += posib != UINT_FAST32_MAX; // avoid branching with this trick
+                posib = new_posib;
 
-            // The next two lines save stack depth + backtrack operations
-            // when we passed the last possibility in a row.
-            // Go lower in the stack, avoid branching by writing above the current
-            // position
-            posibs[d] = posib;
-            d += posib != UINT_FAST32_MAX; // avoid branching with this trick
-            posib = new_posib;
+                l_rest--;
 
-            l_rest--;
+                // make values current
+                cols[d] = bit;
+                diagl[d] = new_diagl << 1;
+                diagr[d] = new_diagr >> 1;
+                rest[d] = l_rest;
 
-            // make values current
-            cols[d] = bit;
-            diagl[d] = new_diagl << 1;
-            diagr[d] = new_diagr >> 1;
-            rest[d] = l_rest;
+            }
+            d--;
+            posib = posibs[d]; // backtrack ...
         }
-        d--;
-        posib = posibs[d]; // backtrack ...
-      }
     }
 
     size_t stat_max_len = 0;
     size_t stat_min_len = SIZE_MAX;
+    size_t stat_final_lut_size = 0;
 
     // put lookup table prototype in final aligned form
     for(size_t i = 0; i < lookup_proto.size(); i++) {
@@ -632,16 +431,47 @@ size_t cpuSolver::init_lookup(uint8_t depth, uint32_t skip_mask)
         stat_max_len = std::max(stat_max_len, elemen_cnt);
         stat_min_len = std::min(stat_min_len, elemen_cnt);
 
-        // check if elements are sufficiently alligned
-        if (elemen_cnt % 2 != 0) {
-            diags_packed_t dummy_element {UINT32_MAX, UINT32_MAX};
-            lookup_vec.push_back(dummy_element);
+        std::vector<diags_packed_t> lookup_vec_single;
+        std::vector<diags_packed_t> lookup_vec_double;
+
+        std::sort(lookup_vec.begin(), lookup_vec.end());
+        assert(elemen_cnt > 1);
+
+        for (size_t j = 1; j < elemen_cnt; j++) {
+            if(lookup_vec[j - 1] == lookup_vec[j]) {
+                lookup_vec_double.push_back(lookup_vec[j - 1]);
+                j++;
+            } else {
+                lookup_vec_single.push_back(lookup_vec[j - 1]);
+            }
+
+            if (j == (elemen_cnt - 1)) {
+                lookup_vec_single.push_back(lookup_vec[j]);
+            }
         }
 
-        aligned_vec<diags_packed_t> new_vec(lookup_vec.size(), lookup_vec.size());
-        std::memcpy(new_vec.data(), lookup_vec.data(), elemen_cnt * sizeof (diags_packed_t));
+        assert(lookup_vec_single.size() + 2*lookup_vec_double.size() == elemen_cnt);
+
+        // check if elements are sufficiently alligned
+        constexpr diags_packed_t dummy_element {UINT32_MAX, UINT32_MAX};
+
+        if (lookup_vec_single.size() % 2 != 0) {
+            lookup_vec_single.push_back(dummy_element);
+        }
+        if (lookup_vec_double.size() % 2 != 0) {
+            lookup_vec_double.push_back(dummy_element);
+        }
+
+        stat_final_lut_size += lookup_vec_single.size() + lookup_vec_double.size();
+
         // put in final lookup table
-        lookup_solutions.push_back(std::move(new_vec));
+        aligned_vec<diags_packed_t> new_vec_single(lookup_vec_single.size(), lookup_vec_single.size());
+        std::memcpy(new_vec_single.data(), lookup_vec_single.data(), lookup_vec_single.size() * sizeof (diags_packed_t));
+        lookup_solutions_single.push_back(std::move(new_vec_single));
+
+        aligned_vec<diags_packed_t> new_vec_double(lookup_vec_double.size(), lookup_vec_double.size());
+        std::memcpy(new_vec_double.data(), lookup_vec_double.data(), lookup_vec_double.size() * sizeof (diags_packed_t));
+        lookup_solutions_double.push_back(std::move(new_vec_double));
     }
 
     if (stat_max_len * max_candidates > UINT32_MAX) {
@@ -651,6 +481,7 @@ size_t cpuSolver::init_lookup(uint8_t depth, uint32_t skip_mask)
 
     std::cout << "Hashtable keys: " << std::to_string(lookup_hash.size()) << std::endl;
     std::cout << "Lookup entries: " << std::to_string(num) << std::endl;
+    std::cout << "Lookup final size: " << std::to_string(stat_final_lut_size) << std::endl;
     std::cout << "Multiple entries: " << std::to_string(multiple_entries) << std::endl;
     std::cout << "Avg Vec len: " << std::to_string(static_cast<double>(num)/lookup_hash.size()) << std::endl;
     std::cout << "Max Vec len: " << std::to_string(stat_max_len) << std::endl;
