@@ -3,6 +3,7 @@
 #include <cassert>
 #include <chrono>
 #include <omp.h>
+#include <numeric>
 
 cpuSolver::cpuSolver()
 {
@@ -11,18 +12,15 @@ cpuSolver::cpuSolver()
 constexpr uint_fast8_t MINN = 6;
 constexpr uint_fast8_t MAXN = 29;
 
+#define STATS 0
+
 uint8_t cpuSolver::lookup_depth(uint8_t boardsize, uint8_t placed)
 {
     assert(boardsize > placed);
     uint8_t available_depth = boardsize - placed;
     available_depth -= 1; // main solver needs at least 1 queen to work with
 
-    uint8_t limit = 0;
-    if (boardsize < 16) {
-        limit = boardsize /2;
-    } else {
-        limit = 7;
-    }
+    uint8_t limit = 5;
 
     return std::min(available_depth, limit);
 }
@@ -51,8 +49,15 @@ uint64_t cpuSolver::count_solutions(const aligned_vec<diags_packed_t>& solutions
     const size_t can_size = candidates.size();
     const diags_packed_t* __restrict__ sol_data = solutions.data();
     const diags_packed_t* __restrict__ can_data = candidates.data();
+#if STATS == 1
+    stat_cmps += sol_size * can_size;
+#endif
 
     for(size_t c_idx = 0; c_idx < can_size; c_idx++) {
+#if STATS == 1
+        stat_solver_diagl.update(can_data[c_idx].diagl);
+        stat_solver_diagr.update(can_data[c_idx].diagr);
+#endif
 #pragma omp simd reduction(+:solutions_cnt) aligned(sol_data, can_data:32)
         for(size_t s_idx = 0; s_idx < sol_size; s_idx++) {
             solutions_cnt += (sol_data[s_idx].diagr & can_data[c_idx].diagr) == 0 && (sol_data[s_idx].diagl & can_data[c_idx].diagl) == 0;
@@ -84,23 +89,41 @@ static uint32_t count_solutions_fixed(size_t batch,
     return solutions_cnt;
 }
 
-uint64_t cpuSolver::get_solution_cnt(uint32_t cols, diags_packed_t search_elem, lut_t &lookup_candidates) {
+uint64_t cpuSolver::get_solution_cnt(uint32_t cols, diags_packed_t search_elem, lut_t &lookup_candidates_high_prob, lut_t &lookup_candidates_low_prob) {
     uint64_t solutions_cnt = 0;
-    const auto& found = lookup_hash.find(cols);
 
-    // TODO(sudden6): determine the exact conditions where the below comment is true, since this is in the critical path
-    //      since the lookup table contains all possible combinations, we know the current one will be found
-    // meanwhile handle that case gracefully at the cost of some performance
-    if(found == lookup_hash.end()) {
-        stat_lookups_not_found++;
-        return 0;
-    }
+    // we only work with perfect lookup tables that have all possible column combinations,
+    // so this will always return an element
+    const auto& found = lookup_hash.find(cols);
+    assert(found != lookup_hash.end());
+
+#if STATS == 1
+    stat_solver_diagl.update(search_elem.diagl);
+    stat_solver_diagr.update(search_elem.diagr);
+#endif
+
     auto lookup_idx = found->second;
-    auto& candidates_vec = lookup_candidates[lookup_idx];
+    const bool high_prob = prob_mask & search_elem.diagr;
+
+    auto& candidates_vec = high_prob ? lookup_candidates_high_prob[lookup_idx] : lookup_candidates_low_prob[lookup_idx];
+
     candidates_vec.push_back(search_elem);
 
     if(candidates_vec.size() == max_candidates) {
-        solutions_cnt = count_solutions_fixed(max_candidates, lookup_solutions[lookup_idx], candidates_vec);
+        solutions_cnt = count_solutions_fixed(max_candidates, lookup_solutions_low_prob[lookup_idx], candidates_vec);
+#if STATS == 1
+    stat_cmps += max_candidates * lookup_solutions_low_prob[lookup_idx].size();
+#endif
+        if (!high_prob) {
+            solutions_cnt += count_solutions_fixed(max_candidates, lookup_solutions_high_prob[lookup_idx], candidates_vec);
+#if STATS == 1
+    stat_cmps += max_candidates * lookup_solutions_high_prob[lookup_idx].size();
+#endif
+        } else {
+#if STATS == 1
+            stat_high_prob += max_candidates;
+#endif
+        }
         candidates_vec.clear();
     }
 
@@ -125,9 +148,16 @@ void update_bit_stats(std::vector<uint_fast64_t>& state, uint64_t bits, size_t n
 }
 
 uint64_t cpuSolver::solve_subboard(const std::vector<start_condition_t> &starts) {
+#if STATS == 1
   stat_lookups = 0;
-  stat_lookups_not_found = 0;
   stat_cmps = 0;
+  stat_high_prob = 0;
+  stat_prob_saved = 0;
+
+  stat_solver_diagl = bit_probabilities(boardsize);
+  stat_solver_diagr = bit_probabilities(boardsize);
+#endif
+
   std::cout << "Solving N=" << std::to_string(boardsize) << std::endl;
   // counter for the number of solutions
   // sufficient until n=29
@@ -155,7 +185,8 @@ uint64_t cpuSolver::solve_subboard(const std::vector<start_condition_t> &starts)
   std::cout << "Column mask: " << std::hex << col_mask << " zeros in mask: " << std::to_string(mask) << std::endl;
 
   lookup_hash.clear();
-  lookup_solutions.clear();
+  lookup_solutions_low_prob.clear();
+  lookup_solutions_high_prob.clear();
 
   uint8_t lut_depth = lookup_depth(boardsize, placed);
   auto lut_init_time_start = std::chrono::high_resolution_clock::now();
@@ -164,8 +195,11 @@ uint64_t cpuSolver::solve_subboard(const std::vector<start_condition_t> &starts)
   std::chrono::duration<double> elapsed = lut_init_time_end - lut_init_time_start;
 
   std::cout << "Time to init lookup table: " << std::to_string(elapsed.count()) << "s" << std::endl;
-
-  std::cout << "LUT is: " << (is_perfect_lut(lut_depth, boardsize - mask, lut_size) ? "PERFECT" : "IMPERFECT") << std::endl;
+  const bool perfect_lut = is_perfect_lut(lut_depth, boardsize - mask, lut_size);
+  if(!perfect_lut) {
+      std::cout << "Imperfect LUT, can't  work with that" << std::endl;
+      return 0;
+  }
 
   if (lut_size == 0) {
       std::cout << "Empty lookup table, can't work with that" << std::endl;
@@ -177,27 +211,44 @@ uint64_t cpuSolver::solve_subboard(const std::vector<start_condition_t> &starts)
   constexpr uint8_t LOOKAHEAD = 3;
   const int8_t rest_init = static_cast<int8_t>(boardsize - LOOKAHEAD - this->placed);
   // TODO: find out why +1 is needed
-  const int8_t rest_lookup = rest_init - (boardsize - this->placed - lookup_depth(boardsize, placed)) + 1;
+  const int8_t rest_lookup = rest_init - (boardsize - this->placed - lut_depth) + 1;
 
+#if STATS == 1
+  const size_t omp_threads = 1;
+#else
   const size_t omp_threads = omp_get_max_threads();
+#endif
+
   const size_t thread_cnt = std::min(omp_threads, start_cnt);
 
   // first index: lookup table index
-  std::vector<lut_t> thread_luts;
+  std::vector<lut_t> thread_luts_high_prob;
+  std::vector<lut_t> thread_luts_low_prob;
+
   for(size_t t = 0; t < thread_cnt; t++) {
-      lut_t new_lut;
-      new_lut.reserve(lookup_solutions.size());
-      for (size_t i = 0; i < lookup_solutions.size(); i++) {
-          new_lut.emplace_back(aligned_vec<diags_packed_t>(max_candidates));
+      lut_t new_lut_high_prob;
+      lut_t new_lut_low_prob;
+
+      new_lut_high_prob.reserve(lookup_solutions_low_prob.size());
+      new_lut_low_prob.reserve(lookup_solutions_low_prob.size());
+      for (size_t i = 0; i < lookup_solutions_low_prob.size(); i++) {
+          new_lut_high_prob.emplace_back(aligned_vec<diags_packed_t>(max_candidates));
+      }
+      for (size_t i = 0; i < lookup_solutions_low_prob.size(); i++) {
+          new_lut_low_prob.emplace_back(aligned_vec<diags_packed_t>(max_candidates));
       }
 
-      thread_luts.push_back(std::move(new_lut));
+      thread_luts_high_prob.push_back(std::move(new_lut_high_prob));
+      thread_luts_low_prob.push_back(std::move(new_lut_low_prob));
+
   }
 
 #pragma omp parallel for reduction(+ : num_lookup) num_threads(thread_cnt) schedule(dynamic)
   for (uint_fast32_t cnt = 0; cnt < start_cnt; cnt++) {
     const size_t thread_num = static_cast<size_t>(omp_get_thread_num());
-    lut_t& lookup_candidates = thread_luts[thread_num];
+    lut_t& lookup_candidates_high_prob = thread_luts_high_prob[thread_num];
+    lut_t& lookup_candidates_low_prob = thread_luts_low_prob[thread_num];
+
     uint_fast32_t cols[MAXN], posibs[MAXN]; // Our backtracking 'stack'
     uint_fast32_t diagl[MAXN], diagr[MAXN];
     int8_t rest[MAXN]; // number of rows left
@@ -250,9 +301,13 @@ uint64_t cpuSolver::solve_subboard(const std::vector<start_condition_t> &starts)
 
             if (l_rest == rest_lookup) {
                 // compute final lookup_depth stages via hashtable lookup
-                stat_lookups++;
                 diags_packed_t candidate = {static_cast<uint32_t>(new_diagr), static_cast<uint32_t>(new_diagl)};
-                num_lookup += get_solution_cnt(static_cast<uint32_t>(bit), candidate, lookup_candidates);
+#if STATS == 1
+                stat_lookups++;
+                stat_solver_diagl.update(candidate.diagl);
+                stat_solver_diagr.update(candidate.diagr);
+#endif
+                num_lookup += get_solution_cnt(static_cast<uint32_t>(bit), candidate, lookup_candidates_high_prob, lookup_candidates_low_prob);
                 continue;
             }
 
@@ -281,23 +336,38 @@ uint64_t cpuSolver::solve_subboard(const std::vector<start_condition_t> &starts)
   std::cout << "Cleaning Lookup table" << std::endl;
   auto lut_clean_time_start = std::chrono::high_resolution_clock::now();
 #pragma omp parallel for reduction(+ : num_lookup) num_threads(thread_cnt) schedule(dynamic)
-  for(size_t t = 0; t < thread_luts.size(); t++) {
+  for(size_t t = 0; t < thread_luts_high_prob.size(); t++) {
       for (auto& it : lookup_hash) {
-      auto lookup_idx = it.second;
-          if(thread_luts[t][lookup_idx].size() > 0) {
-              num_lookup += count_solutions(lookup_solutions[lookup_idx], thread_luts[t][lookup_idx]);
+          auto lookup_idx = it.second;
+          if(thread_luts_high_prob[t][lookup_idx].size() > 0) {
+              num_lookup += count_solutions(lookup_solutions_low_prob[lookup_idx], thread_luts_high_prob[t][lookup_idx]);
+#if STATS == 1
+              stat_high_prob += thread_luts_high_prob[t][lookup_idx].size();
+#endif
+          }
+          if(thread_luts_low_prob[t][lookup_idx].size() > 0) {
+              num_lookup += count_solutions(lookup_solutions_low_prob[lookup_idx], thread_luts_low_prob[t][lookup_idx]);
+              num_lookup += count_solutions(lookup_solutions_high_prob[lookup_idx], thread_luts_low_prob[t][lookup_idx]);
           }
       }
   }
+
+#if STATS == 1
+  auto diagl_probs = stat_solver_diagl.get_probablities();
+  auto diagr_probs = stat_solver_diagr.get_probablities();
+#endif
 
   auto lut_clean_time_end = std::chrono::high_resolution_clock::now();
   elapsed = lut_clean_time_end - lut_clean_time_start;
 
   std::cout << "Time to clean lookup table: " << std::to_string(elapsed.count()) << "s" << std::endl;
 
+#if STATS == 1
   std::cout << "Lookups: " << std::to_string(stat_lookups) << std::endl;
-  std::cout << "Lookups not found: " << std::to_string(stat_lookups_not_found) << std::endl;
   std::cout << "Compares: " << std::to_string(stat_cmps) << std::endl;
+  std::cout << "High Prob hits: " << std::to_string(stat_high_prob) << std::endl;
+  std::cout << "High Prob hit factor " << std::to_string(stat_high_prob/static_cast<float>(stat_lookups)) << std::endl;
+#endif
 
   return num_lookup * 2;
 }
@@ -438,9 +508,17 @@ size_t cpuSolver::init_lookup(uint8_t depth, uint32_t skip_mask)
         }
     }
 
+    bit_probabilities stat_total_probs_l(boardsize);
+    bit_probabilities stat_total_probs_r(boardsize);
+
     size_t stat_max_len = 0;
     size_t stat_min_len = SIZE_MAX;
     size_t stat_final_lut_size = 0;
+    size_t stat_high_prob_cnt = 0;
+    size_t stat_low_prob_cnt = 0;
+
+    // This seems to be a sweetspot, more research on the probabilities needed
+    prob_mask = UINT32_C(1) << (depth - 1);
 
     // put lookup table prototype in final aligned form
     for(size_t i = 0; i < lookup_proto.size(); i++) {
@@ -449,19 +527,52 @@ size_t cpuSolver::init_lookup(uint8_t depth, uint32_t skip_mask)
         stat_max_len = std::max(stat_max_len, elemen_cnt);
         stat_min_len = std::min(stat_min_len, elemen_cnt);
 
-        // check if elements are sufficiently alligned
-        constexpr diags_packed_t dummy_element {UINT32_MAX, UINT32_MAX};
-
-        if (lookup_vec.size() % 2 != 0) {
-            lookup_vec.push_back(dummy_element);
+#if 0
+        for(const auto& elem: lookup_vec) {
+            stat_total_probs_l.update(elem.diagl);
+            stat_total_probs_r.update(elem.diagr);
         }
 
+#endif
+
+        // prob_mask bits set
+        std::vector<diags_packed_t> high_prob;
+        // prob_mask bits not set
+        std::vector<diags_packed_t> low_prob;
+
+        for(const auto& diag: lookup_vec) {
+            if(diag.diagr & prob_mask) {
+                high_prob.push_back(diag);
+                stat_high_prob_cnt++;
+            } else {
+                low_prob.push_back(diag);
+                stat_low_prob_cnt++;
+            }
+        }
+
+        constexpr diags_packed_t dummy_element {UINT32_MAX, UINT32_MAX};
+
+        // check if elements are sufficiently alligned
+        if (high_prob.size() % 2 != 0) {
+            high_prob.push_back(dummy_element);
+        }
+
+        if (low_prob.size() % 2 != 0) {
+            low_prob.push_back(dummy_element);
+        }
 
         // put in final lookup table
-        aligned_vec<diags_packed_t> new_vec_single(lookup_vec.size(), lookup_vec.size());
-        std::memcpy(new_vec_single.data(), lookup_vec.data(), lookup_vec.size() * sizeof (diags_packed_t));
-        lookup_solutions.push_back(std::move(new_vec_single));
+        aligned_vec<diags_packed_t> new_vec_single(low_prob.size(), low_prob.size());
+        std::memcpy(new_vec_single.data(), low_prob.data(), low_prob.size() * sizeof (diags_packed_t));
+        lookup_solutions_low_prob.push_back(std::move(new_vec_single));
+
+        aligned_vec<diags_packed_t> new_vec_high_prob(high_prob.size(), high_prob.size());
+        std::memcpy(new_vec_high_prob.data(), high_prob.data(), high_prob.size() * sizeof (diags_packed_t));
+        lookup_solutions_high_prob.push_back(std::move(new_vec_high_prob));
     }
+
+    auto probs_l = stat_total_probs_l.get_probablities();
+    auto probs_r = stat_total_probs_r.get_probablities();
 
     if (stat_max_len * max_candidates > UINT32_MAX) {
         std::cout << "ERROR: Possible overflow in count_solutions_fixed(...)" << std::endl;
@@ -477,6 +588,7 @@ size_t cpuSolver::init_lookup(uint8_t depth, uint32_t skip_mask)
     std::cout << "Min Vec len: " << std::to_string(stat_min_len) << std::endl;
     std::cout << "Unsolvable: " << std::to_string(unsolvable) << std::endl;
     std::cout << "Total: " << std::to_string(stat_total) << std::endl;
+    std::cout << "High/Low prob ratio: " << std::to_string(stat_high_prob_cnt/static_cast<float>(stat_low_prob_cnt)) << std::endl;
 
     return lookup_hash.size();
 }
