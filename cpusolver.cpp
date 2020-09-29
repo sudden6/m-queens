@@ -102,22 +102,21 @@ uint64_t cpuSolver::get_solution_cnt(uint32_t cols, diags_packed_t search_elem, 
     stat_solver_diagr.update(search_elem.diagr);
 #endif
 
-    auto lookup_idx = found->second;
+    const auto& lookup_idx = found->second;
     const bool high_prob = prob_mask & search_elem.diagr;
 
     auto& candidates_vec = high_prob ? lookup_candidates_high_prob[lookup_idx] : lookup_candidates_low_prob[lookup_idx];
-
     candidates_vec.push_back(search_elem);
 
     if(candidates_vec.size() == max_candidates) {
         solutions_cnt = count_solutions_fixed(max_candidates, lookup_solutions_low_prob[lookup_idx], candidates_vec);
 #if STATS == 1
-    stat_cmps += max_candidates * lookup_solutions_low_prob[lookup_idx].size();
+        stat_cmps += max_candidates * lookup_solutions_low_prob[lookup_idx].size();
 #endif
         if (!high_prob) {
             solutions_cnt += count_solutions_fixed(max_candidates, lookup_solutions_high_prob[lookup_idx], candidates_vec);
 #if STATS == 1
-    stat_cmps += max_candidates * lookup_solutions_high_prob[lookup_idx].size();
+            stat_cmps += max_candidates * lookup_solutions_high_prob[lookup_idx].size();
 #endif
         } else {
 #if STATS == 1
@@ -233,8 +232,6 @@ uint64_t cpuSolver::solve_subboard(const std::vector<start_condition_t> &starts)
       new_lut_low_prob.reserve(lookup_solutions_low_prob.size());
       for (size_t i = 0; i < lookup_solutions_low_prob.size(); i++) {
           new_lut_high_prob.emplace_back(aligned_vec<diags_packed_t>(max_candidates));
-      }
-      for (size_t i = 0; i < lookup_solutions_low_prob.size(); i++) {
           new_lut_low_prob.emplace_back(aligned_vec<diags_packed_t>(max_candidates));
       }
 
@@ -516,6 +513,10 @@ size_t cpuSolver::init_lookup(uint8_t depth, uint32_t skip_mask)
     size_t stat_final_lut_size = 0;
     size_t stat_high_prob_cnt = 0;
     size_t stat_low_prob_cnt = 0;
+    size_t stat_high_prob_zero = 0;
+    size_t stat_low_prob_zero = 0;
+    size_t stat_high_prob_max = 0;
+    size_t stat_low_prob_max = 0;
 
     // This seems to be a sweetspot, more research on the probabilities needed
     prob_mask = UINT32_C(1) << (depth - 1);
@@ -548,6 +549,17 @@ size_t cpuSolver::init_lookup(uint8_t depth, uint32_t skip_mask)
                 low_prob.push_back(diag);
                 stat_low_prob_cnt++;
             }
+        }
+
+        stat_high_prob_max = std::max(stat_high_prob_max, high_prob.size());
+        stat_low_prob_max = std::max(stat_low_prob_max, low_prob.size());
+
+        if(high_prob.size() == 0) {
+            stat_high_prob_zero++;
+        }
+
+        if(low_prob.size() == 0) {
+            stat_low_prob_zero++;
         }
 
         constexpr diags_packed_t dummy_element {UINT32_MAX, UINT32_MAX};
@@ -589,6 +601,10 @@ size_t cpuSolver::init_lookup(uint8_t depth, uint32_t skip_mask)
     std::cout << "Unsolvable: " << std::to_string(unsolvable) << std::endl;
     std::cout << "Total: " << std::to_string(stat_total) << std::endl;
     std::cout << "High/Low prob ratio: " << std::to_string(stat_high_prob_cnt/static_cast<float>(stat_low_prob_cnt)) << std::endl;
+    std::cout << "High Prob Zero: " << std::to_string(stat_high_prob_zero) << std::endl;
+    std::cout << "Low Prob Zero: " << std::to_string(stat_low_prob_zero) << std::endl;
+    std::cout << "High Prob Max: " << std::to_string(stat_high_prob_max) << std::endl;
+    std::cout << "Low Prob Max: " << std::to_string(stat_low_prob_max) << std::endl;
 
     return lookup_hash.size();
 }
