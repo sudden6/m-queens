@@ -113,6 +113,7 @@ public:
     uint8_t num_bits = 0;
 };
 
+class ClAccell;
 class cpuSolver : public ISolver
 {
 public:
@@ -120,12 +121,14 @@ public:
     bool init(uint8_t boardsize, uint8_t placed);
     uint64_t solve_subboard(const std::vector<start_condition_t>& starts);
     size_t init_lookup(uint8_t depth, uint32_t skip_mask);
+    using lut_t = std::vector<aligned_vec<diags_packed_t>>;
+    static constexpr size_t max_candidates = 1024*16;
+
 
 private:
     uint_fast8_t boardsize = 0;
     uint_fast8_t placed = 0;
 
-    static constexpr size_t max_candidates = 512;
 
     uint_fast64_t stat_lookups = 0;
     uint_fast64_t stat_cmps = 0;
@@ -135,7 +138,6 @@ private:
     bit_probabilities stat_solver_diagl;
     bit_probabilities stat_solver_diagr;
 
-    using lut_t = std::vector<aligned_vec<diags_packed_t>>;
 
     // maps column patterns to index in lookup_solutions;
     phmap::flat_hash_map<uint32_t, uint32_t> lookup_hash;
@@ -145,6 +147,8 @@ private:
     // elements here have all bits of lookup_prob_mask set
     lut_t lookup_solutions_high_prob;
     uint32_t prob_mask;
+
+    ClAccell* accel = nullptr;
 
     uint64_t get_solution_cnt(uint32_t cols, diags_packed_t search_elem, lut_t &lookup_candidates_high_prob, lut_t &lookup_candidates_low_prob);
     uint64_t count_solutions(const aligned_vec<diags_packed_t> &solutions, const aligned_vec<diags_packed_t> &candidates);

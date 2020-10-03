@@ -16,15 +16,16 @@
     {
         uint32_t diagr;
         uint32_t diagl;
-
-        bool operator<(struct diags_packed_t other) {
-            return diagr < other.diagr && diagl < other.diagl;
-        }
-
-        bool operator==(struct diags_packed_t other) {
-            return diagr == other.diagr && diagl == other.diagl;
-        }
     } ;
+
+    /*
+    static bool operator<(struct diags_packed_t other) {
+        return diagr < other.diagr && diagl < other.diagl;
+    }
+
+    static bool operator==(struct diags_packed_t other) {
+        return diagr == other.diagr && diagl == other.diagl;
+    }*/
 #pragma pack(pop)
 
 #endif // SOLVERSTRUCTS_H

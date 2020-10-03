@@ -4,6 +4,7 @@
 #include <chrono>
 #include <omp.h>
 #include <numeric>
+#include "claccell.h"
 
 cpuSolver::cpuSolver()
 {
@@ -39,6 +40,8 @@ bool cpuSolver::init(uint8_t boardsize, uint8_t placed)
 
     this->boardsize = boardsize;
     this->placed = placed;
+    delete this->accel;
+    this->accel = ClAccell::makeClAccell(0,0);
 
     return true;
 }
@@ -109,12 +112,29 @@ uint64_t cpuSolver::get_solution_cnt(uint32_t cols, diags_packed_t search_elem, 
     candidates_vec.push_back(search_elem);
 
     if(candidates_vec.size() == max_candidates) {
-        solutions_cnt = count_solutions_fixed(max_candidates, lookup_solutions_low_prob[lookup_idx], candidates_vec);
+        if(accel) {
+            //uint64_t cpu_cnt = count_solutions_fixed(max_candidates, lookup_solutions_low_prob[lookup_idx], candidates_vec);
+            //size_t lut_len = lookup_solutions_low_prob[lookup_idx].size();
+            uint64_t accel_cnt = accel->count(lookup_idx, candidates_vec, false);
+            //assert(cpu_cnt == accel_cnt);
+            solutions_cnt += accel_cnt;
+
+        } else {
+            solutions_cnt = count_solutions_fixed(max_candidates, lookup_solutions_low_prob[lookup_idx], candidates_vec);
+        }
 #if STATS == 1
         stat_cmps += max_candidates * lookup_solutions_low_prob[lookup_idx].size();
 #endif
         if (!high_prob) {
-            solutions_cnt += count_solutions_fixed(max_candidates, lookup_solutions_high_prob[lookup_idx], candidates_vec);
+            if(accel) {
+                uint64_t accel_cnt = accel->count(lookup_idx, candidates_vec, true);
+                //uint64_t cpu_cnt = count_solutions_fixed(max_candidates, lookup_solutions_high_prob[lookup_idx], candidates_vec);
+                //size_t lut_len = lookup_solutions_high_prob[lookup_idx].size();
+                //assert(cpu_cnt == accel_cnt);
+                solutions_cnt += accel_cnt;
+            } else {
+                solutions_cnt += count_solutions_fixed(max_candidates, lookup_solutions_high_prob[lookup_idx], candidates_vec);
+            }
 #if STATS == 1
             stat_cmps += max_candidates * lookup_solutions_high_prob[lookup_idx].size();
 #endif
@@ -205,6 +225,15 @@ uint64_t cpuSolver::solve_subboard(const std::vector<start_condition_t> &starts)
       return 0;
   }
 
+  auto accell_init_start = std::chrono::high_resolution_clock::now();
+  if(this->accel) {
+      accel->init(lookup_solutions_high_prob, lookup_solutions_low_prob);
+  }
+
+  auto accell_init_end = std::chrono::high_resolution_clock::now();
+  std::chrono::duration<double> accell_elapsed = accell_init_end - accell_init_start;
+
+  std::cout << "Time to init accellerator: " << std::to_string(accell_elapsed.count()) << "s" << std::endl;
   assert(this->boardsize > this->placed);
 
   constexpr uint8_t LOOKAHEAD = 3;
@@ -328,6 +357,10 @@ uint64_t cpuSolver::solve_subboard(const std::vector<start_condition_t> &starts)
       d--;
       posib = posibs[d]; // backtrack ...
     }
+  }
+
+  if(accel) {
+      num_lookup += accel->get_count();
   }
 
   std::cout << "Cleaning Lookup table" << std::endl;

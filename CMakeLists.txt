@@ -36,6 +36,9 @@ set (CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} -march=x86-64")
 set (CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -march=x86-64")
 
 set(${PROJECT_NAME}_SOURCES
+  claccell.cl
+  claccell.cpp
+  claccell.h
   clqueens.cl
   clsolver.cpp
   clsolver.h
@@ -61,6 +64,8 @@ target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/p
 
 # copy OpenCL kernel source
 configure_file(${CMAKE_SOURCE_DIR}/clqueens.cl ./ COPYONLY)
+configure_file(${CMAKE_SOURCE_DIR}/claccell.cl ./ COPYONLY)
+
 
 endif()
 
