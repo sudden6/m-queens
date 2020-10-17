@@ -35,6 +35,8 @@ uint get_tmp_idx(uint placed) {
     return placed - FIRST_PLACED;
 }
 
+kernel void relaunch_kernel(__global start_condition* workspace, __global uint* workspace_sizes, __global uint* out_res, unsigned placed);
+
 // without lookahead optimization
 kernel void solve_single_no_look(__global start_condition* workspace, __global uint* workspace_sizes, __global uint* out_res, unsigned placed) {
 
@@ -79,6 +81,7 @@ kernel void solve_single_no_look(__global start_condition* workspace, __global u
 
     // launch relaunch_kernel
     if(G == 0) {
+        queue_t q = get_default_queue();
         enqueue_kernel(q, CLK_ENQUEUE_FLAGS_WAIT_KERNEL,
                       ndrange_1D(1),
                       ^{
@@ -91,14 +94,14 @@ kernel void solve_single_no_look(__global start_condition* workspace, __global u
 kernel void solve_final(__global start_condition* workspace, __global uint* workspace_sizes, __global uint* out_res) {
     // input index calculation
     uint in_first_idx = get_tmp_idx(LAST_PLACED) * WORKSPACE_SIZE;
-    uint in_our_idx = first_idx + G;
+    uint in_our_idx = in_first_idx + G;
 
     uint cnt = 0;
 
-    uint_fast32_t cols = in_starts[G].cols;
+    uint_fast32_t cols = workspace[in_our_idx].cols;
     // This places the first two queens
-    uint_fast32_t diagl = in_starts[G].diagl;
-    uint_fast32_t diagr = in_starts[G].diagr;
+    uint_fast32_t diagl = workspace[in_our_idx].diagl;
+    uint_fast32_t diagr = workspace[in_our_idx].diagr;
 
     //  The variable posib contains the bitmask of possibilities we still have
     //  to try in a given row ...
@@ -111,9 +114,9 @@ kernel void solve_final(__global start_condition* workspace, __global uint* work
         // The standard trick for getting the rightmost bit in the mask
         uint_fast32_t bit = ~posib & (posib + 1);
         posib ^= bit; // Eliminate the tried possibility.
-        uint_fast32_t new_diagl = (bit << 1) | diagl[L][d];
-        uint_fast32_t new_diagr = (bit >> 1) | diagr[L][d];
-        bit |= cols[L][d];
+        uint_fast32_t new_diagl = (bit << 1) | diagl;
+        uint_fast32_t new_diagr = (bit >> 1) | diagr;
+        bit |= cols;
         uint_fast32_t new_posib = (bit | new_diagl | new_diagr);
 
         if (new_posib != UINT_FAST32_MAX) {
@@ -124,6 +127,7 @@ kernel void solve_final(__global start_condition* workspace, __global uint* work
     out_res += cnt;
     // launch relaunch_kernel
     if(G == 0) {
+        queue_t q = get_default_queue();
         enqueue_kernel(q, CLK_ENQUEUE_FLAGS_WAIT_KERNEL,
                       ndrange_1D(1),
                       ^{
@@ -139,26 +143,26 @@ kernel void relaunch_kernel(__global start_condition* workspace, __global uint* 
     queue_t q = get_default_queue();
     uint next_placed = placed + 1;
     // limit due to input start conditions
-    uint input_limit = workspace_sizes[get_tmp_idx(placed)];
+    uint max_launches = workspace_sizes[get_tmp_idx(placed)];
 
     while(placed < LAST_PLACED) {
         // single solver step
 
         // compute maximum safe launches due to data expansion in output start conditions
         uint output_limit = (WORKSPACE_SIZE - workspace_sizes[get_tmp_idx(next_placed)]) / expansion_factor(next_placed);
-        uint max_launch = min(input_limit, output_limit);
+        max_launches = min(max_launches, output_limit);
 
-        if(max_launch == 0) {
+        if(max_launches == 0) {
             // can't launch here, go deeper
             placed++;
             next_placed = placed + 1;
-            input_limit = workspace_sizes[get_tmp_idx(placed)];
+            max_launches = workspace_sizes[get_tmp_idx(placed)];
             continue;
         }
 
         // launch kernel
         enqueue_kernel(q, CLK_ENQUEUE_FLAGS_WAIT_KERNEL,
-                      ndrange_1D(max_launch),
+                      ndrange_1D(max_launches),
                       ^{
                            solve_single_no_look(workspace, workspace_sizes, out_res, next_placed);
                        });
@@ -170,12 +174,12 @@ kernel void relaunch_kernel(__global start_condition* workspace, __global uint* 
 
         // launch kernel
         enqueue_kernel(q, CLK_ENQUEUE_FLAGS_WAIT_KERNEL,
-                      ndrange_1D(input_limit),
+                      ndrange_1D(max_launches),
                       ^{
                            solve_final(workspace, workspace_sizes, out_res);
                        });
     }
 
     // remove completed work items
-    workspace_sizes[get_tmp_idx(placed)] -= max_launch;
+    workspace_sizes[get_tmp_idx(placed)] -= max_launches;
 }
