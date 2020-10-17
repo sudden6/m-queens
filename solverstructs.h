@@ -14,7 +14,7 @@ struct start_condition_t {
 
 #pragma pack(pop)
 
-#elif defined(__GNUC__)
+#else
 struct __attribute__ ((packed)) start_condition_t {
     uint32_t cols; // bitfield with all the used columns
     uint32_t diagl;// bitfield with all the used diagonals down left

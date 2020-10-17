@@ -19,77 +19,163 @@ typedef uint uint_fast32_t;
 #define L (get_local_id(0))
 #define G (get_global_id(0))
 
-kernel void solve_subboard(__global const start_condition* in_starts, __global uint* out_cnt) {
-    // counter for the number of solutions
-    // sufficient until n=29
-    uint num = 0;
-    #define LOOKAHEAD 3
+uint expansion_factor(uint placed) {
+    return placed - 1;
+}
 
-    uint_fast32_t cols[WG_SIZE][DEPTH], posibs[WG_SIZE][DEPTH]; // Our backtracking 'stack'
-    uint_fast32_t diagl[WG_SIZE][DEPTH], diagr[WG_SIZE][DEPTH];
-    int8_t rest[WG_SIZE][DEPTH]; // number of rows left
-    int_fast16_t d = 1; // d is our depth in the backtrack stack
-    // The UINT_FAST32_MAX here is used to fill all 'coloumn' bits after n ...
-    cols[L][d] = in_starts[G].cols;
-    // This places the first two queens
-    diagl[L][d] = in_starts[G].diagl;
-    diagr[L][d] = in_starts[G].diagr;
-    // we're allready two rows into the field here
-    rest[L][d] = N - LOOKAHEAD - PLACED;
+// TODO: replace with compiler defined values
+#define WORKSPACE_SIZE 16
+//#define GPU_DEPTH 2
+//#define BOARDSIZE 8
 
-    //printf("G: %d, L: %d, cols: %x, diagl: %x, diagr: %x\n", G, L, cols[L][d], diagl[L][d], diagr[L][d]);
+#define LAST_PLACED (BOARDSIZE - 1)
+#define FIRST_PLACED (BOARDSIZE - GPU_DEPTH)
+
+uint get_tmp_idx(uint placed) {
+    return placed - FIRST_PLACED;
+}
+
+// without lookahead optimization
+kernel void solve_single_no_look(__global start_condition* workspace, __global uint* workspace_sizes, __global uint* out_res, unsigned placed) {
+
+    // input index calculation
+    uint in_first_idx = get_tmp_idx(placed) * WORKSPACE_SIZE;
+    uint in_our_idx = in_first_idx + G;
+
+    // output index calculation
+    uint out_first_idx = get_tmp_idx(placed + 1) * WORKSPACE_SIZE;
+    __global uint *out_cur_idx_ptr = workspace_sizes + get_tmp_idx(placed + 1);
+
+    // algorithm start
+    uint_fast32_t cols = workspace[in_our_idx].cols;
+    uint_fast32_t diagl = workspace[in_our_idx].diagl;
+    uint_fast32_t diagr = workspace[in_our_idx].diagr;
 
     //  The variable posib contains the bitmask of possibilities we still have
     //  to try in a given row ...
-    uint_fast32_t posib = (cols[L][d] | diagl[L][d] | diagr[L][d]);
+    uint_fast32_t posib = (cols | diagl | diagr);
 
-    diagl[L][d] <<= 1;
-    diagr[L][d] >>= 1;
+    diagl <<= 1;
+    diagr >>= 1;
 
-    while (d > 0) {
-        int8_t l_rest = rest[L][d];
+    while (posib != UINT_FAST32_MAX) {
+        // The standard trick for getting the rightmost bit in the mask
+        uint_fast32_t bit = ~posib & (posib + 1);
+        posib ^= bit; // Eliminate the tried possibility.
+        uint_fast32_t new_diagl = (bit << 1) | diagl;
+        uint_fast32_t new_diagr = (bit >> 1) | diagr;
+        bit |= cols;
+        uint_fast32_t new_posib = (bit | new_diagl | new_diagr);
 
-        while (posib != UINT_FAST32_MAX) {
-            // The standard trick for getting the rightmost bit in the mask
-            uint_fast32_t bit = ~posib & (posib + 1);
-            posib ^= bit; // Eliminate the tried possibility.
-            uint_fast32_t new_diagl = (bit << 1) | diagl[L][d];
-            uint_fast32_t new_diagr = (bit >> 1) | diagr[L][d];
-            bit |= cols[L][d];
-            uint_fast32_t new_posib = (bit | new_diagl | new_diagr);
+        if (new_posib != UINT_FAST32_MAX) {
+            uint out_offs = atomic_add(out_cur_idx_ptr, 1);
+            uint out_idx = out_first_idx + out_offs;
 
-            if (new_posib != UINT_FAST32_MAX) {
-                uint_fast32_t lookahead1 = (bit | (new_diagl << (LOOKAHEAD - 2)) | (new_diagr >> (LOOKAHEAD - 2)));
-                uint_fast32_t lookahead2 = (bit | (new_diagl << (LOOKAHEAD - 1)) | (new_diagr >> (LOOKAHEAD - 1)));
-                uint_fast32_t allowed2 = l_rest > (int8_t)0;
-
-                if(allowed2 && ((lookahead2 == UINT_FAST32_MAX) || (lookahead1 == UINT_FAST32_MAX))) {
-                    continue;
-                }
-
-              // The next two lines save stack depth + backtrack operations
-              // when we passed the last possibility in a row.
-              // Go lower in the stack, avoid branching by writing above the current
-              // position
-              posibs[L][d] = posib;
-              d += posib != UINT_FAST32_MAX; // avoid branching with this trick
-              posib = new_posib;
-
-              l_rest--;
-
-              // make values current
-              cols[L][d] = bit;
-              diagl[L][d] = new_diagl << 1;
-              diagr[L][d] = new_diagr >> 1;
-              rest[L][d] = l_rest;
-            } else {
-                // when all columns are used, we found a solution
-                num += bit == UINT_FAST32_MAX;
-            }
+            workspace[out_idx].cols = bit;
+            workspace[out_idx].diagr = new_diagl;
+            workspace[out_idx].diagl = new_diagl;
         }
-        d--;
-        posib = posibs[L][d]; // backtrack ...
     }
 
-    out_cnt[G] += num;
+    // launch relaunch_kernel
+    if(G == 0) {
+        enqueue_kernel(q, CLK_ENQUEUE_FLAGS_WAIT_KERNEL,
+                      ndrange_1D(1),
+                      ^{
+                           relaunch_kernel(workspace, workspace_sizes, out_res, placed);
+                       });
+
+    }
+}
+
+kernel void solve_final(__global start_condition* workspace, __global uint* workspace_sizes, __global uint* out_res) {
+    // input index calculation
+    uint in_first_idx = get_tmp_idx(LAST_PLACED) * WORKSPACE_SIZE;
+    uint in_our_idx = first_idx + G;
+
+    uint cnt = 0;
+
+    uint_fast32_t cols = in_starts[G].cols;
+    // This places the first two queens
+    uint_fast32_t diagl = in_starts[G].diagl;
+    uint_fast32_t diagr = in_starts[G].diagr;
+
+    //  The variable posib contains the bitmask of possibilities we still have
+    //  to try in a given row ...
+    uint_fast32_t posib = (cols | diagl | diagr);
+
+    diagl <<= 1;
+    diagr >>= 1;
+
+    while (posib != UINT_FAST32_MAX) {
+        // The standard trick for getting the rightmost bit in the mask
+        uint_fast32_t bit = ~posib & (posib + 1);
+        posib ^= bit; // Eliminate the tried possibility.
+        uint_fast32_t new_diagl = (bit << 1) | diagl[L][d];
+        uint_fast32_t new_diagr = (bit >> 1) | diagr[L][d];
+        bit |= cols[L][d];
+        uint_fast32_t new_posib = (bit | new_diagl | new_diagr);
+
+        if (new_posib != UINT_FAST32_MAX) {
+            cnt++;
+        }
+    }
+
+    out_res += cnt;
+    // launch relaunch_kernel
+    if(G == 0) {
+        enqueue_kernel(q, CLK_ENQUEUE_FLAGS_WAIT_KERNEL,
+                      ndrange_1D(1),
+                      ^{
+                           relaunch_kernel(workspace, workspace_sizes, out_res, FIRST_PLACED);
+                       });
+
+    }
+}
+
+
+
+kernel void relaunch_kernel(__global start_condition* workspace, __global uint* workspace_sizes, __global uint* out_res, unsigned placed) {
+    queue_t q = get_default_queue();
+    uint next_placed = placed + 1;
+    // limit due to input start conditions
+    uint input_limit = workspace_sizes[get_tmp_idx(placed)];
+
+    while(placed < LAST_PLACED) {
+        // single solver step
+
+        // compute maximum safe launches due to data expansion in output start conditions
+        uint output_limit = (WORKSPACE_SIZE - workspace_sizes[get_tmp_idx(next_placed)]) / expansion_factor(next_placed);
+        uint max_launch = min(input_limit, output_limit);
+
+        if(max_launch == 0) {
+            // can't launch here, go deeper
+            placed++;
+            next_placed = placed + 1;
+            input_limit = workspace_sizes[get_tmp_idx(placed)];
+            continue;
+        }
+
+        // launch kernel
+        enqueue_kernel(q, CLK_ENQUEUE_FLAGS_WAIT_KERNEL,
+                      ndrange_1D(max_launch),
+                      ^{
+                           solve_single_no_look(workspace, workspace_sizes, out_res, next_placed);
+                       });
+
+    }
+
+    if(placed == LAST_PLACED) {
+        // last step, count solutions
+
+        // launch kernel
+        enqueue_kernel(q, CLK_ENQUEUE_FLAGS_WAIT_KERNEL,
+                      ndrange_1D(input_limit),
+                      ^{
+                           solve_final(workspace, workspace_sizes, out_res);
+                       });
+    }
+
+    // remove completed work items
+    workspace_sizes[get_tmp_idx(placed)] -= max_launch;
 }

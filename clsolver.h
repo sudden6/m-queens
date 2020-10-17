@@ -1,14 +1,16 @@
 #ifndef CLSOLVER_H
 #define CLSOLVER_H
 
-#include <cstdint>
+#define CL_HPP_TARGET_OPENCL_VERSION 200
+#include <CL/cl2.hpp>
+
+#include <cstdlib>
 #include <vector>
 #include <mutex>
 #include "solverstructs.h"
 #include "presolver.h"
 #include "isolver.h"
-#include <CL/cl.h>
-#include <CL/cl.hpp>
+
 
 class ClSolver : public ISolver
 {
@@ -22,7 +24,7 @@ public:
 private:
     ClSolver();
     void threadWorker(uint32_t id, std::mutex &pre_lock);
-    static constexpr size_t NUM_CMDQUEUES = 16;
+    static constexpr size_t NUM_CMDQUEUES = 1;
     PreSolver nextPre(std::mutex &pre_lock);
 
     std::vector<start_condition> start;

@@ -83,7 +83,7 @@ uint64_t cpuSolver::solve_subboard(const std::vector<start_condition>& starts) {
             }
 #endif
 
-#if 0
+#if 1
             // Page 8, 2)
             if(allowed2 && (lookahead1 == lookahead2)) {
                 uint_fast32_t adjacent = ~lookahead1 & (~lookahead1 << 1);
