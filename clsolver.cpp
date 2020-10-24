@@ -25,9 +25,9 @@ constexpr uint_fast8_t MAXN = 29;
  * With a too high GPU_DEPTH, solving a board takes too long and the
  * GPU is detected as "hung" by the driver and reset or the system crashes.
  */
-constexpr uint_fast8_t GPU_DEPTH = 2;
+constexpr uint_fast8_t GPU_DEPTH = 3;
 constexpr size_t WORKGROUP_SIZE = 32;
-constexpr size_t WORKSPACE_SIZE = 16;
+constexpr size_t WORKSPACE_SIZE = 1024;
 
 bool ClSolver::init(uint8_t boardsize, uint8_t placed)
 {
@@ -178,7 +178,7 @@ void ClSolver::threadWorker(uint32_t id, std::mutex &pre_lock)
             std::cout << "solve_subboard.setArg(2 failed: " << err << std::endl;
         }
 
-        err = b.clKernel.setArg(3, placed);
+        err = b.clKernel.setArg(3, static_cast<cl_uint>(boardsize - GPU_DEPTH));
         if(err != CL_SUCCESS) {
             std::cout << "solve_subboard.setArg(3 failed: " << err << std::endl;
         }
@@ -235,13 +235,13 @@ void ClSolver::threadWorker(uint32_t id, std::mutex &pre_lock)
         if(err != CL_SUCCESS) {
             std::cout << "enqueueNDRangeKernel failed: " << err << std::endl;
         }
-
-        // don't flood the device with commands
-        cmdQueue.flush();
     }
+
+    cmdQueue.finish();
 
     for(size_t i = 0; i < NUM_BATCHES; i++) {
         batch& b = batches[i];
+        b.hostOutputBuf.resize(WORKSPACE_SIZE);
 
         err = cmdQueue.enqueueReadBuffer(b.clOutputBuf, CL_FALSE, 0,
                                          WORKSPACE_SIZE * sizeof(result_type), b.hostOutputBuf.data(),
