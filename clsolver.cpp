@@ -107,9 +107,14 @@ void ClSolver::threadWorker(uint32_t id, std::mutex &pre_lock)
 
     // buffer
     batch batches[NUM_BATCHES];
-    cl::CommandQueue cmdQueue;
     // Create command queue.
-    cmdQueue = cl::CommandQueue(context, device, 0, &err);
+    cl::DeviceCommandQueue devQueue = cl::DeviceCommandQueue::makeDefault(context, device, &err);
+    if(err != CL_SUCCESS) {
+        std::cout << "failed to create device command queue: " << err << std::endl;
+        return;
+    }
+    
+    cl::CommandQueue cmdQueue = cl::CommandQueue(context, device, cl::QueueProperties::None, &err);
     if(err != CL_SUCCESS) {
         std::cout << "failed to create command queue: " << err << std::endl;
         return;
