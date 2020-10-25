@@ -25,9 +25,10 @@ constexpr uint_fast8_t MAXN = 29;
  * With a too high GPU_DEPTH, solving a board takes too long and the
  * GPU is detected as "hung" by the driver and reset or the system crashes.
  */
-constexpr uint_fast8_t GPU_DEPTH = 3;
-constexpr size_t WORKGROUP_SIZE = 32;
-constexpr size_t WORKSPACE_SIZE = 1024;
+constexpr uint_fast8_t GPU_DEPTH = 8;
+constexpr size_t WORKGROUP_SIZE = 64;
+constexpr size_t WORKSPACE_SIZE = 1024*1024*16;
+constexpr size_t NUM_BATCHES = 1;
 
 bool ClSolver::init(uint8_t boardsize, uint8_t placed)
 {
@@ -43,7 +44,7 @@ bool ClSolver::init(uint8_t boardsize, uint8_t placed)
 
     this->boardsize = boardsize;
     this->placed = placed;
-    uint_fast8_t gpu_depth = GPU_DEPTH;
+    gpu_depth = GPU_DEPTH;
     if((boardsize - placed) < GPU_DEPTH) {
         gpu_depth = boardsize - placed;
         presolve_depth = 0;
@@ -94,7 +95,6 @@ typedef struct {
     cl::Kernel clKernel;
 } batch;
 
-constexpr size_t NUM_BATCHES = 1;
 
 void ClSolver::threadWorker(uint32_t id, std::mutex &pre_lock)
 {
@@ -133,16 +133,24 @@ void ClSolver::threadWorker(uint32_t id, std::mutex &pre_lock)
 
         // Allocate workspace buffer on device
         b.clWorkspaceBuf = cl::Buffer(context, CL_MEM_READ_WRITE | CL_MEM_HOST_WRITE_ONLY,
-            WORKSPACE_SIZE * GPU_DEPTH * sizeof(start_condition), nullptr, &err);
+            WORKSPACE_SIZE * gpu_depth * sizeof(start_condition), nullptr, &err);
         if(err != CL_SUCCESS) {
             std::cout << "cl::Buffer start_buf failed: " << err << std::endl;
         }
 
         // Allocate workspace size buffer on device
         b.clWorkspaceSizeBuf = cl::Buffer(context, CL_MEM_READ_WRITE,
-            GPU_DEPTH * sizeof(cl_uint), nullptr, &err);
+            gpu_depth * sizeof(cl_uint), nullptr, &err);
         if(err != CL_SUCCESS) {
             std::cout << "cl::Buffer start_buf failed: " << err << std::endl;
+        }
+
+        // zero the workspace size buffer
+        err = cmdQueue.enqueueFillBuffer(b.clWorkspaceSizeBuf, static_cast<cl_uint>(0),
+                                         0, gpu_depth * sizeof(cl_uint),
+                                         nullptr, nullptr);
+        if(err != CL_SUCCESS) {
+            std::cout << "fillBuffer clWorkspaceSizeBuf failed: " << err << std::endl;
         }
 
         // Needs OpenCL 1.2
@@ -178,7 +186,7 @@ void ClSolver::threadWorker(uint32_t id, std::mutex &pre_lock)
             std::cout << "solve_subboard.setArg(2 failed: " << err << std::endl;
         }
 
-        err = b.clKernel.setArg(3, static_cast<cl_uint>(boardsize - GPU_DEPTH));
+        err = b.clKernel.setArg(3, static_cast<cl_uint>(boardsize - gpu_depth));
         if(err != CL_SUCCESS) {
             std::cout << "solve_subboard.setArg(3 failed: " << err << std::endl;
         }
@@ -194,7 +202,31 @@ void ClSolver::threadWorker(uint32_t id, std::mutex &pre_lock)
         cur_batch++;
         cur_batch %= NUM_BATCHES;
 
-        auto curIt = b.hostStartBuf.begin();
+        cl_uint buffer_fill = 0;
+
+        err = cmdQueue.enqueueReadBuffer(b.clWorkspaceSizeBuf, CL_TRUE, 0, sizeof(cl_uint), &buffer_fill);
+        if (err != CL_SUCCESS) {
+            std::cout << "enqueueReadBuffer clWorkspaceSizeBuf failed: " << err << std::endl;
+            break;
+        }
+
+        while(buffer_fill == WORKSPACE_SIZE) {
+        
+            // Relaunch kernel on the compute device.
+            err = cmdQueue.enqueueNDRangeKernel(b.clKernel, cl::NullRange,
+                                                cl::NDRange{1}, cl::NDRange{WORKGROUP_SIZE},
+                                                nullptr, nullptr);
+            if(err != CL_SUCCESS) {
+                std::cout << "enqueueNDRangeKernel failed: " << err << std::endl;
+            }
+
+            err = cmdQueue.enqueueReadBuffer(b.clWorkspaceSizeBuf, CL_TRUE, 0, sizeof(cl_uint), &buffer_fill);
+            if (err != CL_SUCCESS) {
+                std::cout << "enqueueReadBuffer clWorkspaceSizeBuf failed: " << err << std::endl;
+            }
+        }            
+
+        auto curIt = b.hostStartBuf.begin() + buffer_fill;
         // TODO(sudden6): cleanup
         while(curIt < b.hostStartBuf.cend()) {
             curIt = pre.getNext(curIt, b.hostStartBuf.cend());
@@ -209,12 +241,12 @@ void ClSolver::threadWorker(uint32_t id, std::mutex &pre_lock)
             }
         }
 
-        const size_t batchSize = std::distance(b.hostStartBuf.begin(), curIt);
-        const cl_uint batchSize_u = batchSize;
+        const size_t batchSize = std::distance(b.hostStartBuf.begin() + buffer_fill, curIt);
+        const cl_uint new_buffer_fill = batchSize + buffer_fill;
 
         // write start conditions to workspace
         err = cmdQueue.enqueueWriteBuffer(b.clWorkspaceBuf, CL_TRUE,
-                                                    0, batchSize * sizeof(start_condition),
+                                                    buffer_fill, batchSize * sizeof(start_condition),
                                                     b.hostStartBuf.data(), nullptr, nullptr);
         if(err != CL_SUCCESS) {
             std::cout << "Failed to write start buffer: " << err << std::endl;
@@ -223,7 +255,7 @@ void ClSolver::threadWorker(uint32_t id, std::mutex &pre_lock)
         // write start condition count to workspace size
         err = cmdQueue.enqueueWriteBuffer(b.clWorkspaceSizeBuf, CL_TRUE,
                                                     0, sizeof(cl_uint),
-                                                    &batchSize_u, nullptr, nullptr);
+                                                    &new_buffer_fill, nullptr, nullptr);
         if(err != CL_SUCCESS) {
             std::cout << "Failed to write start buffer size: " << err << std::endl;
         }

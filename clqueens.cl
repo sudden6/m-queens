@@ -55,7 +55,7 @@ kernel void solve_single_no_look(__global start_condition* workspace, __global u
     uint_fast32_t diagl = workspace[in_our_idx].diagl;
     uint_fast32_t diagr = workspace[in_our_idx].diagr;
 
-    printf("solve G: %u, in_our_idx: %u, cols: %x, diagl: %x, diagr: %x\n", G, in_our_idx, cols, diagl, diagr);
+    //printf("solve G: %u, in_our_idx: %u, cols: %x, diagl: %x, diagr: %x\n", G, in_our_idx, cols, diagl, diagr);
 
     //  The variable posib contains the bitmask of possibilities we still have
     //  to try in a given row ...
@@ -76,7 +76,7 @@ kernel void solve_single_no_look(__global start_condition* workspace, __global u
         if (new_posib != UINT_FAST32_MAX) {
             uint out_offs = atomic_add(out_cur_idx_ptr, 1);
             uint out_idx = out_first_idx + out_offs;
-            printf("G: %u, out_idx: %u, bit: %x, diagl: %x, diagr: %x\n", G, out_idx, bit, diagl, diagr);
+            //printf("G: %u, out_idx: %u, bit: %x, diagl: %x, diagr: %x\n", G, out_idx, bit, diagl, diagr);
 
             workspace[out_idx].cols = bit;
             workspace[out_idx].diagr = new_diagr;
@@ -87,12 +87,14 @@ kernel void solve_single_no_look(__global start_condition* workspace, __global u
     // launch relaunch_kernel
     if(G == 0) {
         queue_t q = get_default_queue();
-        enqueue_kernel(q, CLK_ENQUEUE_FLAGS_WAIT_KERNEL,
-                      ndrange_1D(1),
-                      ^{
-                           relaunch_kernel(workspace, workspace_sizes, out_res, placed);
-                       });
-
+        int err = enqueue_kernel(q, CLK_ENQUEUE_FLAGS_WAIT_KERNEL,
+                                ndrange_1D(1),
+                                ^{
+                                    relaunch_kernel(workspace, workspace_sizes, out_res, placed);
+                                });
+        if (err != 0) {
+            printf("Error when enqueuing solver kernel");
+        }
     }
 }
 
@@ -101,7 +103,7 @@ kernel void solve_final(__global start_condition* workspace, __global uint* work
     uint in_first_idx = get_tmp_idx(LAST_PLACED) * WORKSPACE_SIZE;
     uint in_our_idx = in_first_idx + G;
 
-    printf("G: %u, in_our_idx: %u", G, in_our_idx);
+    //printf("G: %u, in_our_idx: %u", G, in_our_idx);
 
     uint cnt = 0;
 
@@ -117,7 +119,7 @@ kernel void solve_final(__global start_condition* workspace, __global uint* work
     diagl <<= 1;
     diagr >>= 1;
 
-    printf("G: %u, posib: %x", G, posib);
+    //printf("G: %u, posib: %x", G, posib);
 
     while (posib != UINT_FAST32_MAX) {
         // The standard trick for getting the rightmost bit in the mask
@@ -133,70 +135,93 @@ kernel void solve_final(__global start_condition* workspace, __global uint* work
         }
     }
 
-    printf("G: %u, cnt: %u", G, cnt);
+    //printf("G: %u, cnt: %u", G, cnt);
 
     out_res[G] += cnt;
     // launch relaunch_kernel
     if(G == 0) {
         queue_t q = get_default_queue();
-        enqueue_kernel(q, CLK_ENQUEUE_FLAGS_WAIT_KERNEL,
+        int err = enqueue_kernel(q, CLK_ENQUEUE_FLAGS_WAIT_KERNEL,
                       ndrange_1D(1),
                       ^{
                            relaunch_kernel(workspace, workspace_sizes, out_res, FIRST_PLACED);
                        });
-
+        
+        if (err != 0) {
+            printf("Error when enqueuing final kernel");
+        }
     }
 }
 
 
 kernel void relaunch_kernel(__global start_condition* workspace, __global uint* workspace_sizes, __global uint* out_res, unsigned placed) {
     queue_t q = get_default_queue();
-    uint next_placed = placed + 1;
+    uint next_placed = 0;
     // limit due to input start conditions
-    uint max_launches = workspace_sizes[get_tmp_idx(placed)];
+    uint max_launches = 0;
 
-    printf("max_launches: %u, placed: %u\n", max_launches, placed);
+    // Find maximum possible kernel launches
+    //printf("placed: %u\n", placed);
+    for(uint i = 0; i < (GPU_DEPTH - 1); i++) {
+        //printf("  size[%u] = %u\n",i, workspace_sizes[i]);
+        uint input_limit = workspace_sizes[i];
+        uint l_placed = i + FIRST_PLACED;
+        uint output_limit = (WORKSPACE_SIZE - workspace_sizes[i+1]) / expansion_factor(l_placed);
+        uint limit = min(input_limit, output_limit);
 
-    while(placed < LAST_PLACED) {
-        // single solver step
-
-        // compute maximum safe launches due to data expansion in output start conditions
-        uint output_limit = (WORKSPACE_SIZE - workspace_sizes[get_tmp_idx(next_placed)]) / expansion_factor(next_placed);
-        max_launches = min(max_launches, output_limit);
-
-        if(max_launches == 0) {
-            // can't launch here, go deeper
-            placed++;
-            next_placed = placed + 1;
-            max_launches = workspace_sizes[get_tmp_idx(placed)];
-            printf("Going deeper, max_launches: %u, placed: %u\n", max_launches, placed);
-            continue;
+        if(limit > max_launches) {
+            max_launches = limit;
+            next_placed = l_placed;
         }
-
-        printf("Single step, placed: %u, launched: %u\n", placed, max_launches);
-
-        // launch kernel
-        enqueue_kernel(q, CLK_ENQUEUE_FLAGS_WAIT_KERNEL,
-                      ndrange_1D(max_launches),
-                      ^{
-                           solve_single_no_look(workspace, workspace_sizes, out_res, placed);
-                       });
-        break;
     }
 
-    if(placed == LAST_PLACED) {
+    // final run only depends on input limit, calculate extra
+    uint input_limit = workspace_sizes[GPU_DEPTH - 1];
+    if (input_limit > max_launches) {
+        max_launches = input_limit;
+        next_placed = LAST_PLACED;
+    }
+
+#if 0
+    if ((max_launches < WORKSPACE_SIZE/32) && workspace_sizes[0] > WORKSPACE_SIZE / 2) {
+        // re-feed
+        return;
+    }
+#endif
+
+    if (max_launches == 0) {
+        //printf("Finished\n");
+        return;
+    }
+
+    int err = 0;
+
+    if(next_placed == LAST_PLACED) {
         // last step, count solutions
-        printf("Last step, launched: %u\n", max_launches);
+        //printf("Last step, launched: %u\n", max_launches);
 
         // launch kernel
-        enqueue_kernel(q, CLK_ENQUEUE_FLAGS_WAIT_KERNEL,
-                      ndrange_1D(max_launches),
-                      ^{
-                           solve_final(workspace, workspace_sizes, out_res);
-                       });
+        err = enqueue_kernel(q, CLK_ENQUEUE_FLAGS_WAIT_KERNEL,
+                            ndrange_1D(max_launches),
+                            ^{
+                                solve_final(workspace, workspace_sizes, out_res);
+                            });
+    } else {
+        // Intermediate step
+        //printf("Single step, next_placed: %u, launched: %u\n", next_placed, max_launches);
+        // launch kernel
+        err = enqueue_kernel(q, CLK_ENQUEUE_FLAGS_WAIT_KERNEL,
+                            ndrange_1D(max_launches),
+                            ^{
+                                solve_single_no_look(workspace, workspace_sizes, out_res, next_placed);
+                            });
     }
 
-    printf("launch removed: %u", max_launches);
-    // remove completed work items
-    workspace_sizes[get_tmp_idx(placed)] -= max_launches;
+    if (err != 0) {
+        printf("Error when enqueuing kernel, launches: %u, next_placed: %u", max_launches, next_placed);
+    } else  {
+        //printf("launch removed: %u", max_launches);
+        // remove completed work items only when successfully launched
+        workspace_sizes[get_tmp_idx(next_placed)] -= max_launches;
+    }
 }
