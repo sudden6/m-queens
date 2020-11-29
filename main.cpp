@@ -54,7 +54,10 @@ static const uint64_t results[27] = {
 
 static void solve_from_range(ISolver& solver, uint8_t start, uint8_t end) {
     for (uint8_t i = start; i <= end; i++) {
-        solver.init(i, 3);
+        if(!solver.init(i, 3)) {
+            std::cout << "Solver init failed" << std::endl;
+            return;
+        }
 
         uint64_t result = 0;
         auto time_start = std::chrono::high_resolution_clock::now();
