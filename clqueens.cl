@@ -35,20 +35,28 @@ uint get_tmp_idx(uint placed) {
     return placed - FIRST_PLACED;
 }
 
+#define MAX_EXPANSION ((FIRST_PLACED - 1))
+#define SCRATCH_SIZE (WORKGROUP_SIZE * MAX_EXPANSION)
+
 kernel void relaunch_kernel(__global start_condition* workspace, __global uint* workspace_sizes, __global uint* out_res, unsigned placed);
 
 // without lookahead optimization
 kernel void solve_single_no_look(__global start_condition* workspace, __global uint* workspace_sizes, __global uint* out_res, unsigned placed) {
+
+    __local start_condition scratch_buf[SCRATCH_SIZE];
+    __local uint scratch_fill;
+
+	if(L == 0) {
+		scratch_fill = 0;
+	}
+
+    work_group_barrier(CLK_LOCAL_MEM_FENCE);
 
     // input index calculation
     uint in_first_idx = get_tmp_idx(placed) * WORKSPACE_SIZE;
 
     // elements are subtracted from size by relaunch kernel
     uint in_our_idx = in_first_idx + workspace_sizes[get_tmp_idx(placed)] + G;
-
-    // output index calculation
-    uint out_first_idx = get_tmp_idx(placed + 1) * WORKSPACE_SIZE;
-    __global uint *out_cur_idx_ptr = workspace_sizes + get_tmp_idx(placed + 1);
 
     // algorithm start
     uint_fast32_t cols = workspace[in_our_idx].cols;
@@ -74,15 +82,35 @@ kernel void solve_single_no_look(__global start_condition* workspace, __global u
         uint_fast32_t new_posib = (bit | new_diagl | new_diagr);
 
         if (new_posib != UINT_FAST32_MAX) {
-            uint out_offs = atomic_add(out_cur_idx_ptr, 1);
-            uint out_idx = out_first_idx + out_offs;
+            uint out_offs = atomic_add(&scratch_fill, 1);
             //printf("G: %u, out_idx: %u, bit: %x, diagl: %x, diagr: %x\n", G, out_idx, bit, diagl, diagr);
 
-            workspace[out_idx].cols = bit;
-            workspace[out_idx].diagr = new_diagr;
-            workspace[out_idx].diagl = new_diagl;
+            scratch_buf[out_offs].cols = bit;
+            scratch_buf[out_offs].diagr = new_diagr;
+            scratch_buf[out_offs].diagl = new_diagl;
         }
     }
+
+    work_group_barrier(CLK_LOCAL_MEM_FENCE);
+
+    uint out_fill = 0;
+    // output index calculation
+    uint out_first_idx = get_tmp_idx(placed + 1) * WORKSPACE_SIZE;
+
+    if(L == 0) {
+        __global uint *out_cur_idx_ptr = workspace_sizes + get_tmp_idx(placed + 1);
+        out_fill = atomic_add(out_cur_idx_ptr, scratch_fill);
+    }
+
+    out_fill = work_group_broadcast(out_fill, 0);
+    uint out_offs = out_first_idx + out_fill;
+
+    //printf("G: %u, out_fill: %u, out_offs: %u, L: %u\n", G, out_fill, out_offs, L);
+
+    for(int i = L; i < scratch_fill; i += get_local_size(0)) {
+        workspace[out_offs + i] = scratch_buf[i];
+    }
+
 
     // launch relaunch_kernel
     if(G == 0) {
@@ -130,9 +158,7 @@ kernel void solve_final(__global start_condition* workspace, __global uint* work
         bit |= cols;
         uint_fast32_t new_posib = (bit | new_diagl | new_diagr);
 
-        if (new_posib == UINT_FAST32_MAX && bit == UINT_FAST32_MAX) {
-            cnt++;
-        }
+        cnt += new_posib == UINT_FAST32_MAX && bit == UINT_FAST32_MAX;
     }
 
     //printf("G: %u, cnt: %u", G, cnt);
@@ -195,6 +221,7 @@ kernel void relaunch_kernel(__global start_condition* workspace, __global uint* 
     }
 
     int err = 0;
+    ndrange_t range = ndrange_1D(max_launches, get_local_size(0));
 
     if(next_placed == LAST_PLACED) {
         // last step, count solutions
@@ -202,7 +229,7 @@ kernel void relaunch_kernel(__global start_condition* workspace, __global uint* 
 
         // launch kernel
         err = enqueue_kernel(q, CLK_ENQUEUE_FLAGS_WAIT_KERNEL,
-                            ndrange_1D(max_launches),
+                            range,
                             ^{
                                 solve_final(workspace, workspace_sizes, out_res);
                             });
@@ -211,7 +238,7 @@ kernel void relaunch_kernel(__global start_condition* workspace, __global uint* 
         //printf("Single step, next_placed: %u, launched: %u\n", next_placed, max_launches);
         // launch kernel
         err = enqueue_kernel(q, CLK_ENQUEUE_FLAGS_WAIT_KERNEL,
-                            ndrange_1D(max_launches),
+                            range,
                             ^{
                                 solve_single_no_look(workspace, workspace_sizes, out_res, next_placed);
                             });
