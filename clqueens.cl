@@ -46,13 +46,14 @@ uint get_tmp_idx(uint placed) {
 
 #define MAX_EXPANSION ((FIRST_PLACED - 1))
 #define SCRATCH_SIZE (WORKGROUP_SIZE * MAX_EXPANSION)
+#define WORK_FACTOR 2
 
 kernel void relaunch_kernel(__global start_condition* workspace, __global uint* workspace_sizes, __global uint* out_res, unsigned placed, unsigned recursion);
 
 // without lookahead optimization
-kernel void solve_single_no_look(__global start_condition* workspace, __global uint* workspace_sizes, __global uint* out_res, unsigned placed_state, unsigned recursion) {
+kernel void solve_single_no_look(__global start_condition* workspace, __global uint* workspace_sizes, __global uint* out_res, unsigned placed_state, unsigned recursion, unsigned factor) {
 
-    __local start_condition scratch_buf[SCRATCH_SIZE];
+    __local start_condition scratch_buf[SCRATCH_SIZE * WORK_FACTOR];
     __local uint scratch_fill;
 
     uint placed = placed_state & ~CLSOLVER_STATE_MASK;
@@ -64,59 +65,61 @@ kernel void solve_single_no_look(__global start_condition* workspace, __global u
     work_group_barrier(CLK_LOCAL_MEM_FENCE);
 
     // input index calculation
-    uint in_first_idx = get_tmp_idx(placed) * WORKSPACE_SIZE;
+    uint in_first_idx = get_tmp_idx(placed) * WORKSPACE_SIZE + workspace_sizes[get_tmp_idx(placed)] + (G - L)*factor;
+    uint in_last_idx = in_first_idx + get_local_size(0) * factor;
 
-    // elements are subtracted from size by relaunch kernel
-    uint in_our_idx = in_first_idx + workspace_sizes[get_tmp_idx(placed)] + G;
+    for(uint in_our_idx = in_first_idx + L; in_our_idx < in_last_idx; in_our_idx += get_local_size(0)) {
 
-    // algorithm start
-    uint_fast32_t cols = workspace[in_our_idx].cols;
-    uint_fast32_t diagl = workspace[in_our_idx].diagl;
-    uint_fast32_t diagr = workspace[in_our_idx].diagr;
+        // algorithm start
+        uint_fast32_t cols = workspace[in_our_idx].cols;
+        uint_fast32_t diagl = workspace[in_our_idx].diagl;
+        uint_fast32_t diagr = workspace[in_our_idx].diagr;
 
-    //printf("solve G: %u, in_our_idx: %u, cols: %x, diagl: %x, diagr: %x\n", G, in_our_idx, cols, diagl, diagr);
+        //printf("solve G: %u, L: %u, in_our_idx: %u, cols: %x, diagl: %x, diagr: %x\n", G, L, in_our_idx, cols, diagl, diagr);
 
-    //  The variable posib contains the bitmask of possibilities we still have
-    //  to try in a given row ...
-    uint_fast32_t posib = (cols | diagl | diagr);
+        //  The variable posib contains the bitmask of possibilities we still have
+        //  to try in a given row ...
+        uint_fast32_t posib = (cols | diagl | diagr);
 
-    diagl <<= 1;
-    diagr >>= 1;
+        diagl <<= 1;
+        diagr >>= 1;
 
-    while (posib != UINT_FAST32_MAX) {
-        // The standard trick for getting the rightmost bit in the mask
-        uint_fast32_t bit = ~posib & (posib + 1);
-        posib ^= bit; // Eliminate the tried possibility.
-        uint_fast32_t new_diagl = (bit << 1) | diagl;
-        uint_fast32_t new_diagr = (bit >> 1) | diagr;
-        bit |= cols;
-        uint_fast32_t new_posib = (bit | new_diagl | new_diagr);
+        while (posib != UINT_FAST32_MAX) {
+            // The standard trick for getting the rightmost bit in the mask
+            uint_fast32_t bit = ~posib & (posib + 1);
+            posib ^= bit; // Eliminate the tried possibility.
+            uint_fast32_t new_diagl = (bit << 1) | diagl;
+            uint_fast32_t new_diagr = (bit >> 1) | diagr;
+            bit |= cols;
+            uint_fast32_t new_posib = (bit | new_diagl | new_diagr);
 
-        if (new_posib != UINT_FAST32_MAX) {
-            uint out_offs = atomic_add(&scratch_fill, 1);
-            //printf("G: %u, out_idx: %u, bit: %x, diagl: %x, diagr: %x\n", G, out_idx, bit, diagl, diagr);
+            if (new_posib != UINT_FAST32_MAX) {
+                uint out_offs = atomic_add(&scratch_fill, 1);
+                //printf("G: %u, out_idx: %u, bit: %x, diagl: %x, diagr: %x\n", G, out_idx, bit, diagl, diagr);
 
-            scratch_buf[out_offs].cols = bit;
-            scratch_buf[out_offs].diagr = new_diagr;
-            scratch_buf[out_offs].diagl = new_diagl;
+                scratch_buf[out_offs].cols = bit;
+                scratch_buf[out_offs].diagr = new_diagr;
+                scratch_buf[out_offs].diagl = new_diagl;
+            }
         }
     }
 
     work_group_barrier(CLK_LOCAL_MEM_FENCE);
 
-    uint out_fill = 0;
     // output index calculation
     uint out_first_idx = get_tmp_idx(placed + 1) * WORKSPACE_SIZE;
+    __local uint out_offs;
 
     if(L == 0) {
+        //printf("G: %u, L: %u, scratch_fill: %u\n", G, L, scratch_fill);
         __global uint *out_cur_idx_ptr = workspace_sizes + get_tmp_idx(placed + 1);
-        out_fill = atomic_add(out_cur_idx_ptr, scratch_fill);
+        uint out_fill = atomic_add(out_cur_idx_ptr, scratch_fill);
+        out_offs = out_first_idx + out_fill;
     }
 
-    out_fill = work_group_broadcast(out_fill, 0);
-    uint out_offs = out_first_idx + out_fill;
+    work_group_barrier(CLK_LOCAL_MEM_FENCE);
 
-    //printf("G: %u, out_fill: %u, out_offs: %u, L: %u\n", G, out_fill, out_offs, L);
+    //printf("G: %u, L: %u, out_fill: %u, out_offs: %u\n", G, L, out_fill, out_offs);
 
     for(int i = L; i < scratch_fill; i += get_local_size(0)) {
         workspace[out_offs + i] = scratch_buf[i];
@@ -271,12 +274,24 @@ kernel void relaunch_kernel(__global start_condition* workspace, __global uint* 
                             });
     } else {
         // Intermediate step
+
+        uint applied_factor = 1;
+
+        if(max_launches > WORK_FACTOR) {
+            uint rest = max_launches % WORK_FACTOR;
+            max_launches -= rest;
+            range = ndrange_1D(max_launches/WORK_FACTOR, WORKGROUP_SIZE);
+            applied_factor = WORK_FACTOR;
+            //printf("max_launches: %u, applied_factor: %u\n", max_launches, applied_factor);
+        }
+
         //printf("Single step, next_placed: %u, launched: %u\n", next_placed, max_launches);
+
         // launch kernel
         err = enqueue_kernel(q, CLK_ENQUEUE_FLAGS_WAIT_KERNEL,
                             range,
                             ^{
-                                solve_single_no_look(workspace, workspace_sizes, out_res, next_placed | state, recursion + 1);
+                                solve_single_no_look(workspace, workspace_sizes, out_res, next_placed | state, recursion + 1, applied_factor);
                             });
     }
 

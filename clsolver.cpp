@@ -26,7 +26,7 @@ constexpr uint_fast8_t MAXN = 29;
  * GPU is detected as "hung" by the driver and reset or the system crashes.
  */
 constexpr uint_fast8_t GPU_DEPTH = 9;
-constexpr size_t WORKGROUP_SIZE = 256;
+constexpr size_t WORKGROUP_SIZE = 64;
 constexpr size_t WORKSPACE_SIZE = 1024*1024*8;
 constexpr size_t NUM_BATCHES = 1;
 
