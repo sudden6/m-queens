@@ -261,17 +261,20 @@ kernel void relaunch_kernel(__global start_condition* workspace, __global uint* 
         if(max_launches > factor) {
             uint rest = max_launches % factor;
             max_launches -= rest;
-            range = ndrange_1D(max_launches/factor, WORKGROUP_SIZE);
             applied_factor = factor;
             //printf("max_launches: %u, applied_factor: %u\n", max_launches, applied_factor);
         }
 
+        void (^solve_final_blk)(void) = ^{
+                solve_final(workspace, workspace_sizes, out_res, next_placed | state, recursion + 1, applied_factor);
+            };
+
+        uint local_size = min((uint)WORKGROUP_SIZE, get_kernel_work_group_size(solve_final_blk));
+
         // launch kernel
         err = enqueue_kernel(q, CLK_ENQUEUE_FLAGS_WAIT_KERNEL,
-                            range,
-                            ^{
-                                solve_final(workspace, workspace_sizes, out_res, next_placed | state, recursion + 1, applied_factor);
-                            });
+                            ndrange_1D(max_launches/applied_factor, local_size),
+                            solve_final_blk);
     } else {
         // Intermediate step
 
@@ -280,19 +283,21 @@ kernel void relaunch_kernel(__global start_condition* workspace, __global uint* 
         if(max_launches > WORK_FACTOR) {
             uint rest = max_launches % WORK_FACTOR;
             max_launches -= rest;
-            range = ndrange_1D(max_launches/WORK_FACTOR, WORKGROUP_SIZE);
             applied_factor = WORK_FACTOR;
             //printf("max_launches: %u, applied_factor: %u\n", max_launches, applied_factor);
         }
 
         //printf("Single step, next_placed: %u, launched: %u\n", next_placed, max_launches);
 
+        void (^solve_single_blk)(void) = ^{
+            solve_single_no_look(workspace, workspace_sizes, out_res, next_placed | state, recursion + 1, applied_factor);
+        };
+
+        uint local_size = min((uint)WORKGROUP_SIZE, get_kernel_work_group_size(solve_single_blk));
         // launch kernel
         err = enqueue_kernel(q, CLK_ENQUEUE_FLAGS_WAIT_KERNEL,
-                            range,
-                            ^{
-                                solve_single_no_look(workspace, workspace_sizes, out_res, next_placed | state, recursion + 1, applied_factor);
-                            });
+                            ndrange_1D(max_launches/applied_factor, local_size),
+                            solve_single_blk);
     }
 
     if (err != 0) {
