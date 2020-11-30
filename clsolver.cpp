@@ -211,26 +211,11 @@ void ClSolver::threadWorker(uint32_t id, std::mutex &pre_lock)
             break;
         }
 
-        while(buffer_fill == WORKSPACE_SIZE) {
-        
-            // Relaunch kernel on the compute device.
-            err = cmdQueue.enqueueNDRangeKernel(b.clKernel, cl::NullRange,
-                                                cl::NDRange{1}, cl::NDRange{WORKGROUP_SIZE},
-                                                nullptr, nullptr);
-            if(err != CL_SUCCESS) {
-                std::cout << "enqueueNDRangeKernel failed: " << err << std::endl;
-            }
-
-            err = cmdQueue.enqueueReadBuffer(b.clWorkspaceSizeBuf, CL_TRUE, 0, sizeof(cl_uint), &buffer_fill);
-            if (err != CL_SUCCESS) {
-                std::cout << "enqueueReadBuffer clWorkspaceSizeBuf failed: " << err << std::endl;
-            }
-        }            
-
-        auto curIt = b.hostStartBuf.begin() + buffer_fill;
+        auto curIt = b.hostStartBuf.begin();
+        const auto endIt = curIt + (WORKSPACE_SIZE - buffer_fill);
         // TODO(sudden6): cleanup
-        while(curIt < b.hostStartBuf.cend()) {
-            curIt = pre.getNext(curIt, b.hostStartBuf.cend());
+        while(curIt < endIt) {
+            curIt = pre.getNext(curIt, endIt);
             if(pre.empty()) {
                 auto end_time = std::time(nullptr);
                 //std::cout << "pre block took " << difftime(end_time, start_time) << "s" << std::endl;
@@ -242,12 +227,12 @@ void ClSolver::threadWorker(uint32_t id, std::mutex &pre_lock)
             }
         }
 
-        const size_t batchSize = std::distance(b.hostStartBuf.begin() + buffer_fill, curIt);
+        const size_t batchSize = std::distance(b.hostStartBuf.begin(), curIt);
         const cl_uint new_buffer_fill = batchSize + buffer_fill;
 
         // write start conditions to workspace
         err = cmdQueue.enqueueWriteBuffer(b.clWorkspaceBuf, CL_TRUE,
-                                                    buffer_fill, batchSize * sizeof(start_condition),
+                                                    buffer_fill * sizeof(start_condition), batchSize * sizeof(start_condition),
                                                     b.hostStartBuf.data(), nullptr, nullptr);
         if(err != CL_SUCCESS) {
             std::cout << "Failed to write start buffer: " << err << std::endl;
