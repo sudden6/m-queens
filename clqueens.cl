@@ -245,7 +245,7 @@ kernel void relaunch_kernel(__global start_condition* workspace, __global uint* 
 
 
     int err = 0;
-    ndrange_t range = ndrange_1D(max_launches, get_local_size(0));
+    ndrange_t range = ndrange_1D(max_launches, WORKGROUP_SIZE);
 
     if(next_placed == LAST_PLACED) {
         // last step, count solutions

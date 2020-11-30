@@ -25,9 +25,9 @@ constexpr uint_fast8_t MAXN = 29;
  * With a too high GPU_DEPTH, solving a board takes too long and the
  * GPU is detected as "hung" by the driver and reset or the system crashes.
  */
-constexpr uint_fast8_t GPU_DEPTH = 8;
-constexpr size_t WORKGROUP_SIZE = 64;
-constexpr size_t WORKSPACE_SIZE = 1024*1024*4;
+constexpr uint_fast8_t GPU_DEPTH = 9;
+constexpr size_t WORKGROUP_SIZE = 256;
+constexpr size_t WORKSPACE_SIZE = 1024*1024*8;
 constexpr size_t NUM_BATCHES = 1;
 
 bool ClSolver::init(uint8_t boardsize, uint8_t placed)
