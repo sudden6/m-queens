@@ -137,39 +137,41 @@ kernel void solve_single_no_look(__global start_condition* workspace, __global u
     }
 }
 
-kernel void solve_final(__global start_condition* workspace, __global uint* workspace_sizes, __global uint* out_res, unsigned placed_state, unsigned recursion) {
+kernel void solve_final(__global start_condition* workspace, __global uint* workspace_sizes, __global uint* out_res, unsigned placed_state, unsigned recursion, unsigned factor) {
     // input index calculation
     uint in_first_idx = get_tmp_idx(LAST_PLACED) * WORKSPACE_SIZE;
-    uint in_our_idx = in_first_idx + G;
-
-    //printf("G: %u, in_our_idx: %u", G, in_our_idx);
-
+    uint G_first = (G - L) * factor;
+    uint in_last_idx = in_first_idx + G_first + get_local_size(0) * factor;
     uint cnt = 0;
 
-    uint_fast32_t cols = workspace[in_our_idx].cols;
-    // This places the first two queens
-    uint_fast32_t diagl = workspace[in_our_idx].diagl;
-    uint_fast32_t diagr = workspace[in_our_idx].diagr;
+    for(uint in_our_idx = in_first_idx + G_first + L; in_our_idx < in_last_idx; in_our_idx += get_local_size(0)) {
+    //printf("G: %u, L: %u, L_size: %u, in_our_idx: %u", G, L, get_local_size(0), in_our_idx);
 
-    //  The variable posib contains the bitmask of possibilities we still have
-    //  to try in a given row ...
-    uint_fast32_t posib = (cols | diagl | diagr);
+        uint_fast32_t cols = workspace[in_our_idx].cols;
+        // This places the first two queens
+        uint_fast32_t diagl = workspace[in_our_idx].diagl;
+        uint_fast32_t diagr = workspace[in_our_idx].diagr;
 
-    diagl <<= 1;
-    diagr >>= 1;
+        //  The variable posib contains the bitmask of possibilities we still have
+        //  to try in a given row ...
+        uint_fast32_t posib = (cols | diagl | diagr);
 
-    //printf("G: %u, posib: %x", G, posib);
+        diagl <<= 1;
+        diagr >>= 1;
 
-    if (posib != UINT_FAST32_MAX) {
-        // The standard trick for getting the rightmost bit in the mask
-        uint_fast32_t bit = ~posib & (posib + 1);
-        posib ^= bit; // Eliminate the tried possibility.
-        uint_fast32_t new_diagl = (bit << 1) | diagl;
-        uint_fast32_t new_diagr = (bit >> 1) | diagr;
-        bit |= cols;
-        uint_fast32_t new_posib = (bit | new_diagl | new_diagr);
+        //printf("G: %u, posib: %x", G, posib);
 
-        cnt += new_posib == UINT_FAST32_MAX && bit == UINT_FAST32_MAX;
+        if (posib != UINT_FAST32_MAX) {
+            // The standard trick for getting the rightmost bit in the mask
+            uint_fast32_t bit = ~posib & (posib + 1);
+            posib ^= bit; // Eliminate the tried possibility.
+            uint_fast32_t new_diagl = (bit << 1) | diagl;
+            uint_fast32_t new_diagr = (bit >> 1) | diagr;
+            bit |= cols;
+            uint_fast32_t new_posib = (bit | new_diagl | new_diagr);
+
+            cnt += new_posib == UINT_FAST32_MAX && bit == UINT_FAST32_MAX;
+        }
     }
 
     //printf("G: %u, cnt: %u", G, cnt);
@@ -234,7 +236,7 @@ kernel void relaunch_kernel(__global start_condition* workspace, __global uint* 
     }
 #endif
 
-#if 1
+#if 0
     if (state == CLSOLVER_FEED && workspace_sizes[0] < WORKSPACE_SIZE/(MAX_EXPANSION)) {
         printf("Re-feed, recursion: %u\n", recursion);
         // re-feed
@@ -246,16 +248,26 @@ kernel void relaunch_kernel(__global start_condition* workspace, __global uint* 
 
     int err = 0;
     ndrange_t range = ndrange_1D(max_launches, WORKGROUP_SIZE);
+    uint factor = 128;
 
     if(next_placed == LAST_PLACED) {
         // last step, count solutions
         //printf("Last step, launched: %u\n", max_launches);
+        uint applied_factor = 1;
+
+        if(max_launches > factor) {
+            uint rest = max_launches % factor;
+            max_launches -= rest;
+            range = ndrange_1D(max_launches/factor, WORKGROUP_SIZE);
+            applied_factor = factor;
+            //printf("max_launches: %u, applied_factor: %u\n", max_launches, applied_factor);
+        }
 
         // launch kernel
         err = enqueue_kernel(q, CLK_ENQUEUE_FLAGS_WAIT_KERNEL,
                             range,
                             ^{
-                                solve_final(workspace, workspace_sizes, out_res, next_placed | state, recursion + 1);
+                                solve_final(workspace, workspace_sizes, out_res, next_placed | state, recursion + 1, applied_factor);
                             });
     } else {
         // Intermediate step
