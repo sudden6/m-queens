@@ -67,12 +67,14 @@ static void solve_from_range(ISolver& solver, uint8_t start, uint8_t end) {
         auto time_end = std::chrono::high_resolution_clock::now();
         std::chrono::duration<double> elapsed = time_end - time_start;
 
+        std::cout.precision(3);
+
         result == results[i - 1] ? printf("PASS ") : printf("FAIL ");
         std::cout << "N " << std::to_string(i)
                 << ", Solutions " << std::to_string(result)
                 << ", Expected " << std::to_string(results[i - 1])
                 << ", Time " << std::to_string(elapsed.count())
-                << ", Solutions/s " << std::to_string(result/elapsed.count())
+                << ", Solutions/s " << result/elapsed.count()
                 << std::endl;
     }
 
