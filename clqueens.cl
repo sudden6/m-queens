@@ -250,54 +250,36 @@ kernel void relaunch_kernel(__global start_condition* workspace, __global uint* 
 
 
     int err = 0;
-    ndrange_t range = ndrange_1D(max_launches, WORKGROUP_SIZE);
-    uint factor = 128;
-
-    if(next_placed == LAST_PLACED) {
-        // last step, count solutions
-        //printf("Last step, launched: %u\n", max_launches);
-        uint applied_factor = 1;
-
-        if(max_launches > factor) {
-            uint rest = max_launches % factor;
-            max_launches -= rest;
-            applied_factor = factor;
-            //printf("max_launches: %u, applied_factor: %u\n", max_launches, applied_factor);
-        }
-
-        void (^solve_final_blk)(void) = ^{
-                solve_final(workspace, workspace_sizes, out_res, next_placed | state, recursion + 1, applied_factor);
-            };
-
-        uint local_size = min((uint)WORKGROUP_SIZE, get_kernel_work_group_size(solve_final_blk));
-
-        // launch kernel
-        err = enqueue_kernel(q, CLK_ENQUEUE_FLAGS_WAIT_KERNEL,
-                            ndrange_1D(max_launches/applied_factor, local_size),
-                            solve_final_blk);
-    } else {
-        // Intermediate step
-
-        uint applied_factor = 1;
-
-        if(max_launches > WORK_FACTOR) {
+    uint applied_factor = 1;
+    if(max_launches > WORK_FACTOR) {
             uint rest = max_launches % WORK_FACTOR;
             max_launches -= rest;
             applied_factor = WORK_FACTOR;
             //printf("max_launches: %u, applied_factor: %u\n", max_launches, applied_factor);
-        }
+    }
 
+    void (^solve_final_blk)(void) = ^{
+                solve_final(workspace, workspace_sizes, out_res, next_placed | state, recursion + 1, applied_factor);
+            };
+    
+    void (^solve_single_blk)(void) = ^{
+                solve_single_no_look(workspace, workspace_sizes, out_res, next_placed | state, recursion + 1, applied_factor);
+            };
+    
+    void (^run_blk)(void) = next_placed == LAST_PLACED ? solve_final_blk : solve_single_blk;
+    uint local_size = min((uint)WORKGROUP_SIZE, get_kernel_work_group_size(run_blk));
+
+    // launch kernel
+    err = enqueue_kernel(q, CLK_ENQUEUE_FLAGS_WAIT_KERNEL,
+                         ndrange_1D(max_launches/applied_factor, local_size),
+                         run_blk);
+
+    if(next_placed == LAST_PLACED) {
+        // last step, count solutions
+        //printf("Last step, launched: %u\n", max_launches);
+    } else {
+        // Intermediate step
         //printf("Single step, next_placed: %u, launched: %u\n", next_placed, max_launches);
-
-        void (^solve_single_blk)(void) = ^{
-            solve_single_no_look(workspace, workspace_sizes, out_res, next_placed | state, recursion + 1, applied_factor);
-        };
-
-        uint local_size = min((uint)WORKGROUP_SIZE, get_kernel_work_group_size(solve_single_blk));
-        // launch kernel
-        err = enqueue_kernel(q, CLK_ENQUEUE_FLAGS_WAIT_KERNEL,
-                            ndrange_1D(max_launches/applied_factor, local_size),
-                            solve_single_blk);
     }
 
     if (err != 0) {
