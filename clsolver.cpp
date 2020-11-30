@@ -191,6 +191,11 @@ void ClSolver::threadWorker(uint32_t id, std::mutex &pre_lock)
         if(err != CL_SUCCESS) {
             std::cout << "solve_subboard.setArg(3 failed: " << err << std::endl;
         }
+
+        err = b.clKernel.setArg(4, static_cast<cl_uint>(0));
+        if(err != CL_SUCCESS) {
+            std::cout << "solve_subboard.setArg(4 failed: " << err << std::endl;
+        }
     }
 
 

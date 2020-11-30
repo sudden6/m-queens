@@ -48,8 +48,6 @@ uint get_tmp_idx(uint placed) {
 #define SCRATCH_SIZE (WORKGROUP_SIZE * MAX_EXPANSION)
 #define WORK_FACTOR 1
 
-kernel void relaunch_kernel(__global start_condition* workspace, __global uint* workspace_sizes, __global uint* out_res, unsigned placed);
-
 // without lookahead optimization
 kernel void solve_single_no_look(__global start_condition* workspace, __global uint* workspace_sizes, __global uint* out_res, unsigned placed, unsigned factor) {
 
@@ -167,7 +165,7 @@ kernel void solve_final(__global start_condition* workspace, __global uint* work
 }
 
 
-kernel void relaunch_kernel(__global start_condition* workspace, __global uint* workspace_sizes, __global uint* out_res, unsigned placed) {
+kernel void relaunch_kernel(__global start_condition* workspace, __global uint* workspace_sizes, __global uint* out_res, unsigned placed, unsigned recursion) {
     queue_t q = get_default_queue();
     uint state = placed & CLSOLVER_STATE_MASK;
 
@@ -204,7 +202,12 @@ kernel void relaunch_kernel(__global start_condition* workspace, __global uint* 
     //printf("  size[%u] = %u\n", GPU_DEPTH - 1, workspace_sizes[GPU_DEPTH - 1]);
 
     if (odd_launches == 0 && even_launches == 0) {
-        printf("Finished\n");
+        printf("Finished, recursion: %u\n", recursion);
+        return;
+    }
+
+    if (recursion > 3) {
+        //printf("Recursion limit\n");
         return;
     }
 
@@ -221,6 +224,9 @@ kernel void relaunch_kernel(__global start_condition* workspace, __global uint* 
     //printf("Launch odd: %u\n", launch_odd);
 
     int err = 0;
+    
+    clk_event_t launched_kernels_evt[GPU_DEPTH];
+    uint launched_kernels_cnt = 0;
 
     for(uint workspace_idx = launch_odd; workspace_idx < GPU_DEPTH; workspace_idx += 2) {
         uint next_placed = workspace_idx + FIRST_PLACED;
@@ -245,8 +251,11 @@ kernel void relaunch_kernel(__global start_condition* workspace, __global uint* 
         uint local_size = min((uint)WORKGROUP_SIZE, get_kernel_work_group_size(run_blk));
 
         // launch kernel
-        err = enqueue_kernel(q, CLK_ENQUEUE_FLAGS_WAIT_KERNEL,
+        err = enqueue_kernel(q, CLK_ENQUEUE_FLAGS_NO_WAIT,
                             ndrange_1D(launch_cnt/applied_factor, local_size),
+                            0,
+                            NULL,
+                            &launched_kernels_evt[launched_kernels_cnt],
                             run_blk);
 
         if(next_placed == LAST_PLACED) {
@@ -259,12 +268,43 @@ kernel void relaunch_kernel(__global start_condition* workspace, __global uint* 
 
         if (err != 0) {
             printf("Error when enqueuing kernel, launches: %u, next_placed: %u, state: 0x%x", launch_cnt, next_placed, state);
-            return;
+            goto cleanup_kernels_evt;
         } else  {
             //printf("launch removed: %u", max_launches);
             // remove completed work items only when successfully launched
             workspace_sizes[workspace_idx] -= launch_cnt;
+            launched_kernels_cnt++;
         }
+    }
 
+    clk_event_t marker_evt;
+    err = enqueue_marker(q, launched_kernels_cnt, launched_kernels_evt, &marker_evt);
+    if ( err != 0) {
+        printf("Error enqueuing marker\n");
+        goto cleanup_kernels_evt;
+    }
+
+    void (^recursion_blk)(void) = ^{
+                    relaunch_kernel(workspace, workspace_sizes, out_res, placed, recursion + 1);
+                };
+
+#if 0
+    // self enqueue recursion
+    err = enqueue_kernel(q, CLK_ENQUEUE_FLAGS_WAIT_KERNEL,
+                        ndrange_1D(1, 1),
+                        1,
+                        &marker_evt,
+                        NULL,
+                        recursion_blk);
+    if ( err != 0) {
+        printf("Error enqueuing recursion: %u\n", recursion);
+    }
+#endif
+
+    release_event(marker_evt);
+
+    cleanup_kernels_evt:
+    for(uint i = 0; i < launched_kernels_cnt; i++) {
+        release_event(launched_kernels_evt[i]);
     }
 }
