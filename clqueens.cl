@@ -20,7 +20,7 @@ typedef uint uint_fast32_t;
 #define G (get_global_id(0))
 
 uint expansion_factor(uint placed) {
-    return placed - 1;
+    return BOARDSIZE - placed;
 }
 
 // TODO: replace with compiler defined values
