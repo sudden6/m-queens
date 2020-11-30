@@ -1,8 +1,17 @@
-typedef struct __attribute__ ((packed)) {
+// SYNC: Keep in sync with solverstructs.h
+struct __attribute__ ((packed)) start_condition_t {
     uint cols; // bitfield with all the used columns
     uint diagl;// bitfield with all the used diagonals down left
     uint diagr;// bitfield with all the used diagonals down right
-} start_condition;
+};
+
+typedef struct start_condition_t start_condition;
+
+#define CLSOLVER_STATE_MASK (1U << 31)
+#define CLSOLVER_FEED (0)
+#define CLSOLVER_CLEANUP CLSOLVER_STATE_MASK
+
+// END SYNC
 
 //#define printf(...)
 
@@ -38,13 +47,15 @@ uint get_tmp_idx(uint placed) {
 #define MAX_EXPANSION ((FIRST_PLACED - 1))
 #define SCRATCH_SIZE (WORKGROUP_SIZE * MAX_EXPANSION)
 
-kernel void relaunch_kernel(__global start_condition* workspace, __global uint* workspace_sizes, __global uint* out_res, unsigned placed);
+kernel void relaunch_kernel(__global start_condition* workspace, __global uint* workspace_sizes, __global uint* out_res, unsigned placed, unsigned recursion);
 
 // without lookahead optimization
-kernel void solve_single_no_look(__global start_condition* workspace, __global uint* workspace_sizes, __global uint* out_res, unsigned placed) {
+kernel void solve_single_no_look(__global start_condition* workspace, __global uint* workspace_sizes, __global uint* out_res, unsigned placed_state, unsigned recursion) {
 
     __local start_condition scratch_buf[SCRATCH_SIZE];
     __local uint scratch_fill;
+
+    uint placed = placed_state & ~CLSOLVER_STATE_MASK;
 
 	if(L == 0) {
 		scratch_fill = 0;
@@ -118,15 +129,15 @@ kernel void solve_single_no_look(__global start_condition* workspace, __global u
         int err = enqueue_kernel(q, CLK_ENQUEUE_FLAGS_WAIT_KERNEL,
                                 ndrange_1D(1),
                                 ^{
-                                    relaunch_kernel(workspace, workspace_sizes, out_res, placed);
+                                    relaunch_kernel(workspace, workspace_sizes, out_res, placed_state, recursion + 1);
                                 });
         if (err != 0) {
-            printf("Error when enqueuing solver kernel");
+            printf("Error when enqueuing from solver kernel");
         }
     }
 }
 
-kernel void solve_final(__global start_condition* workspace, __global uint* workspace_sizes, __global uint* out_res) {
+kernel void solve_final(__global start_condition* workspace, __global uint* workspace_sizes, __global uint* out_res, unsigned placed_state, unsigned recursion) {
     // input index calculation
     uint in_first_idx = get_tmp_idx(LAST_PLACED) * WORKSPACE_SIZE;
     uint in_our_idx = in_first_idx + G;
@@ -149,7 +160,7 @@ kernel void solve_final(__global start_condition* workspace, __global uint* work
 
     //printf("G: %u, posib: %x", G, posib);
 
-    while (posib != UINT_FAST32_MAX) {
+    if (posib != UINT_FAST32_MAX) {
         // The standard trick for getting the rightmost bit in the mask
         uint_fast32_t bit = ~posib & (posib + 1);
         posib ^= bit; // Eliminate the tried possibility.
@@ -170,30 +181,32 @@ kernel void solve_final(__global start_condition* workspace, __global uint* work
         int err = enqueue_kernel(q, CLK_ENQUEUE_FLAGS_WAIT_KERNEL,
                       ndrange_1D(1),
                       ^{
-                           relaunch_kernel(workspace, workspace_sizes, out_res, FIRST_PLACED);
+                           relaunch_kernel(workspace, workspace_sizes, out_res, placed_state, recursion + 1);
                        });
         
         if (err != 0) {
-            printf("Error when enqueuing final kernel");
+            printf("Error when enqueuing from final kernel");
         }
     }
 }
 
 
-kernel void relaunch_kernel(__global start_condition* workspace, __global uint* workspace_sizes, __global uint* out_res, unsigned placed) {
+kernel void relaunch_kernel(__global start_condition* workspace, __global uint* workspace_sizes, __global uint* out_res, unsigned placed, unsigned recursion) {
     queue_t q = get_default_queue();
     uint next_placed = 0;
     // limit due to input start conditions
     uint max_launches = 0;
+    uint state = placed & CLSOLVER_STATE_MASK;
 
     // Find maximum possible kernel launches
-    //printf("placed: %u\n", placed);
+    //printf("placed: 0x%x, recursion: %u\n", placed, recursion);
     for(uint i = 0; i < (GPU_DEPTH - 1); i++) {
-        //printf("  size[%u] = %u\n",i, workspace_sizes[i]);
         uint input_limit = workspace_sizes[i];
         uint l_placed = i + FIRST_PLACED;
         uint output_limit = (WORKSPACE_SIZE - workspace_sizes[i+1]) / expansion_factor(l_placed);
         uint limit = min(input_limit, output_limit);
+        //printf("  size[%u] = %u, output_limit: %u\n",i, workspace_sizes[i], output_limit);
+
 
         if(limit > max_launches) {
             max_launches = limit;
@@ -203,22 +216,33 @@ kernel void relaunch_kernel(__global start_condition* workspace, __global uint* 
 
     // final run only depends on input limit, calculate extra
     uint input_limit = workspace_sizes[GPU_DEPTH - 1];
+    //printf("  size[%u] = %u\n", GPU_DEPTH - 1, workspace_sizes[GPU_DEPTH - 1]);
     if (input_limit > max_launches) {
         max_launches = input_limit;
         next_placed = LAST_PLACED;
     }
 
+    if (max_launches == 0) {
+        printf("Finished, recursion: %u\n", recursion);
+        return;
+    }
+
 #if 0
-    if ((max_launches < WORKSPACE_SIZE/32) && workspace_sizes[0] > WORKSPACE_SIZE / 2) {
+    if (recursion > 1000) {
+        printf("Recursion limit, next_placed: %u\n", next_placed);
+        return;
+    }
+#endif
+
+#if 1
+    if (state == CLSOLVER_FEED && workspace_sizes[0] < WORKSPACE_SIZE/(MAX_EXPANSION)) {
+        printf("Re-feed, recursion: %u\n", recursion);
         // re-feed
         return;
     }
 #endif
 
-    if (max_launches == 0) {
-        //printf("Finished\n");
-        return;
-    }
+
 
     int err = 0;
     ndrange_t range = ndrange_1D(max_launches, get_local_size(0));
@@ -231,7 +255,7 @@ kernel void relaunch_kernel(__global start_condition* workspace, __global uint* 
         err = enqueue_kernel(q, CLK_ENQUEUE_FLAGS_WAIT_KERNEL,
                             range,
                             ^{
-                                solve_final(workspace, workspace_sizes, out_res);
+                                solve_final(workspace, workspace_sizes, out_res, next_placed | state, recursion + 1);
                             });
     } else {
         // Intermediate step
@@ -240,12 +264,12 @@ kernel void relaunch_kernel(__global start_condition* workspace, __global uint* 
         err = enqueue_kernel(q, CLK_ENQUEUE_FLAGS_WAIT_KERNEL,
                             range,
                             ^{
-                                solve_single_no_look(workspace, workspace_sizes, out_res, next_placed);
+                                solve_single_no_look(workspace, workspace_sizes, out_res, next_placed | state, recursion + 1);
                             });
     }
 
     if (err != 0) {
-        printf("Error when enqueuing kernel, launches: %u, next_placed: %u", max_launches, next_placed);
+        printf("Error when enqueuing kernel, launches: %u, next_placed: %u, state: 0x%x, recursion: %u", max_launches, next_placed, state, recursion);
     } else  {
         //printf("launch removed: %u", max_launches);
         // remove completed work items only when successfully launched

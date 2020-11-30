@@ -27,7 +27,7 @@ constexpr uint_fast8_t MAXN = 29;
  */
 constexpr uint_fast8_t GPU_DEPTH = 8;
 constexpr size_t WORKGROUP_SIZE = 64;
-constexpr size_t WORKSPACE_SIZE = 1024*1024*16;
+constexpr size_t WORKSPACE_SIZE = 1024*1024*4;
 constexpr size_t NUM_BATCHES = 1;
 
 bool ClSolver::init(uint8_t boardsize, uint8_t placed)
@@ -187,9 +187,14 @@ void ClSolver::threadWorker(uint32_t id, std::mutex &pre_lock)
             std::cout << "solve_subboard.setArg(2 failed: " << err << std::endl;
         }
 
-        err = b.clKernel.setArg(3, static_cast<cl_uint>(boardsize - gpu_depth));
+        err = b.clKernel.setArg(3, static_cast<cl_uint>(CLSOLVER_FEED));
         if(err != CL_SUCCESS) {
             std::cout << "solve_subboard.setArg(3 failed: " << err << std::endl;
+        }
+
+        err = b.clKernel.setArg(4, static_cast<cl_uint>(0));
+        if(err != CL_SUCCESS) {
+            std::cout << "solve_subboard.setArg(4 failed: " << err << std::endl;
         }
     }
 
@@ -252,6 +257,46 @@ void ClSolver::threadWorker(uint32_t id, std::mutex &pre_lock)
                                             nullptr, nullptr);
         if(err != CL_SUCCESS) {
             std::cout << "enqueueNDRangeKernel failed: " << err << std::endl;
+        }
+    }
+
+    std::cout << "Feeding finished" << std::endl;
+
+    for(batch& b: batches) {
+        err = b.clKernel.setArg(3, static_cast<cl_uint>(CLSOLVER_CLEANUP));
+        if(err != CL_SUCCESS) {
+            std::cout << "solve_subboard.setArg(3 failed: " << err << std::endl;
+        }
+
+        bool workspace_empty = false;
+        while(!workspace_empty) {
+            std::vector<cl_uint> buffer_fill(gpu_depth);
+
+            err = cmdQueue.enqueueReadBuffer(b.clWorkspaceSizeBuf, CL_TRUE, 0, gpu_depth*sizeof(cl_uint), buffer_fill.data());
+            if (err != CL_SUCCESS) {
+                std::cout << "enqueueReadBuffer clWorkspaceSizeBuf failed: " << err << std::endl;
+                break;
+            }
+
+            workspace_empty = true;
+            for(auto& fill: buffer_fill) {
+                if(fill > 0) {
+                    workspace_empty = false;
+                    break;
+                }
+            }
+
+            if (workspace_empty) {
+                break;
+            }
+
+            // Relaunch kernel on the compute device.
+            err = cmdQueue.enqueueNDRangeKernel(b.clKernel, cl::NullRange,
+                                                cl::NDRange{1}, cl::NDRange{WORKGROUP_SIZE},
+                                                nullptr, nullptr);
+            if(err != CL_SUCCESS) {
+                std::cout << "enqueueNDRangeKernel failed: " << err << std::endl;
+            }
         }
     }
 
