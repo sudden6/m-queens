@@ -46,17 +46,15 @@ uint get_tmp_idx(uint placed) {
 
 #define MAX_EXPANSION ((FIRST_PLACED - 1))
 #define SCRATCH_SIZE (WORKGROUP_SIZE * MAX_EXPANSION)
-#define WORK_FACTOR 2
+#define WORK_FACTOR 1
 
-kernel void relaunch_kernel(__global start_condition* workspace, __global uint* workspace_sizes, __global uint* out_res, unsigned placed, unsigned recursion);
+kernel void relaunch_kernel(__global start_condition* workspace, __global uint* workspace_sizes, __global uint* out_res, unsigned placed);
 
 // without lookahead optimization
-kernel void solve_single_no_look(__global start_condition* workspace, __global uint* workspace_sizes, __global uint* out_res, unsigned placed_state, unsigned recursion, unsigned factor) {
+kernel void solve_single_no_look(__global start_condition* workspace, __global uint* workspace_sizes, __global uint* out_res, unsigned placed, unsigned factor) {
 
     __local start_condition scratch_buf[SCRATCH_SIZE * WORK_FACTOR];
     __local uint scratch_fill;
-
-    uint placed = placed_state & ~CLSOLVER_STATE_MASK;
 
 	if(L == 0) {
 		scratch_fill = 0;
@@ -124,23 +122,9 @@ kernel void solve_single_no_look(__global start_condition* workspace, __global u
     for(int i = L; i < scratch_fill; i += get_local_size(0)) {
         workspace[out_offs + i] = scratch_buf[i];
     }
-
-
-    // launch relaunch_kernel
-    if(G == 0) {
-        queue_t q = get_default_queue();
-        int err = enqueue_kernel(q, CLK_ENQUEUE_FLAGS_WAIT_KERNEL,
-                                ndrange_1D(1),
-                                ^{
-                                    relaunch_kernel(workspace, workspace_sizes, out_res, placed_state, recursion + 1);
-                                });
-        if (err != 0) {
-            printf("Error when enqueuing from solver kernel");
-        }
-    }
 }
 
-kernel void solve_final(__global start_condition* workspace, __global uint* workspace_sizes, __global uint* out_res, unsigned placed_state, unsigned recursion, unsigned factor) {
+kernel void solve_final(__global start_condition* workspace, __global uint* workspace_sizes, __global uint* out_res, unsigned factor) {
     // input index calculation
     uint in_first_idx = get_tmp_idx(LAST_PLACED) * WORKSPACE_SIZE;
     uint G_first = (G - L) * factor;
@@ -180,113 +164,107 @@ kernel void solve_final(__global start_condition* workspace, __global uint* work
     //printf("G: %u, cnt: %u", G, cnt);
 
     out_res[G] += cnt;
-    // launch relaunch_kernel
-    if(G == 0) {
-        queue_t q = get_default_queue();
-        int err = enqueue_kernel(q, CLK_ENQUEUE_FLAGS_WAIT_KERNEL,
-                      ndrange_1D(1),
-                      ^{
-                           relaunch_kernel(workspace, workspace_sizes, out_res, placed_state, recursion + 1);
-                       });
-        
-        if (err != 0) {
-            printf("Error when enqueuing from final kernel");
-        }
-    }
 }
 
 
-kernel void relaunch_kernel(__global start_condition* workspace, __global uint* workspace_sizes, __global uint* out_res, unsigned placed, unsigned recursion) {
+kernel void relaunch_kernel(__global start_condition* workspace, __global uint* workspace_sizes, __global uint* out_res, unsigned placed) {
     queue_t q = get_default_queue();
-    uint next_placed = 0;
-    // limit due to input start conditions
-    uint max_launches = 0;
     uint state = placed & CLSOLVER_STATE_MASK;
+
+    uint limits[GPU_DEPTH];
+
+    uint even_launches = 0;
+    uint odd_launches = 0;
+
+    // final run only depends on input limit, calculate differently
+    limits[GPU_DEPTH-1] = workspace_sizes[GPU_DEPTH - 1];
 
     // Find maximum possible kernel launches
     //printf("placed: 0x%x, recursion: %u\n", placed, recursion);
     for(uint i = 0; i < (GPU_DEPTH - 1); i++) {
         uint input_limit = workspace_sizes[i];
-        uint l_placed = i + FIRST_PLACED;
-        uint output_limit = (WORKSPACE_SIZE - workspace_sizes[i+1]) / expansion_factor(l_placed);
+        uint output_limit = (WORKSPACE_SIZE - workspace_sizes[i+1]) / expansion_factor(i + FIRST_PLACED);
         uint limit = min(input_limit, output_limit);
         //printf("  size[%u] = %u, output_limit: %u\n",i, workspace_sizes[i], output_limit);
+        limits[i] = limit;
+    }
 
+    //printf("  size[%u] = %u\n", GPU_DEPTH-1, workspace_sizes[GPU_DEPTH-1]);
 
-        if(limit > max_launches) {
-            max_launches = limit;
-            next_placed = l_placed;
+    for(uint i = 0; i < GPU_DEPTH; i++) {
+        if (i % 2) {
+            // odd
+            odd_launches += limits[i];
+        } else {
+            // even
+            even_launches += limits[i];
         }
     }
 
-    // final run only depends on input limit, calculate extra
-    uint input_limit = workspace_sizes[GPU_DEPTH - 1];
     //printf("  size[%u] = %u\n", GPU_DEPTH - 1, workspace_sizes[GPU_DEPTH - 1]);
-    if (input_limit > max_launches) {
-        max_launches = input_limit;
-        next_placed = LAST_PLACED;
-    }
 
-    if (max_launches == 0) {
-        printf("Finished, recursion: %u\n", recursion);
+    if (odd_launches == 0 && even_launches == 0) {
+        printf("Finished\n");
         return;
     }
-
-#if 0
-    if (recursion > 1000) {
-        printf("Recursion limit, next_placed: %u\n", next_placed);
-        return;
-    }
-#endif
 
 #if 0
     if (state == CLSOLVER_FEED && workspace_sizes[0] < WORKSPACE_SIZE/(MAX_EXPANSION)) {
-        printf("Re-feed, recursion: %u\n", recursion);
+        printf("Re-feed, recursion\n");
         // re-feed
         return;
     }
 #endif
 
+    uint launch_odd = odd_launches > even_launches;
 
+    //printf("Launch odd: %u\n", launch_odd);
 
     int err = 0;
-    uint applied_factor = 1;
-    if(max_launches > WORK_FACTOR) {
-            uint rest = max_launches % WORK_FACTOR;
-            max_launches -= rest;
-            applied_factor = WORK_FACTOR;
-            //printf("max_launches: %u, applied_factor: %u\n", max_launches, applied_factor);
-    }
 
-    void (^solve_final_blk)(void) = ^{
-                solve_final(workspace, workspace_sizes, out_res, next_placed | state, recursion + 1, applied_factor);
-            };
-    
-    void (^solve_single_blk)(void) = ^{
-                solve_single_no_look(workspace, workspace_sizes, out_res, next_placed | state, recursion + 1, applied_factor);
-            };
-    
-    void (^run_blk)(void) = next_placed == LAST_PLACED ? solve_final_blk : solve_single_blk;
-    uint local_size = min((uint)WORKGROUP_SIZE, get_kernel_work_group_size(run_blk));
+    for(uint workspace_idx = launch_odd; workspace_idx < GPU_DEPTH; workspace_idx += 2) {
+        uint next_placed = workspace_idx + FIRST_PLACED;
+        uint applied_factor = 1;
+        uint launch_cnt = limits[workspace_idx];
+        if(launch_cnt > WORK_FACTOR) {
+                uint rest = launch_cnt % WORK_FACTOR;
+                launch_cnt -= rest;
+                applied_factor = WORK_FACTOR;
+                //printf("max_launches: %u, applied_factor: %u\n", max_launches, applied_factor);
+        }
 
-    // launch kernel
-    err = enqueue_kernel(q, CLK_ENQUEUE_FLAGS_WAIT_KERNEL,
-                         ndrange_1D(max_launches/applied_factor, local_size),
-                         run_blk);
+        void (^solve_final_blk)(void) = ^{
+                    solve_final(workspace, workspace_sizes, out_res, applied_factor);
+                };
+        
+        void (^solve_single_blk)(void) = ^{
+                    solve_single_no_look(workspace, workspace_sizes, out_res, next_placed, applied_factor);
+                };
+      
+        void (^run_blk)(void) = next_placed == LAST_PLACED ? solve_final_blk : solve_single_blk;
+        uint local_size = min((uint)WORKGROUP_SIZE, get_kernel_work_group_size(run_blk));
 
-    if(next_placed == LAST_PLACED) {
-        // last step, count solutions
-        //printf("Last step, launched: %u\n", max_launches);
-    } else {
-        // Intermediate step
-        //printf("Single step, next_placed: %u, launched: %u\n", next_placed, max_launches);
-    }
+        // launch kernel
+        err = enqueue_kernel(q, CLK_ENQUEUE_FLAGS_WAIT_KERNEL,
+                            ndrange_1D(launch_cnt/applied_factor, local_size),
+                            run_blk);
 
-    if (err != 0) {
-        printf("Error when enqueuing kernel, launches: %u, next_placed: %u, state: 0x%x, recursion: %u", max_launches, next_placed, state, recursion);
-    } else  {
-        //printf("launch removed: %u", max_launches);
-        // remove completed work items only when successfully launched
-        workspace_sizes[get_tmp_idx(next_placed)] -= max_launches;
+        if(next_placed == LAST_PLACED) {
+            // last step, count solutions
+            //printf("Last step, launched: %u\n", max_launches);
+        } else {
+            // Intermediate step
+            //printf("Single step, next_placed: %u, launched: %u\n", next_placed, max_launches);
+        }
+
+        if (err != 0) {
+            printf("Error when enqueuing kernel, launches: %u, next_placed: %u, state: 0x%x", launch_cnt, next_placed, state);
+            return;
+        } else  {
+            //printf("launch removed: %u", max_launches);
+            // remove completed work items only when successfully launched
+            workspace_sizes[workspace_idx] -= launch_cnt;
+        }
+
     }
 }

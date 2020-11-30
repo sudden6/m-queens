@@ -25,7 +25,7 @@ constexpr uint_fast8_t MAXN = 29;
  * With a too high GPU_DEPTH, solving a board takes too long and the
  * GPU is detected as "hung" by the driver and reset or the system crashes.
  */
-constexpr uint_fast8_t GPU_DEPTH = 9;
+constexpr uint_fast8_t GPU_DEPTH = 10;
 constexpr size_t WORKGROUP_SIZE = 64;
 constexpr size_t WORKSPACE_SIZE = 1024*1024*8;
 constexpr size_t NUM_BATCHES = 1;
@@ -191,11 +191,6 @@ void ClSolver::threadWorker(uint32_t id, std::mutex &pre_lock)
         if(err != CL_SUCCESS) {
             std::cout << "solve_subboard.setArg(3 failed: " << err << std::endl;
         }
-
-        err = b.clKernel.setArg(4, static_cast<cl_uint>(0));
-        if(err != CL_SUCCESS) {
-            std::cout << "solve_subboard.setArg(4 failed: " << err << std::endl;
-        }
     }
 
 
@@ -233,22 +228,25 @@ void ClSolver::threadWorker(uint32_t id, std::mutex &pre_lock)
         }
 
         const size_t batchSize = std::distance(b.hostStartBuf.begin(), curIt);
-        const cl_uint new_buffer_fill = batchSize + buffer_fill;
 
-        // write start conditions to workspace
-        err = cmdQueue.enqueueWriteBuffer(b.clWorkspaceBuf, CL_TRUE,
-                                                    buffer_fill * sizeof(start_condition), batchSize * sizeof(start_condition),
-                                                    b.hostStartBuf.data(), nullptr, nullptr);
-        if(err != CL_SUCCESS) {
-            std::cout << "Failed to write start buffer: " << err << std::endl;
-        }
+        if (batchSize > 0) {
+            const cl_uint new_buffer_fill = batchSize + buffer_fill;
 
-        // write start condition count to workspace size
-        err = cmdQueue.enqueueWriteBuffer(b.clWorkspaceSizeBuf, CL_TRUE,
-                                                    0, sizeof(cl_uint),
-                                                    &new_buffer_fill, nullptr, nullptr);
-        if(err != CL_SUCCESS) {
-            std::cout << "Failed to write start buffer size: " << err << std::endl;
+            // write start conditions to workspace
+            err = cmdQueue.enqueueWriteBuffer(b.clWorkspaceBuf, CL_TRUE,
+                                                        buffer_fill * sizeof(start_condition), batchSize * sizeof(start_condition),
+                                                        b.hostStartBuf.data(), nullptr, nullptr);
+            if(err != CL_SUCCESS) {
+                std::cout << "Failed to write start buffer: " << err << std::endl;
+            }
+
+            // write start condition count to workspace size
+            err = cmdQueue.enqueueWriteBuffer(b.clWorkspaceSizeBuf, CL_TRUE,
+                                                        0, sizeof(cl_uint),
+                                                        &new_buffer_fill, nullptr, nullptr);
+            if(err != CL_SUCCESS) {
+                std::cout << "Failed to write start buffer size: " << err << std::endl;
+            }
         }
 
         // Launch kernel on the compute device.
