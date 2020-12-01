@@ -44,7 +44,7 @@ uint get_tmp_idx(uint placed) {
     return placed - FIRST_PLACED;
 }
 
-#define MAX_EXPANSION ((FIRST_PLACED - 1))
+#define MAX_EXPANSION (GPU_DEPTH)
 #define SCRATCH_SIZE (WORKGROUP_SIZE * MAX_EXPANSION)
 #define WORK_FACTOR 1
 
