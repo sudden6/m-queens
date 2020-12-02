@@ -13,7 +13,7 @@ typedef struct start_condition_t start_condition;
 
 // END SYNC
 
-//#define printf(...)
+#define printf(...)
 
 typedef char int8_t;
 typedef char int_fast8_t;
@@ -40,16 +40,12 @@ uint expansion_factor(uint placed) {
 #define LAST_PLACED (BOARDSIZE - 1)
 #define FIRST_PLACED (BOARDSIZE - GPU_DEPTH)
 
-uint get_tmp_idx(uint placed) {
-    return placed - FIRST_PLACED;
-}
-
 #define MAX_EXPANSION (GPU_DEPTH)
 #define SCRATCH_SIZE (WORKGROUP_SIZE * MAX_EXPANSION)
 #define WORK_FACTOR 1
 
 // without lookahead optimization
-kernel void solve_single_no_look(__global start_condition* workspace, __global uint* workspace_sizes, __global uint* out_res, unsigned placed, unsigned factor) {
+kernel void solve_single_no_look(__global start_condition* workspace, __global uint* workspace_sizes, unsigned workspace_idx, unsigned factor) {
 
     __local start_condition scratch_buf[SCRATCH_SIZE * WORK_FACTOR];
     __local uint scratch_fill;
@@ -60,8 +56,10 @@ kernel void solve_single_no_look(__global start_condition* workspace, __global u
 
     work_group_barrier(CLK_LOCAL_MEM_FENCE);
 
+    uint workspace_base_idx = workspace_idx * WORKSPACE_SIZE;
+
     // input index calculation
-    uint in_first_idx = get_tmp_idx(placed) * WORKSPACE_SIZE + workspace_sizes[get_tmp_idx(placed)] + (G - L)*factor;
+    uint in_first_idx = workspace_base_idx + workspace_sizes[workspace_idx] + (G - L)*factor;
     uint in_last_idx = in_first_idx + get_local_size(0) * factor;
 
     for(uint in_our_idx = in_first_idx + L; in_our_idx < in_last_idx; in_our_idx += get_local_size(0)) {
@@ -91,7 +89,7 @@ kernel void solve_single_no_look(__global start_condition* workspace, __global u
 
             if (new_posib != UINT_FAST32_MAX) {
                 uint out_offs = atomic_add(&scratch_fill, 1);
-                //printf("G: %u, out_idx: %u, bit: %x, diagl: %x, diagr: %x\n", G, out_idx, bit, diagl, diagr);
+                //printf("found G: %u, out_offs: %u, bit: %x, diagl: %x, diagr: %x\n", G, out_offs, bit, new_diagl, new_diagr);
 
                 scratch_buf[out_offs].cols = bit;
                 scratch_buf[out_offs].diagr = new_diagr;
@@ -103,28 +101,28 @@ kernel void solve_single_no_look(__global start_condition* workspace, __global u
     work_group_barrier(CLK_LOCAL_MEM_FENCE);
 
     // output index calculation
-    uint out_first_idx = get_tmp_idx(placed + 1) * WORKSPACE_SIZE;
     __local uint out_offs;
+    uint out_first_idx = workspace_base_idx + WORKSPACE_SIZE;
+    __global uint *out_cur_idx_ptr = workspace_sizes + workspace_idx + 1;
 
     if(L == 0) {
-        //printf("G: %u, L: %u, scratch_fill: %u\n", G, L, scratch_fill);
-        __global uint *out_cur_idx_ptr = workspace_sizes + get_tmp_idx(placed + 1);
         uint out_fill = atomic_add(out_cur_idx_ptr, scratch_fill);
         out_offs = out_first_idx + out_fill;
     }
 
     work_group_barrier(CLK_LOCAL_MEM_FENCE);
 
-    //printf("G: %u, L: %u, out_fill: %u, out_offs: %u\n", G, L, out_fill, out_offs);
 
     for(int i = L; i < scratch_fill; i += get_local_size(0)) {
         workspace[out_offs + i] = scratch_buf[i];
+        //printf("G: %u, L: %u, out_workspace_idx %u, cols: %x, diagl: %x, diagr: %x\n", G, L, out_offs + i,
+        //       workspace[out_offs + i].cols, workspace[out_offs + i].diagl, workspace[out_offs + i].diagr);
     }
 }
 
 kernel void solve_final(__global start_condition* workspace, __global uint* workspace_sizes, __global uint* out_res, unsigned factor) {
     // input index calculation
-    uint in_first_idx = get_tmp_idx(LAST_PLACED) * WORKSPACE_SIZE;
+    uint in_first_idx = (GPU_DEPTH - 1)* WORKSPACE_SIZE;
     uint G_first = (G - L) * factor;
     uint in_last_idx = in_first_idx + G_first + get_local_size(0) * factor;
     uint cnt = 0;
@@ -199,21 +197,23 @@ kernel void relaunch_kernel(__global start_condition* workspace, __global uint* 
         }
     }
 
-    //printf("  size[%u] = %u\n", GPU_DEPTH - 1, workspace_sizes[GPU_DEPTH - 1]);
-
     if (odd_launches == 0 && even_launches == 0) {
         printf("Finished, recursion: %u\n", recursion);
         return;
     }
 
+#if 0
+    // An unlimited recursion level potentially allows to fully use the GPU queue,
+    // but this might be a corner case in the code and result in problems
     if (recursion > 3) {
         //printf("Recursion limit\n");
         return;
     }
+#endif
 
 #if 0
     if (state == CLSOLVER_FEED && workspace_sizes[0] < WORKSPACE_SIZE/(MAX_EXPANSION)) {
-        printf("Re-feed, recursion\n");
+        //printf("Re-feed, recursion: %u\n", recursion);
         // re-feed
         return;
     }
@@ -229,14 +229,23 @@ kernel void relaunch_kernel(__global start_condition* workspace, __global uint* 
     uint launched_kernels_cnt = 0;
 
     for(uint workspace_idx = launch_odd; workspace_idx < GPU_DEPTH; workspace_idx += 2) {
-        uint next_placed = workspace_idx + FIRST_PLACED;
         uint applied_factor = 1;
         uint launch_cnt = limits[workspace_idx];
+
+        if (launch_cnt == 0) {
+            //printf("Skipping, workspace_idx: %u\n", workspace_idx);
+            continue;
+        }
+
+        if (launch_cnt > WORKSPACE_SIZE) {
+            printf("Corruption detected\n");
+            return;
+        }
+
         if(launch_cnt > WORK_FACTOR) {
-                uint rest = launch_cnt % WORK_FACTOR;
-                launch_cnt -= rest;
-                applied_factor = WORK_FACTOR;
-                //printf("max_launches: %u, applied_factor: %u\n", max_launches, applied_factor);
+            uint rest = launch_cnt % WORK_FACTOR;
+            launch_cnt -= rest;
+            applied_factor = WORK_FACTOR;
         }
 
         void (^solve_final_blk)(void) = ^{
@@ -244,30 +253,25 @@ kernel void relaunch_kernel(__global start_condition* workspace, __global uint* 
                 };
         
         void (^solve_single_blk)(void) = ^{
-                    solve_single_no_look(workspace, workspace_sizes, out_res, next_placed, applied_factor);
+                    solve_single_no_look(workspace, workspace_sizes, workspace_idx, applied_factor);
                 };
-      
-        void (^run_blk)(void) = next_placed == LAST_PLACED ? solve_final_blk : solve_single_blk;
-        uint local_size = min((uint)WORKGROUP_SIZE, get_kernel_work_group_size(run_blk));
+    
+        void (^run_blk)(void) = workspace_idx == (GPU_DEPTH - 1) ? solve_final_blk : solve_single_blk;
+        uint local_size = min((uint)WORKGROUP_SIZE, (uint)get_kernel_work_group_size(run_blk));
+
+        //printf("launch workspace_idx: %u, launch_cnt: %u, factor: %u, local_size: %u\n", workspace_idx, launch_cnt, applied_factor, local_size);
 
         // launch kernel
-        err = enqueue_kernel(q, CLK_ENQUEUE_FLAGS_NO_WAIT,
+        // must wait after this one finishes, because of write to 'workspace_sizes'
+        err = enqueue_kernel(q, CLK_ENQUEUE_FLAGS_WAIT_KERNEL,
                             ndrange_1D(launch_cnt/applied_factor, local_size),
                             0,
                             NULL,
                             &launched_kernels_evt[launched_kernels_cnt],
                             run_blk);
 
-        if(next_placed == LAST_PLACED) {
-            // last step, count solutions
-            //printf("Last step, launched: %u\n", max_launches);
-        } else {
-            // Intermediate step
-            //printf("Single step, next_placed: %u, launched: %u\n", next_placed, max_launches);
-        }
-
         if (err != 0) {
-            printf("Error when enqueuing kernel, launches: %u, next_placed: %u, state: 0x%x", launch_cnt, next_placed, state);
+            printf("Error when enqueuing kernel, launch_cnt: %u, workspace_idx: %u, state: 0x%x", launch_cnt, workspace_idx, state);
             goto cleanup_kernels_evt;
         } else  {
             //printf("launch removed: %u", max_launches);
@@ -276,6 +280,8 @@ kernel void relaunch_kernel(__global start_condition* workspace, __global uint* 
             launched_kernels_cnt++;
         }
     }
+
+    //printf("launched_kernels_cnt: %u\n", launched_kernels_cnt);
 
     clk_event_t marker_evt;
     err = enqueue_marker(q, launched_kernels_cnt, launched_kernels_evt, &marker_evt);
@@ -288,7 +294,6 @@ kernel void relaunch_kernel(__global start_condition* workspace, __global uint* 
                     relaunch_kernel(workspace, workspace_sizes, out_res, placed, recursion + 1);
                 };
 
-#if 0
     // self enqueue recursion
     err = enqueue_kernel(q, CLK_ENQUEUE_FLAGS_WAIT_KERNEL,
                         ndrange_1D(1, 1),
@@ -299,9 +304,13 @@ kernel void relaunch_kernel(__global start_condition* workspace, __global uint* 
     if ( err != 0) {
         printf("Error enqueuing recursion: %u\n", recursion);
     }
-#endif
+
+    for(uint i = 0; i < launched_kernels_cnt; i++) {
+        release_event(launched_kernels_evt[i]);
+    }
 
     release_event(marker_evt);
+    return;
 
     cleanup_kernels_evt:
     for(uint i = 0; i < launched_kernels_cnt; i++) {
