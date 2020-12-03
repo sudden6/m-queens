@@ -122,7 +122,7 @@ kernel void solve_single_no_look(__global start_condition* workspace, __global u
 }
 
 kernel void solve_final(__global start_condition* workspace, __global uint* workspace_sizes, __global uint* out_res, unsigned factor) {
-	__local start_condition scratch_buf[SCRATCH_SIZE * WORK_FACTOR];
+	__local start_condition scratch_buf[WORKGROUP_SIZE * 2 * WORK_FACTOR];
     __local uint scratch_fill;
 
 	if(L == 0) {
