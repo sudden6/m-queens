@@ -242,6 +242,15 @@ kernel void relaunch_kernel(__global start_condition* workspace, __global uint* 
             return;
         }
 
+#if 1
+        // Align to workgroup size if possible
+        if(launch_cnt > WORKGROUP_SIZE) {
+            uint rest = launch_cnt % WORKGROUP_SIZE;
+            launch_cnt -= rest;
+        }
+#endif
+
+        // Align to WORK_FACTOR
         if(launch_cnt > WORK_FACTOR) {
             uint rest = launch_cnt % WORK_FACTOR;
             launch_cnt -= rest;
