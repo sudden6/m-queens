@@ -13,7 +13,7 @@ typedef struct start_condition_t start_condition;
 
 // END SYNC
 
-#define printf(...)
+//#define printf(...)
 
 typedef char int8_t;
 typedef char int_fast8_t;
@@ -44,7 +44,7 @@ uint expansion_factor(uint placed) {
 #define SCRATCH_SIZE (WORKGROUP_SIZE * MAX_EXPANSION)
 #define WORK_FACTOR 1
 
-void solver_core_single_no_look(const __global start_condition* work_in, __local start_condition* scratch, __local uint* scratch_fill) {
+void solver_core_single(const __global start_condition* work_in, __local start_condition* scratch, __local uint* scratch_fill, uint lookahead_depth) {
 	uint_fast32_t cols = work_in->cols;
     uint_fast32_t diagl = work_in->diagl;
     uint_fast32_t diagr = work_in->diagr;
@@ -68,6 +68,31 @@ void solver_core_single_no_look(const __global start_condition* work_in, __local
         uint_fast32_t new_posib = (bit | new_diagl | new_diagr);
 
         if (new_posib != UINT_FAST32_MAX) {
+            /* Optimizations from "Putting Queens in Carry Chains" {Thomas B. Preußer, Bernd Nägel, and Rainer G. Spallek} */
+
+            // Page 8, 1)
+            // Lookahead optimization, DEPTH 2
+            uint_fast32_t lookahead2 = (bit | (new_diagl << 1) | (new_diagr >> 1));
+            if ((lookahead_depth >= 2) && (lookahead2 == UINT_FAST32_MAX)) {
+                continue;
+            }
+
+            // Lookahead optimization, DEPTH 3
+            uint_fast32_t lookahead3 = (bit | (new_diagl << 2) | (new_diagr >> 2));
+            if ((lookahead_depth >= 3) && (lookahead3 == UINT_FAST32_MAX)) {
+                continue;
+            }
+
+#if 0
+            // 2x2 square lookahead optimization Page 8, 2)
+            if((lookahead_depth >= 3) && (lookahead2 == lookahead3)) {
+                uint_fast32_t adjacent = ~lookahead2 & (~lookahead2 << 1);
+                if (adjacent && (popcount(~lookahead2) == 2)) {
+                    continue;
+                }
+            }
+#endif
+
             uint out_offs = atomic_add(scratch_fill, 1);
             //printf("found G: %u, out_offs: %u, bit: %x, diagl: %x, diagr: %x\n", G, out_offs, bit, new_diagl, new_diagr);
 
@@ -78,8 +103,7 @@ void solver_core_single_no_look(const __global start_condition* work_in, __local
     }
 }
 
-// without lookahead optimization
-kernel void solve_single_no_look(__global start_condition* workspace, __global uint* workspace_sizes, unsigned workspace_idx, unsigned factor) {
+kernel void solve_single(__global start_condition* workspace, __global uint* workspace_sizes, unsigned workspace_idx, unsigned factor) {
 
     __local start_condition scratch_buf[SCRATCH_SIZE * WORK_FACTOR];
     __local uint scratch_fill;
@@ -97,7 +121,50 @@ kernel void solve_single_no_look(__global start_condition* workspace, __global u
     uint in_last_idx = in_first_idx + get_local_size(0) * factor;
 
     for(uint in_our_idx = in_first_idx + L; in_our_idx < in_last_idx; in_our_idx += get_local_size(0)) {
-        solver_core_single_no_look(&workspace[in_our_idx], scratch_buf, &scratch_fill);        
+        solver_core_single(&workspace[in_our_idx], scratch_buf, &scratch_fill, 3);        
+    }
+
+    work_group_barrier(CLK_LOCAL_MEM_FENCE);
+
+    // output index calculation
+    __local uint out_offs;
+    uint out_first_idx = workspace_base_idx + WORKSPACE_SIZE;
+    __global uint *out_cur_idx_ptr = workspace_sizes + workspace_idx + 1;
+
+    if(L == 0) {
+        uint out_fill = atomic_add(out_cur_idx_ptr, scratch_fill);
+        out_offs = out_first_idx + out_fill;
+    }
+
+    work_group_barrier(CLK_LOCAL_MEM_FENCE);
+
+    for(int i = L; i < scratch_fill; i += get_local_size(0)) {
+        workspace[out_offs + i] = scratch_buf[i];
+        //printf("G: %u, L: %u, out_workspace_idx %u, cols: %x, diagl: %x, diagr: %x\n", G, L, out_offs + i,
+        //       workspace[out_offs + i].cols, workspace[out_offs + i].diagl, workspace[out_offs + i].diagr);
+    }
+}
+
+// need to duplicate here because scratch_buf size must be compile time constant
+kernel void solve_pre_final(__global start_condition* workspace, __global uint* workspace_sizes, unsigned workspace_idx, unsigned factor) {
+
+    __local start_condition scratch_buf[WORKGROUP_SIZE * 3 * WORK_FACTOR];
+    __local uint scratch_fill;
+
+	if(L == 0) {
+		scratch_fill = 0;
+	}
+
+    work_group_barrier(CLK_LOCAL_MEM_FENCE);
+
+    uint workspace_base_idx = workspace_idx * WORKSPACE_SIZE;
+
+    // input index calculation
+    uint in_first_idx = workspace_base_idx + workspace_sizes[workspace_idx] + (G - L)*factor;
+    uint in_last_idx = in_first_idx + get_local_size(0) * factor;
+
+    for(uint in_our_idx = in_first_idx + L; in_our_idx < in_last_idx; in_our_idx += get_local_size(0)) {
+        solver_core_single(&workspace[in_our_idx], scratch_buf, &scratch_fill, 2);        
     }
 
     work_group_barrier(CLK_LOCAL_MEM_FENCE);
@@ -139,7 +206,7 @@ kernel void solve_final(__global start_condition* workspace, __global uint* work
     uint in_last_idx = in_first_idx + get_local_size(0) * factor;
 
     for(uint in_our_idx = in_first_idx + L; in_our_idx < in_last_idx; in_our_idx += get_local_size(0)) {
-		 solver_core_single_no_look(&workspace[in_our_idx], scratch_buf, &scratch_fill); 
+		 solver_core_single(&workspace[in_our_idx], scratch_buf, &scratch_fill, 1); 
 	}
 
 	work_group_barrier(CLK_LOCAL_MEM_FENCE);
@@ -278,12 +345,19 @@ kernel void relaunch_kernel(__global start_condition* workspace, __global uint* 
                     solve_final(workspace, workspace_sizes, out_res, applied_factor);
                 };
         
-        void (^solve_single_blk)(void) = ^{
-                    solve_single_no_look(workspace, workspace_sizes, workspace_idx, applied_factor);
+        void (^solve_pre_final_blk)(void) = ^{
+                    solve_pre_final(workspace, workspace_sizes, workspace_idx, applied_factor);
                 };
-    
-        void (^run_blk)(void) = workspace_idx == (GPU_DEPTH - 2) ? solve_final_blk : solve_single_blk;
+        
+        void (^solve_single_blk)(void) = ^{
+                    solve_single(workspace, workspace_sizes, workspace_idx, applied_factor);
+                };
+        
+        // HACK: must init block at declaration
+        void (^run_blk)(void) = workspace_idx == (GPU_DEPTH - 3) ? solve_pre_final_blk :
+                                (workspace_idx == (GPU_DEPTH - 2) ? solve_final_blk : solve_single_blk);
         uint local_size = min((uint)WORKGROUP_SIZE, (uint)get_kernel_work_group_size(run_blk));
+        //printf("local_size: %u, kernel_wg_size: %u\n", local_size, get_kernel_work_group_size(run_blk));
 
         //printf("launch workspace_idx: %u, launch_cnt: %u, factor: %u, local_size: %u\n", workspace_idx, launch_cnt, applied_factor, local_size);
 
