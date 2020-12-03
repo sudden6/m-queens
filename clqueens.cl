@@ -202,10 +202,10 @@ kernel void relaunch_kernel(__global start_condition* workspace, __global uint* 
         return;
     }
 
-#if 0
+#if 1
     // An unlimited recursion level potentially allows to fully use the GPU queue,
     // but this might be a corner case in the code and result in problems
-    if (recursion > 3) {
+    if (recursion > 200) {
         //printf("Recursion limit\n");
         return;
     }
