@@ -256,7 +256,7 @@ void ClSolver::threadWorker(uint32_t id, std::mutex &pre_lock)
 
         // Launch kernel on the compute device.
         err = cmdQueue.enqueueNDRangeKernel(b.clKernel, cl::NullRange,
-                                            cl::NDRange{1}, cl::NDRange{WORKGROUP_SIZE},
+                                            cl::NDRange{1}, cl::NDRange{1},
                                             nullptr, nullptr);
         if(err != CL_SUCCESS) {
             std::cout << "enqueueNDRangeKernel failed: " << err << std::endl;
@@ -295,7 +295,7 @@ void ClSolver::threadWorker(uint32_t id, std::mutex &pre_lock)
 
             // Relaunch kernel on the compute device.
             err = cmdQueue.enqueueNDRangeKernel(b.clKernel, cl::NullRange,
-                                                cl::NDRange{1}, cl::NDRange{WORKGROUP_SIZE},
+                                                cl::NDRange{1}, cl::NDRange{1},
                                                 nullptr, nullptr);
             if(err != CL_SUCCESS) {
                 std::cout << "enqueueNDRangeKernel failed: " << err << std::endl;
