@@ -27,7 +27,7 @@ constexpr uint_fast8_t MAXN = 29;
  */
 constexpr uint_fast8_t GPU_DEPTH = 10;
 constexpr size_t WORKGROUP_SIZE = 64;
-constexpr size_t WORKSPACE_SIZE = 1024*1024*8;
+constexpr size_t WORKSPACE_SIZE = 1024*1024*16;
 constexpr size_t NUM_BATCHES = 1;
 
 bool ClSolver::init(uint8_t boardsize, uint8_t placed)
@@ -76,7 +76,7 @@ bool ClSolver::init(uint8_t boardsize, uint8_t placed)
         return false;
     }
 
-    size_t workspace_mem = WORKSPACE_SIZE * gpu_depth * sizeof(start_condition_t);
+    size_t workspace_mem = WORKSPACE_SIZE * (gpu_depth - 1) * sizeof(start_condition_t);
     size_t res_mem = WORKSPACE_SIZE * sizeof(uint32_t);
     size_t dev_mem = workspace_mem + res_mem;
 
@@ -134,21 +134,21 @@ void ClSolver::threadWorker(uint32_t id, std::mutex &pre_lock)
 
         // Allocate workspace buffer on device
         b.clWorkspaceBuf = cl::Buffer(context, CL_MEM_READ_WRITE | CL_MEM_HOST_WRITE_ONLY,
-            WORKSPACE_SIZE * gpu_depth * sizeof(start_condition), nullptr, &err);
+            WORKSPACE_SIZE * (gpu_depth - 1) * sizeof(start_condition), nullptr, &err);
         if(err != CL_SUCCESS) {
             std::cout << "cl::Buffer start_buf failed: " << err << std::endl;
         }
 
         // Allocate workspace size buffer on device
         b.clWorkspaceSizeBuf = cl::Buffer(context, CL_MEM_READ_WRITE,
-            gpu_depth * sizeof(cl_uint), nullptr, &err);
+            (gpu_depth - 1) * sizeof(cl_uint), nullptr, &err);
         if(err != CL_SUCCESS) {
             std::cout << "cl::Buffer start_buf failed: " << err << std::endl;
         }
 
         // zero the workspace size buffer
         err = cmdQueue.enqueueFillBuffer(b.clWorkspaceSizeBuf, static_cast<cl_uint>(0),
-                                         0, gpu_depth * sizeof(cl_uint),
+                                         0, (gpu_depth - 1) * sizeof(cl_uint),
                                          nullptr, nullptr);
         if(err != CL_SUCCESS) {
             std::cout << "fillBuffer clWorkspaceSizeBuf failed: " << err << std::endl;
@@ -273,9 +273,9 @@ void ClSolver::threadWorker(uint32_t id, std::mutex &pre_lock)
 
         bool workspace_empty = false;
         while(!workspace_empty) {
-            std::vector<cl_uint> buffer_fill(gpu_depth);
+            std::vector<cl_uint> buffer_fill(gpu_depth - 1);
 
-            err = cmdQueue.enqueueReadBuffer(b.clWorkspaceSizeBuf, CL_TRUE, 0, gpu_depth*sizeof(cl_uint), buffer_fill.data());
+            err = cmdQueue.enqueueReadBuffer(b.clWorkspaceSizeBuf, CL_TRUE, 0, buffer_fill.size()*sizeof(cl_uint), buffer_fill.data());
             if (err != CL_SUCCESS) {
                 std::cout << "enqueueReadBuffer clWorkspaceSizeBuf failed: " << err << std::endl;
                 break;
