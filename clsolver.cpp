@@ -29,8 +29,8 @@ constexpr uint_fast8_t MAXN = 29;
 static constexpr size_t NUM_CMDQUEUES = 1;
 constexpr uint_fast8_t GPU_DEPTH = 10;
 constexpr size_t WORKGROUP_SIZE = 64;
-constexpr size_t WORKSPACE_SIZE = 1024*1024*16;
-constexpr size_t NUM_BATCHES = 2;
+constexpr size_t WORKSPACE_SIZE = 1024*1024*48;
+constexpr size_t NUM_BATCHES = 1;
 
 bool ClSolver::init(uint8_t boardsize, uint8_t placed)
 {
@@ -90,7 +90,6 @@ bool ClSolver::init(uint8_t boardsize, uint8_t placed)
 typedef cl_uint result_type;
 
 typedef struct {
-    std::vector<result_type> hostOutputBuf;
     std::vector<start_condition_t> hostStartBuf;
     size_t hostStartFill;
     cl::Buffer clWorkspaceBuf;
@@ -236,7 +235,6 @@ void ClSolver::threadWorker(uint32_t id, std::mutex &pre_lock)
             b.hostStartFill = std::distance(b.hostStartBuf.begin(), curIt);
         }
 
-
         err = cmdQueue.enqueueReadBuffer(b.clWorkspaceSizeBuf, CL_TRUE, 0, buffer_fill.size() * sizeof(cl_uint), buffer_fill.data());
         if (err != CL_SUCCESS) {
             std::cout << "enqueueReadBuffer clWorkspaceSizeBuf failed: " << err << std::endl;
@@ -301,29 +299,56 @@ void ClSolver::threadWorker(uint32_t id, std::mutex &pre_lock)
 
     cmdQueue.finish();
 
-    for(size_t i = 0; i < NUM_BATCHES; i++) {
-        batch& b = batches[i];
-        b.hostOutputBuf.resize(WORKSPACE_SIZE);
-
-        err = cmdQueue.enqueueReadBuffer(b.clOutputBuf, CL_FALSE, 0,
-                                         WORKSPACE_SIZE * sizeof(result_type), b.hostOutputBuf.data(),
-                                         nullptr, nullptr);
-        if(err != CL_SUCCESS) {
-            std::cout << "enqueueReadBuffer failed: " << err << std::endl;
-        }
+    // create device kernel
+    cl::Kernel sumKernel = cl::Kernel(program, "sum_results", &err);
+    if(err != CL_SUCCESS) {
+        std::cout << "cl::Kernel failed: " << err << std::endl;
     }
 
-    uint64_t result = 0;
+    cl::Buffer sumBuffer = cl::Buffer(context, CL_MEM_READ_WRITE,
+                                      WORKSPACE_SIZE/1024 * sizeof(cl_ulong), nullptr, &err);
+    if(err != CL_SUCCESS) {
+        std::cout << "cl::Buffer sumBuffer failed: " << err << std::endl;
+    }
 
+    // zero the sum buffer
+    err = cmdQueue.enqueueFillBuffer(sumBuffer, static_cast<cl_ulong>(0),
+                                     0,
+                                     WORKSPACE_SIZE/1024 * sizeof(cl_ulong),
+                                     nullptr, nullptr);
+    if(err != CL_SUCCESS) {
+        std::cout << "fillBuffer clWorkspaceSizeBuf failed: " << err << std::endl;
+    }
+
+    sumKernel.setArg(1, sumBuffer);
     cmdQueue.finish();
 
     for(size_t i = 0; i < NUM_BATCHES; i++) {
         batch& b = batches[i];
-
-        // get data from completed batch
-        for(size_t i = 0; i < WORKSPACE_SIZE; i++) {
-            result += b.hostOutputBuf[i];
+        sumKernel.setArg(0, b.clOutputBuf);
+        // Launch kernel to sum results
+        err = cmdQueue.enqueueNDRangeKernel(sumKernel, cl::NullRange,
+                                            cl::NDRange{WORKSPACE_SIZE/1024}, cl::NullRange,
+                                            nullptr, nullptr);
+        if(err != CL_SUCCESS) {
+            std::cout << "enqueueNDRangeKernel(sumKernel) failed: " << err << std::endl;
         }
+    }
+
+    cmdQueue.finish();
+
+    std::vector<cl_ulong> sumHostBuffer(WORKSPACE_SIZE/1024);
+    err = cmdQueue.enqueueReadBuffer(sumBuffer, CL_TRUE, 0, sumHostBuffer.size() * sizeof(cl_ulong), sumHostBuffer.data());
+    if (err != CL_SUCCESS) {
+        std::cout << "enqueueReadBuffer clWorkspaceSizeBuf failed: " << err << std::endl;
+        return;
+    }
+
+    uint64_t result = 0;
+
+    // get data from completed batch
+    for(size_t i = 0; i < sumHostBuffer.size(); i++) {
+        result += sumHostBuffer[i];
     }
 
     results[id] = result;

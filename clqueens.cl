@@ -481,3 +481,26 @@ kernel void relaunch_kernel(__global start_condition* workspace, __global uint* 
 }
 
 #endif
+
+#define SUM_REDUCTION_FACTOR 1024
+
+kernel void sum_results(const __global uint* res_in, __global ulong* res_out) {
+    uint cnt = 0;
+    __local uint wg_cnt;
+
+    if (L == 0) {
+        wg_cnt = 0;
+    }
+
+    for(uint i = 0; i < SUM_REDUCTION_FACTOR; i++) {
+        cnt += res_in[G*SUM_REDUCTION_FACTOR+i];
+    }
+
+    work_group_barrier(CLK_LOCAL_MEM_FENCE);
+    atomic_add(&wg_cnt, cnt);
+    work_group_barrier(CLK_LOCAL_MEM_FENCE);
+
+    if (L == 0) {
+        res_out[G] += wg_cnt;
+    }
+}
