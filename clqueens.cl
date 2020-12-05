@@ -256,6 +256,8 @@ kernel void solve_final(__global start_condition* workspace, __global uint* work
     out_res[G] += cnt;
 }
 
+// Hide this pesky code which crashes RGA
+#ifndef RADEON_GPU_ANALYZER
 
 kernel void relaunch_kernel(__global start_condition* workspace, __global uint* workspace_sizes, __global uint* out_res, unsigned placed, unsigned recursion) {
     queue_t q = get_default_queue();
@@ -427,3 +429,5 @@ kernel void relaunch_kernel(__global start_condition* workspace, __global uint* 
         release_event(launched_kernels_evt[i]);
     }
 }
+
+#endif
