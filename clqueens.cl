@@ -217,14 +217,16 @@ kernel void solve_pre_final(__global start_condition* workspace, __global uint* 
             //       workspace[out_offs + i].cols, workspace[out_offs + i].diagl, workspace[out_offs + i].diagr);
         }
         work_group_barrier(CLK_LOCAL_MEM_FENCE); 
-    }
-
-    
+    }    
 }
 
 kernel void solve_final(__global start_condition* workspace, __global uint* workspace_sizes, __global uint* out_res, unsigned factor) {
 	__local start_condition scratch_buf[WORKGROUP_SIZE * 2];
     __local uint scratch_fill;
+    __local uint scratch_cnt;
+    if (L == 0) {
+        scratch_cnt = 0;
+    }
 
     const uint workspace_idx = GPU_DEPTH - 2;
     uint workspace_base_idx = workspace_idx * WORKSPACE_SIZE;
@@ -277,9 +279,13 @@ kernel void solve_final(__global start_condition* workspace, __global uint* work
         work_group_barrier(CLK_LOCAL_MEM_FENCE);
 	}
 
-    //printf("G: %u, cnt: %u", G, cnt);
+    atomic_add(&scratch_cnt, cnt);
+    work_group_barrier(CLK_LOCAL_MEM_FENCE);
 
-    out_res[G] += cnt;
+    //printf("G: %u, cnt: %u", G, cnt);
+    if (L == 0) {
+        out_res[G] += scratch_cnt;
+    }
 }
 
 // Hide this pesky code which crashes RGA
