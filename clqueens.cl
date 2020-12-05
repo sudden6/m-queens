@@ -113,11 +113,8 @@ void solver_core_single(const __global start_condition* work_in, __local start_c
     }
 }
 
-kernel void solve_single(__global start_condition* workspace, __global uint* workspace_sizes, unsigned workspace_idx, unsigned factor) {
-
-    __local start_condition scratch_buf[SCRATCH_SIZE];
-    __local uint scratch_fill;
-    __local uint out_offs;
+void solve_single_proto(__global start_condition* workspace, __global uint* workspace_sizes, __local start_condition* scratch_buf,
+                        unsigned workspace_idx, unsigned factor, __local uint* scratch_fill, __local uint* out_offs) {
 
     uint workspace_base_idx = workspace_idx * WORKSPACE_SIZE;
 
@@ -127,11 +124,11 @@ kernel void solve_single(__global start_condition* workspace, __global uint* wor
 
     for(uint in_our_idx = in_first_idx + L; in_our_idx < in_last_idx; in_our_idx += get_local_size(0)) {
         if(L == 0) {
-		    scratch_fill = 0;
+		    *scratch_fill = 0;
 	    }
 
         work_group_barrier(CLK_LOCAL_MEM_FENCE);
-        solver_core_single(&workspace[in_our_idx], scratch_buf, &scratch_fill, 3);     
+        solver_core_single(&workspace[in_our_idx], scratch_buf, scratch_fill, 3);     
         work_group_barrier(CLK_LOCAL_MEM_FENCE);
 
         // output index calculation
@@ -139,14 +136,14 @@ kernel void solve_single(__global start_condition* workspace, __global uint* wor
         __global uint *out_cur_idx_ptr = workspace_sizes + workspace_idx + 1;
 
         if(L == 0) {
-            uint out_fill = atomic_add(out_cur_idx_ptr, scratch_fill);
-            out_offs = out_first_idx + out_fill;
+            uint out_fill = atomic_add(out_cur_idx_ptr, *scratch_fill);
+            *out_offs = out_first_idx + out_fill;
         }
 
         work_group_barrier(CLK_LOCAL_MEM_FENCE);
 
-        for(int i = L; i < scratch_fill; i += get_local_size(0)) {
-            workspace[out_offs + i] = scratch_buf[i];
+        for(int i = L; i < *scratch_fill; i += get_local_size(0)) {
+            workspace[*out_offs + i] = scratch_buf[i];
             //printf("G: %u, L: %u, out_workspace_idx %u, cols: %x, diagl: %x, diagr: %x\n", G, L, out_offs + i,
             //       workspace[out_offs + i].cols, workspace[out_offs + i].diagl, workspace[out_offs + i].diagr);
         }
@@ -154,6 +151,32 @@ kernel void solve_single(__global start_condition* workspace, __global uint* wor
         work_group_barrier(CLK_LOCAL_MEM_FENCE);
     }
 }
+
+kernel void solve_single(__global start_condition* workspace, __global uint* workspace_sizes, unsigned workspace_idx, unsigned factor) {
+    __local start_condition scratch_buf[SCRATCH_SIZE];
+    __local uint scratch_fill;
+    __local uint out_offs;
+    solve_single_proto(workspace, workspace_sizes, scratch_buf, workspace_idx, factor, &scratch_fill, &out_offs);    
+}
+
+#define STR_HELPER(x) #x
+#define STR(x) STR_HELPER(x)
+
+#define SOLVER_KERNEL(remaining) \
+kernel void solve_##remaining (__global start_condition* workspace, __global uint* workspace_sizes, unsigned workspace_idx, unsigned factor) { \
+    __local start_condition scratch_buf[WORKGROUP_SIZE * (remaining)]; __local uint scratch_fill; __local uint out_offs; \
+    solve_single_proto(workspace, workspace_sizes, scratch_buf, workspace_idx, factor, &scratch_fill, &out_offs); \
+}
+
+SOLVER_KERNEL(4)
+SOLVER_KERNEL(5)
+SOLVER_KERNEL(6)
+SOLVER_KERNEL(7)
+SOLVER_KERNEL(8)
+SOLVER_KERNEL(9)
+SOLVER_KERNEL(10)
+SOLVER_KERNEL(11)
+SOLVER_KERNEL(12)
 
 // need to duplicate here because scratch_buf size must be compile time constant
 kernel void solve_pre_final(__global start_condition* workspace, __global uint* workspace_sizes, unsigned workspace_idx, unsigned factor) {
@@ -363,14 +386,32 @@ kernel void relaunch_kernel(__global start_condition* workspace, __global uint* 
         void (^solve_pre_final_blk)(void) = ^{
                     solve_pre_final(workspace, workspace_sizes, workspace_idx, applied_factor);
                 };
+
+#define SOLVE_BLK(remaining) void (^solve_##remaining##_blk)(void) = ^{solve_##remaining(workspace, workspace_sizes, workspace_idx, applied_factor);};
+
+        SOLVE_BLK(4)
+        SOLVE_BLK(5)
+        SOLVE_BLK(6)
+        SOLVE_BLK(7)
+        SOLVE_BLK(8)
+        SOLVE_BLK(9)
+        SOLVE_BLK(10)
         
+
         void (^solve_single_blk)(void) = ^{
                     solve_single(workspace, workspace_sizes, workspace_idx, applied_factor);
                 };
-        
+                
         // HACK: must init block at declaration
-        void (^run_blk)(void) = workspace_idx == (GPU_DEPTH - 3) ? solve_pre_final_blk :
-                                (workspace_idx == (GPU_DEPTH - 2) ? solve_final_blk : solve_single_blk);
+        void (^run_blk)(void) = (workspace_idx == (GPU_DEPTH -10) ? solve_10_blk :
+                                (workspace_idx == (GPU_DEPTH - 9) ? solve_9_blk :
+                                (workspace_idx == (GPU_DEPTH - 8) ? solve_8_blk :
+                                (workspace_idx == (GPU_DEPTH - 7) ? solve_7_blk :
+                                (workspace_idx == (GPU_DEPTH - 6) ? solve_6_blk :
+                                (workspace_idx == (GPU_DEPTH - 5) ? solve_5_blk :
+                                (workspace_idx == (GPU_DEPTH - 4) ? solve_4_blk :
+                                (workspace_idx == (GPU_DEPTH - 3) ? solve_pre_final_blk :
+                                (workspace_idx == (GPU_DEPTH - 2) ? solve_final_blk : solve_single_blk)))))))));
         uint local_size = min((uint)WORKGROUP_SIZE, (uint)get_kernel_work_group_size(run_blk));
         //printf("local_size: %u, kernel_wg_size: %u\n", local_size, get_kernel_work_group_size(run_blk));
 
