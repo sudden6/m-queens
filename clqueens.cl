@@ -85,7 +85,17 @@ void solver_core_single(const __global start_condition* work_in, __local start_c
 
 #if 0
             // 2x2 square lookahead optimization Page 8, 2)
-            if((lookahead_depth >= 3) && (lookahead2 == lookahead3)) {
+            if((lookahead_depth >= 3) && (popcount(~lookahead2) == 2)) {
+                uint_fast32_t adjacent = ~lookahead2 & (~lookahead2 << 1);
+                if (adjacent && ((lookahead2 == new_posib) || (lookahead2 == lookahead3))) {
+                    continue;
+                }
+            }
+#endif
+
+#if 0
+            // 2x2 square lookahead optimization Page 8, 2)
+            if((lookahead_depth >= 3) && (lookahead2 == new_posib)) {
                 uint_fast32_t adjacent = ~lookahead2 & (~lookahead2 << 1);
                 if (adjacent && (popcount(~lookahead2) == 2)) {
                     continue;
