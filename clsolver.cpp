@@ -25,10 +25,12 @@ constexpr uint_fast8_t MAXN = 29;
  * With a too high GPU_DEPTH, solving a board takes too long and the
  * GPU is detected as "hung" by the driver and reset or the system crashes.
  */
+
+static constexpr size_t NUM_CMDQUEUES = 1;
 constexpr uint_fast8_t GPU_DEPTH = 10;
 constexpr size_t WORKGROUP_SIZE = 64;
 constexpr size_t WORKSPACE_SIZE = 1024*1024*16;
-constexpr size_t NUM_BATCHES = 1;
+constexpr size_t NUM_BATCHES = 2;
 
 bool ClSolver::init(uint8_t boardsize, uint8_t placed)
 {
@@ -90,6 +92,7 @@ typedef cl_uint result_type;
 typedef struct {
     std::vector<result_type> hostOutputBuf;
     std::vector<start_condition_t> hostStartBuf;
+    size_t hostStartFill;
     cl::Buffer clWorkspaceBuf;
     cl::Buffer clWorkspaceSizeBuf;
     cl::Buffer clOutputBuf;
@@ -145,6 +148,9 @@ void ClSolver::threadWorker(uint32_t id, std::mutex &pre_lock)
         if(err != CL_SUCCESS) {
             std::cout << "cl::Buffer start_buf failed: " << err << std::endl;
         }
+
+        // host side is initially empty
+        b.hostStartFill = 0;
 
         // zero the workspace size buffer
         err = cmdQueue.enqueueFillBuffer(b.clWorkspaceSizeBuf, static_cast<cl_uint>(0),
@@ -202,55 +208,85 @@ void ClSolver::threadWorker(uint32_t id, std::mutex &pre_lock)
     auto start_time = std::time(nullptr);
 
     size_t cur_batch = 0;
-
-    while (!pre.empty()) {
+    bool finished = false;
+    bool feeding = true;
+    std::vector<cl_uint> buffer_fill(gpu_depth - 1);
+    while (!finished) {
         auto& b = batches[cur_batch];
         cur_batch++;
         cur_batch %= NUM_BATCHES;
 
-        cl_uint buffer_fill = 0;
+        if (!pre.empty()) {
+            auto curIt = b.hostStartBuf.begin() + b.hostStartFill;
+            const auto endIt = b.hostStartBuf.cend();
+            // TODO(sudden6): cleanup
+            while(curIt < endIt) {
+                curIt = pre.getNext(curIt, endIt);
+                if(pre.empty()) {
+                    auto end_time = std::time(nullptr);
+                    //std::cout << "pre block took " << difftime(end_time, start_time) << "s" << std::endl;
+                    start_time = end_time;
+                    pre = nextPre(pre_lock);
+                    if(pre.empty()) {
+                        break;
+                    }
+                }
+            }
 
-        err = cmdQueue.enqueueReadBuffer(b.clWorkspaceSizeBuf, CL_TRUE, 0, sizeof(cl_uint), &buffer_fill);
+            b.hostStartFill = std::distance(b.hostStartBuf.begin(), curIt);
+        }
+
+
+        err = cmdQueue.enqueueReadBuffer(b.clWorkspaceSizeBuf, CL_TRUE, 0, buffer_fill.size() * sizeof(cl_uint), buffer_fill.data());
         if (err != CL_SUCCESS) {
             std::cout << "enqueueReadBuffer clWorkspaceSizeBuf failed: " << err << std::endl;
             break;
         }
 
-        auto curIt = b.hostStartBuf.begin();
-        const auto endIt = curIt + (WORKSPACE_SIZE - buffer_fill);
-        // TODO(sudden6): cleanup
-        while(curIt < endIt) {
-            curIt = pre.getNext(curIt, endIt);
-            if(pre.empty()) {
-                auto end_time = std::time(nullptr);
-                //std::cout << "pre block took " << difftime(end_time, start_time) << "s" << std::endl;
-                start_time = end_time;
-                pre = nextPre(pre_lock);
-                if(pre.empty()) {
-                    break;
-                }
+        const cl_uint first_fill = buffer_fill[0];
+
+        bool workspace_empty = true;
+        for(auto& fill: buffer_fill) {
+            if(fill > 0) {
+                workspace_empty = false;
+                break;
             }
         }
 
-        const size_t batchSize = std::distance(b.hostStartBuf.begin(), curIt);
-
-        if (batchSize > 0) {
-            const cl_uint new_buffer_fill = batchSize + buffer_fill;
-
-            // write start conditions to workspace
-            err = cmdQueue.enqueueWriteBuffer(b.clWorkspaceBuf, CL_TRUE,
-                                                        buffer_fill * sizeof(start_condition), batchSize * sizeof(start_condition),
-                                                        b.hostStartBuf.data(), nullptr, nullptr);
+        if ((b.hostStartFill == 0) && workspace_empty) {
+            finished = true;
+            break;
+        } else if ((b.hostStartFill == 0) && feeding) {
+            feeding = false;
+            err = b.clKernel.setArg(3, static_cast<cl_uint>(CLSOLVER_CLEANUP));
             if(err != CL_SUCCESS) {
-                std::cout << "Failed to write start buffer: " << err << std::endl;
+                std::cout << "solve_subboard.setArg(3 failed: " << err << std::endl;
             }
 
-            // write start condition count to workspace size
-            err = cmdQueue.enqueueWriteBuffer(b.clWorkspaceSizeBuf, CL_TRUE,
-                                                        0, sizeof(cl_uint),
-                                                        &new_buffer_fill, nullptr, nullptr);
-            if(err != CL_SUCCESS) {
-                std::cout << "Failed to write start buffer size: " << err << std::endl;
+            std::cout << "Starting cleanup" << std::endl;
+        } else {
+            const size_t first_free = WORKSPACE_SIZE - first_fill;
+            const size_t batchSize = std::min(b.hostStartFill, first_free);
+            b.hostStartFill -= batchSize;
+
+            if (batchSize > 0) {
+                const cl_uint new_buffer_fill = batchSize + first_fill;
+
+                // write start conditions to workspace
+                err = cmdQueue.enqueueWriteBuffer(b.clWorkspaceBuf, CL_TRUE,
+                                                            first_fill * sizeof(start_condition), batchSize * sizeof(start_condition),
+                                                            b.hostStartBuf.data() + b.hostStartFill, nullptr, nullptr);
+                if(err != CL_SUCCESS) {
+                    std::cout << "Failed to write start buffer: " << err << std::endl;
+                }
+
+                // write start condition count to workspace size
+                err = cmdQueue.enqueueWriteBuffer(b.clWorkspaceSizeBuf, CL_TRUE,
+                                                            0, sizeof(cl_uint),
+                                                            &new_buffer_fill, nullptr, nullptr);
+                if(err != CL_SUCCESS) {
+                    std::cout << "Failed to write start buffer size: " << err << std::endl;
+                }
             }
         }
 
@@ -260,46 +296,6 @@ void ClSolver::threadWorker(uint32_t id, std::mutex &pre_lock)
                                             nullptr, nullptr);
         if(err != CL_SUCCESS) {
             std::cout << "enqueueNDRangeKernel failed: " << err << std::endl;
-        }
-    }
-
-    std::cout << "Feeding finished" << std::endl;
-
-    for(batch& b: batches) {
-        err = b.clKernel.setArg(3, static_cast<cl_uint>(CLSOLVER_CLEANUP));
-        if(err != CL_SUCCESS) {
-            std::cout << "solve_subboard.setArg(3 failed: " << err << std::endl;
-        }
-
-        bool workspace_empty = false;
-        while(!workspace_empty) {
-            std::vector<cl_uint> buffer_fill(gpu_depth - 1);
-
-            err = cmdQueue.enqueueReadBuffer(b.clWorkspaceSizeBuf, CL_TRUE, 0, buffer_fill.size()*sizeof(cl_uint), buffer_fill.data());
-            if (err != CL_SUCCESS) {
-                std::cout << "enqueueReadBuffer clWorkspaceSizeBuf failed: " << err << std::endl;
-                break;
-            }
-
-            workspace_empty = true;
-            for(auto& fill: buffer_fill) {
-                if(fill > 0) {
-                    workspace_empty = false;
-                    break;
-                }
-            }
-
-            if (workspace_empty) {
-                break;
-            }
-
-            // Relaunch kernel on the compute device.
-            err = cmdQueue.enqueueNDRangeKernel(b.clKernel, cl::NullRange,
-                                                cl::NDRange{1}, cl::NDRange{1},
-                                                nullptr, nullptr);
-            if(err != CL_SUCCESS) {
-                std::cout << "enqueueNDRangeKernel failed: " << err << std::endl;
-            }
         }
     }
 
