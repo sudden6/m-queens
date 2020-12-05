@@ -42,7 +42,7 @@ uint expansion_factor(uint placed) {
 
 #define MAX_EXPANSION (GPU_DEPTH)
 #define SCRATCH_SIZE (WORKGROUP_SIZE * MAX_EXPANSION)
-#define WORK_FACTOR 16
+#define WORK_FACTOR 4
 
 void solver_core_single(const __global start_condition* work_in, __local start_condition* scratch, __local uint* scratch_fill, uint lookahead_depth) {
 	uint_fast32_t cols = work_in->cols;
