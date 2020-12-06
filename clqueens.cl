@@ -27,16 +27,10 @@ typedef uint uint_fast32_t;
 #define L (get_local_id(0))
 #define G (get_global_id(0))
 
-uint expansion_factor(uint placed) {
-    return BOARDSIZE - placed;
-}
-
 // TODO: replace with compiler defined values
 //#define WORKSPACE_SIZE 16
 //#define GPU_DEPTH 2
 //#define BOARDSIZE 8
-
-#define FIRST_PLACED (BOARDSIZE - GPU_DEPTH)
 
 #define MAX_EXPANSION (GPU_DEPTH)
 #define SCRATCH_SIZE (WORKGROUP_SIZE * MAX_EXPANSION)
@@ -243,32 +237,28 @@ kernel void relaunch_kernel(__global start_condition* workspace, __global uint* 
     queue_t q = get_default_queue();
 
     uint limits[GPU_DEPTH - 1];
-
-    uint even_launches = 0;
-    uint odd_launches = 0;
-
     // final run only depends on input limit, calculate differently
     limits[GPU_DEPTH-2] = workspace_sizes[GPU_DEPTH - 2];
 
     // Find maximum possible kernel launches
     //printf("state: 0x%x, recursion: %u\n", state, recursion);
-    for(uint i = 0; i < (GPU_DEPTH - 2); i++) {
-        uint input_limit = workspace_sizes[i];
-        uint output_limit = (WORKSPACE_SIZE - workspace_sizes[i+1]) / expansion_factor(i + FIRST_PLACED);
-        uint limit = min(input_limit, output_limit);
-        //printf("  size[%u] = %u, output_limit: %u\n",i, workspace_sizes[i], output_limit);
-        limits[i] = limit;
+    for(uint workspace_idx = 0; workspace_idx < (GPU_DEPTH - 2); workspace_idx++) {
+        uint remaining = GPU_DEPTH - workspace_idx;
+        uint input_limit = workspace_sizes[workspace_idx];
+        uint output_limit = (WORKSPACE_SIZE - workspace_sizes[workspace_idx+1]) / remaining;
+        //printf("  size[%u] = %u, output_limit: %u\n",workspace_idx, workspace_sizes[workspace_idx], output_limit);
+        limits[workspace_idx] = min(input_limit, output_limit);;
     }
 
+    uint even_launches = 0;
+    uint odd_launches = 0;
     //printf("  size[%u] = %u\n", GPU_DEPTH-2, workspace_sizes[GPU_DEPTH-2]);
 
-    for(uint i = 0; i < (GPU_DEPTH - 1); i++) {
-        if (i % 2) {
-            // odd
-            odd_launches += limits[i];
+    for(uint workspace_idx = 0; workspace_idx < (GPU_DEPTH - 1); workspace_idx++) {
+        if (workspace_idx % 2) {
+            odd_launches += limits[workspace_idx];
         } else {
-            // even
-            even_launches += limits[i];
+            even_launches += limits[workspace_idx];
         }
     }
 
@@ -280,22 +270,13 @@ kernel void relaunch_kernel(__global start_condition* workspace, __global uint* 
 #if 1
     // An unlimited recursion level potentially allows to fully use the GPU queue,
     // but this might be a corner case in the code and result in problems
-    if (recursion > 200) {
+    if (recursion > 1000) {
         //printf("Recursion limit\n");
         return;
     }
 #endif
 
-#if 0
-    if (state == CLSOLVER_FEED && workspace_sizes[0] < WORKSPACE_SIZE/(MAX_EXPANSION)) {
-        //printf("Re-feed, recursion: %u\n", recursion);
-        // re-feed
-        return;
-    }
-#endif
-
     uint launch_odd = odd_launches > even_launches;
-
     //printf("Launch odd: %u\n", launch_odd);
 
     int err = 0;
@@ -354,20 +335,21 @@ kernel void relaunch_kernel(__global start_condition* workspace, __global uint* 
         void (^solve_single_blk)(void) = ^{
                     solve_single(in_start, out_base, out_offs, applied_factor);
                 };
-                
+        
+        uint remaining = GPU_DEPTH - workspace_idx;
         // HACK: must init block at declaration
-        void (^run_blk)(void) = (workspace_idx == (GPU_DEPTH -10) ? solve_10_blk :
-                                (workspace_idx == (GPU_DEPTH - 9) ? solve_9_blk :
-                                (workspace_idx == (GPU_DEPTH - 8) ? solve_8_blk :
-                                (workspace_idx == (GPU_DEPTH - 7) ? solve_7_blk :
-                                (workspace_idx == (GPU_DEPTH - 6) ? solve_6_blk :
-                                (workspace_idx == (GPU_DEPTH - 5) ? solve_5_blk :
-                                (workspace_idx == (GPU_DEPTH - 4) ? solve_4_blk :
-                                (workspace_idx == (GPU_DEPTH - 3) ? solve_3_blk :
-                                (workspace_idx == (GPU_DEPTH - 2) ? solve_final_blk : solve_single_blk)))))))));
+        void (^run_blk)(void) = (remaining == 10 ? solve_10_blk :
+                                (remaining == 9 ? solve_9_blk :
+                                (remaining == 8 ? solve_8_blk :
+                                (remaining == 7 ? solve_7_blk :
+                                (remaining == 6 ? solve_6_blk :
+                                (remaining == 5 ? solve_5_blk :
+                                (remaining == 4 ? solve_4_blk :
+                                (remaining == 3 ? solve_3_blk :
+                                (remaining == 2 ? solve_final_blk : solve_single_blk)))))))));
         uint local_size = min((uint)WORKGROUP_SIZE, (uint)get_kernel_work_group_size(run_blk));
         //printf("local_size: %u, kernel_wg_size: %u\n", local_size, get_kernel_work_group_size(run_blk));
-        //printf("launch workspace_idx: %u, launch_cnt: %u, factor: %u, local_size: %u\n", workspace_idx, launch_cnt, applied_factor, local_size);
+        //printf("launch workspace_idx: %u, launch_cnt: %u, factor: %u, local_size: %u, utilization: %f\n", workspace_idx, launch_cnt, applied_factor, local_size, ((float)launch_cnt)/WORKSPACE_SIZE);
 
         // launch kernel
         // must wait after this one finishes, because of write to 'workspace_sizes'
@@ -393,7 +375,7 @@ kernel void relaunch_kernel(__global start_condition* workspace, __global uint* 
 
     clk_event_t marker_evt;
     err = enqueue_marker(q, launched_kernels_cnt, launched_kernels_evt, &marker_evt);
-    if ( err != 0) {
+    if (err != 0) {
         printf("Error enqueuing marker\n");
         goto cleanup_kernels_evt;
     }
