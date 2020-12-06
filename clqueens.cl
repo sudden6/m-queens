@@ -37,12 +37,11 @@ uint expansion_factor(uint placed) {
 //#define GPU_DEPTH 2
 //#define BOARDSIZE 8
 
-#define LAST_PLACED (BOARDSIZE - 1)
 #define FIRST_PLACED (BOARDSIZE - GPU_DEPTH)
 
 #define MAX_EXPANSION (GPU_DEPTH)
 #define SCRATCH_SIZE (WORKGROUP_SIZE * MAX_EXPANSION)
-#define WORK_FACTOR 2
+#define WORK_FACTOR 8
 
 void solver_core_single(const __global start_condition* work_in, __local start_condition* scratch, __local uint* scratch_fill, uint lookahead_depth) {
 	uint_fast32_t cols = work_in->cols;
@@ -157,6 +156,9 @@ kernel void solve_single(const __global start_condition* in_start, __global star
     solve_single_proto(in_start, out_base, out_cur_offs, scratch_buf, factor, &scratch_fill, &out_offs, 11);    
 }
 
+
+// Hide this pesky code which crashes RGA
+#ifndef RADEON_GPU_ANALYZER
 #define STR_HELPER(x) #x
 #define STR(x) STR_HELPER(x)
 
@@ -175,7 +177,7 @@ SOLVER_KERNEL(8)
 SOLVER_KERNEL(9)
 SOLVER_KERNEL(10)
 
-kernel void solve_final(const __global start_condition* in_start, __global uint* out_res, unsigned factor) {
+kernel void solve_final(const __global start_condition* in_start, __global ulong* out_res, unsigned factor) {
 	__local start_condition scratch_buf[WORKGROUP_SIZE * 2];
     __local uint scratch_fill;
     __local uint scratch_cnt;
@@ -238,10 +240,7 @@ kernel void solve_final(const __global start_condition* in_start, __global uint*
     }
 }
 
-// Hide this pesky code which crashes RGA
-#ifndef RADEON_GPU_ANALYZER
-
-kernel void relaunch_kernel(__global start_condition* workspace, __global uint* workspace_sizes, __global uint* out_res, unsigned placed, unsigned recursion) {
+kernel void relaunch_kernel(__global start_condition* workspace, __global uint* workspace_sizes, __global ulong* out_res, unsigned placed, unsigned recursion) {
     queue_t q = get_default_queue();
     uint state = placed & CLSOLVER_STATE_MASK;
 
@@ -433,23 +432,12 @@ kernel void relaunch_kernel(__global start_condition* workspace, __global uint* 
 
 #define SUM_REDUCTION_FACTOR 1024*32
 
-kernel void sum_results(const __global uint* res_in, __global ulong* res_out) {
+kernel void sum_results(const __global ulong* res_in, __global ulong* res_out) {
     uint cnt = 0;
-    __local uint wg_cnt;
-
-    if (L == 0) {
-        wg_cnt = 0;
-    }
 
     for(uint i = 0; i < SUM_REDUCTION_FACTOR; i++) {
         cnt += res_in[G*SUM_REDUCTION_FACTOR+i];
     }
 
-    work_group_barrier(CLK_LOCAL_MEM_FENCE);
-    atomic_add(&wg_cnt, cnt);
-    work_group_barrier(CLK_LOCAL_MEM_FENCE);
-
-    if (L == 0) {
-        res_out[G] += wg_cnt;
-    }
+    res_out[G] += cnt;
 }

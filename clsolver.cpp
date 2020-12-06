@@ -79,7 +79,7 @@ bool ClSolver::init(uint8_t boardsize, uint8_t placed)
     }
 
     size_t workspace_mem = WORKSPACE_SIZE * (gpu_depth - 1) * sizeof(start_condition_t);
-    size_t res_mem = WORKSPACE_SIZE * sizeof(cl_uint);
+    size_t res_mem = WORKSPACE_SIZE * sizeof(cl_ulong);
     size_t dev_mem = workspace_mem + res_mem;
 
     std::cout << "OCL Kernel memory: " << std::to_string(dev_mem/1024) << "KB" << std::endl;
@@ -87,7 +87,7 @@ bool ClSolver::init(uint8_t boardsize, uint8_t placed)
     return true;
 }
 
-typedef cl_uint result_type;
+typedef cl_ulong result_type;
 
 typedef struct {
     std::vector<start_condition_t> hostStartBuf;
@@ -161,7 +161,7 @@ void ClSolver::threadWorker(uint32_t id, std::mutex &pre_lock)
 
         // Needs OpenCL 1.2
         // Allocate result buffer on device
-        b.clOutputBuf = cl::Buffer(context, CL_MEM_READ_WRITE | CL_MEM_HOST_READ_ONLY,
+        b.clOutputBuf = cl::Buffer(context, CL_MEM_READ_WRITE,
             WORKSPACE_SIZE * sizeof(result_type), nullptr, &err);
         if(err != CL_SUCCESS) {
             std::cout << "cl::Buffer results_buf failed: " << err << std::endl;
