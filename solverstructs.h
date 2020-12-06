@@ -25,8 +25,7 @@ struct __attribute__ ((packed)) start_condition_t {
 
 typedef struct start_condition_t start_condition;
 
-#define CLSOLVER_STATE_MASK (1U << 31)
 #define CLSOLVER_FEED (0)
-#define CLSOLVER_CLEANUP CLSOLVER_STATE_MASK
+#define CLSOLVER_CLEANUP (1)
 
 #endif // SOLVERSTRUCTS_H

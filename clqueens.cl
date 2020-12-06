@@ -7,9 +7,8 @@ struct __attribute__ ((packed)) start_condition_t {
 
 typedef struct start_condition_t start_condition;
 
-#define CLSOLVER_STATE_MASK (1U << 31)
 #define CLSOLVER_FEED (0)
-#define CLSOLVER_CLEANUP CLSOLVER_STATE_MASK
+#define CLSOLVER_CLEANUP (1)
 
 // END SYNC
 
@@ -240,9 +239,8 @@ kernel void solve_final(const __global start_condition* in_start, __global ulong
     }
 }
 
-kernel void relaunch_kernel(__global start_condition* workspace, __global uint* workspace_sizes, __global ulong* out_res, unsigned placed, unsigned recursion) {
+kernel void relaunch_kernel(__global start_condition* workspace, __global uint* workspace_sizes, __global ulong* out_res, unsigned state, unsigned recursion) {
     queue_t q = get_default_queue();
-    uint state = placed & CLSOLVER_STATE_MASK;
 
     uint limits[GPU_DEPTH - 1];
 
@@ -253,7 +251,7 @@ kernel void relaunch_kernel(__global start_condition* workspace, __global uint* 
     limits[GPU_DEPTH-2] = workspace_sizes[GPU_DEPTH - 2];
 
     // Find maximum possible kernel launches
-    //printf("placed: 0x%x, recursion: %u\n", placed, recursion);
+    //printf("state: 0x%x, recursion: %u\n", state, recursion);
     for(uint i = 0; i < (GPU_DEPTH - 2); i++) {
         uint input_limit = workspace_sizes[i];
         uint output_limit = (WORKSPACE_SIZE - workspace_sizes[i+1]) / expansion_factor(i + FIRST_PLACED);
@@ -401,7 +399,7 @@ kernel void relaunch_kernel(__global start_condition* workspace, __global uint* 
     }
 
     void (^recursion_blk)(void) = ^{
-                    relaunch_kernel(workspace, workspace_sizes, out_res, placed, recursion + 1);
+                    relaunch_kernel(workspace, workspace_sizes, out_res, state, recursion + 1);
                 };
 
     // self enqueue recursion
