@@ -413,7 +413,7 @@ kernel void relaunch_kernel(__global start_condition* workspace, __global uint* 
 #define SUM_REDUCTION_FACTOR 1024*32
 
 kernel void sum_results(const __global ulong* res_in, __global ulong* res_out) {
-    uint cnt = 0;
+    ulong cnt = 0;
 
     for(uint i = 0; i < SUM_REDUCTION_FACTOR; i++) {
         cnt += res_in[G*SUM_REDUCTION_FACTOR+i];
