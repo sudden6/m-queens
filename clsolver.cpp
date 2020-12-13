@@ -28,7 +28,7 @@ constexpr uint_fast8_t MAXN = 29;
 static constexpr size_t NUM_CMDQUEUES = 1;
 constexpr uint_fast8_t GPU_DEPTH = 11;
 constexpr size_t WORKGROUP_SIZE = 64;
-constexpr size_t WORKSPACE_SIZE = 1024*1024*48;
+constexpr size_t WORKSPACE_SIZE = 1024*1024*24;
 constexpr size_t WORKSPACE_DEPTH = GPU_DEPTH - 1;
 constexpr size_t SUM_REDUCTION_FACTOR = 1024*32;
 
@@ -80,7 +80,8 @@ bool ClSolver::init(uint8_t boardsize, uint8_t placed)
 
     size_t workspace_mem = WORKSPACE_SIZE * WORKSPACE_DEPTH * sizeof(start_condition_t);
     size_t res_mem = WORKSPACE_SIZE * sizeof(cl_ulong);
-    size_t dev_mem = workspace_mem + res_mem;
+    size_t sum_mem = WORKSPACE_SIZE/SUM_REDUCTION_FACTOR * sizeof(cl_ulong);
+    size_t dev_mem = workspace_mem + res_mem + sum_mem;
 
     std::cout << "OCL Kernel memory: " << std::to_string(dev_mem/(1024*1024)) << "MB" << std::endl;
     std::cout << "Threads: " << std::to_string(NUM_CMDQUEUES) << std::endl;
@@ -195,6 +196,7 @@ bool ClSolver::allocateThreads(size_t cnt) {
             std::cout << "sumKernel.setArg(1 failed: " << err << std::endl;
         }
 
+        t.hostStartBuf.resize(WORKSPACE_SIZE);
     }
 
     return true;
@@ -241,12 +243,11 @@ void ClSolver::threadWorker(uint32_t id, std::mutex &pre_lock)
 
     bool finished = false;
     bool feeding = true;
-    std::vector<start_condition_t> hostStartBuf(WORKSPACE_SIZE);
     std::vector<cl_uint> buffer_fill(WORKSPACE_DEPTH);
     while (!finished) {
         if (!pre.empty()) {
-            auto curIt = hostStartBuf.begin() + hostStartFill;
-            const auto endIt = hostStartBuf.cend();
+            auto curIt = t.hostStartBuf.begin() + hostStartFill;
+            const auto endIt = t.hostStartBuf.cend();
             // TODO(sudden6): cleanup
             while(curIt < endIt) {
                 curIt = pre.getNext(curIt, endIt);
@@ -261,7 +262,7 @@ void ClSolver::threadWorker(uint32_t id, std::mutex &pre_lock)
                 }
             }
 
-            hostStartFill = std::distance(hostStartBuf.begin(), curIt);
+            hostStartFill = std::distance(t.hostStartBuf.begin(), curIt);
         }
 
         err = t.cmdQueue.enqueueReadBuffer(t.clWorkspaceSizeBuf, CL_TRUE, 0, buffer_fill.size() * sizeof(cl_uint), buffer_fill.data());
@@ -290,7 +291,6 @@ void ClSolver::threadWorker(uint32_t id, std::mutex &pre_lock)
                 std::cout << "solve_subboard.setArg(3 failed: " << err << std::endl;
             }
 
-            hostStartBuf.clear();
             std::cout << "Starting cleanup" << std::endl;
         } else {
             const size_t first_free = WORKSPACE_SIZE - first_fill;
@@ -303,7 +303,7 @@ void ClSolver::threadWorker(uint32_t id, std::mutex &pre_lock)
                 // write start conditions to workspace
                 err = t.cmdQueue.enqueueWriteBuffer(t.clWorkspaceBuf, CL_TRUE,
                                                     first_fill * sizeof(start_condition), batchSize * sizeof(start_condition),
-                                                    hostStartBuf.data() + hostStartFill, nullptr, nullptr);
+                                                    t.hostStartBuf.data() + hostStartFill, nullptr, nullptr);
                 if(err != CL_SUCCESS) {
                     std::cout << "Failed to write start buffer: " << err << std::endl;
                 }

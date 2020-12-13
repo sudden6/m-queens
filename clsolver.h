@@ -35,6 +35,7 @@ private:
         cl::Buffer sumBuffer;
         std::unique_ptr<std::thread> thread;
         uint64_t result;
+        std::vector<start_condition_t> hostStartBuf;
     };
     bool allocateThreads(size_t cnt);
 
