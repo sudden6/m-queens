@@ -121,7 +121,7 @@ start_file::file_info start_file::parse_filename(const std::string& filename) {
     const std::regex parser{R"(N_(\d+)_D_(\d+)_(\d+)_(\d+)\.pre$)"};
     std::smatch matches;
 
-    if (!std::regex_match(filename, matches, parser) || matches.size() != 5) {
+    if (!std::regex_search(filename, matches, parser) || matches.size() != 5) {
         std::cout << "Failed to parse filename: " << filename << std::endl;
         return fi;
     }

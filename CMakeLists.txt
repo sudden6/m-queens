@@ -1,16 +1,16 @@
 cmake_minimum_required(VERSION 2.8)
 project(m-queens2)
 
-option(BOINC_ONLY "Build only stuff needed for BOINC" OFF)
-option(BUILD_STATIC "Build static binaries" OFF)
-option(NO_BOINC "Disable BOINC components" ON)
+option(BOINC_ONLY "Build only stuff needed for BOINC" ON)
+option(BUILD_STATIC "Build static binaries" ON)
+option(NO_BOINC "Disable BOINC components" OFF)
 # for static linking a path to the boinc static build is needed
 # boinc build commands:
 # mkdir -p /build/static_boinc/
 # ./configure --disable-server --disable-manager --disable-fcgi --disable-client --prefix=/build/static_boinc/
 # make
 # make install
-set(BOINC_STATIC_DIR "/build/static_boinc/lib64" CACHE PATH "BOINC static build directory")
+set(BOINC_STATIC_DIR "C:/build/static_boinc/" CACHE PATH "BOINC static build directory")
 
 set (CMAKE_CXX_STANDARD 11)
 
@@ -116,16 +116,72 @@ if (CMAKE_BUILD_TYPE STREQUAL Release)
 endif ()
 target_include_directories(${BOINC_PROJECT} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/cxxopts/include)
 target_include_directories(${BOINC_PROJECT} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_include_directories(${BOINC_PROJECT} PRIVATE ${BOINC_STATIC_DIR}/include/)
 
 if (${BUILD_STATIC})
     # Linking standard libs statically
     set(CMAKE_CXX_STANDARD_LIBRARIES "-Wl,-Bstatic,--whole-archive -lpthread -Wl,--no-whole-archive -static-libgcc -static-libstdc++")
     set(CMAKE_EXE_LINKER_FLAGS "--static --verbose")
-    target_link_libraries(${BOINC_PROJECT} ${BOINC_STATIC_DIR}/libboinc_api.a)
-    target_link_libraries(${BOINC_PROJECT} ${BOINC_STATIC_DIR}/libboinc.a)
+    target_link_libraries(${BOINC_PROJECT} ${BOINC_STATIC_DIR}/lib/libboinc_api.a)
+    target_link_libraries(${BOINC_PROJECT} ${BOINC_STATIC_DIR}/lib/libboinc.a)
 else()
     target_link_libraries(${BOINC_PROJECT} boinc)
     target_link_libraries(${BOINC_PROJECT} boinc_api)
+endif()
+
+set(BOINC_PROJECT_OCL m-queens2-boinc-ocl)
+
+find_package(OpenCL REQUIRED)
+
+# needed for the OpenCL C++ wrapper
+set(THREADS_PREFER_PTHREAD_FLAG ON)
+find_package(Threads REQUIRED)
+
+# copy OpenCL kernel source
+configure_file(${CMAKE_SOURCE_DIR}/clqueens.cl ./ COPYONLY)
+
+set(${BOINC_PROJECT_OCL}_SOURCES
+    boinc/main.cpp
+    clqueens.cl
+    clsolver.cpp
+    clsolver.h
+    cpusolver.h
+    cpusolver.cpp
+    presolver.cpp
+    presolver.h
+    result_file.cpp
+    result_file.h
+    solverstructs.h
+    serialize_util.cpp
+    serialize_util.h
+    start_file.cpp
+    start_file.h
+)
+
+add_executable(${BOINC_PROJECT_OCL} ${${BOINC_PROJECT_OCL}_SOURCES} "boinc/main.cpp")
+target_compile_definitions(${BOINC_PROJECT_OCL} PRIVATE OCL_SOLVER=1)
+# Strip binary for release builds
+if (CMAKE_BUILD_TYPE STREQUAL Release)
+    add_custom_command(TARGET ${BOINC_PROJECT_OCL} POST_BUILD
+            COMMAND ${CMAKE_STRIP} ${BOINC_PROJECT_OCL})
+endif ()
+target_include_directories(${BOINC_PROJECT_OCL} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/cxxopts/include)
+target_include_directories(${BOINC_PROJECT_OCL} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_include_directories(${BOINC_PROJECT_OCL} PRIVATE ${BOINC_STATIC_DIR}/include/)
+
+target_link_libraries(${BOINC_PROJECT_OCL} OpenCL::OpenCL)
+target_link_libraries(${BOINC_PROJECT_OCL} Threads::Threads)
+
+if (${BUILD_STATIC})
+    # Linking standard libs statically
+    set(CMAKE_CXX_STANDARD_LIBRARIES "-Wl,-Bstatic,--whole-archive -lpthread -Wl,--no-whole-archive -static-libgcc -static-libstdc++")
+    set(CMAKE_EXE_LINKER_FLAGS "--static --verbose")
+    target_link_libraries(${BOINC_PROJECT_OCL} ${BOINC_STATIC_DIR}/lib/libboinc_api.a)
+    target_link_libraries(${BOINC_PROJECT_OCL} ${BOINC_STATIC_DIR}/lib/libboinc_opencl.a)
+    target_link_libraries(${BOINC_PROJECT_OCL} ${BOINC_STATIC_DIR}/lib/libboinc.a)
+else()
+    target_link_libraries(${BOINC_PROJECT_OCL} boinc)
+    target_link_libraries(${BOINC_PROJECT_OCL} boinc_api)
 endif()
 
 endif()

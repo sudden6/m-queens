@@ -1,9 +1,15 @@
-#include "cpusolver.h"
 #include "solverstructs.h"
 #include "cxxopts.hpp"
 #include "result_file.h"
 #include "start_file.h"
 #include "presolver.h"
+
+#if OCL_SOLVER == 1
+#include "clsolver.h"
+#include <boinc/boinc_opencl.h>
+#else
+#include "cpusolver.h"
+#endif
 
 #include <boinc/boinc_api.h>
 #include <boinc/filesys.h>
@@ -109,7 +115,17 @@ int main(int argc, char **argv) {
         exit_msg("Couldn't open output file: " + resolved_outfile_name);
     }
 
+#if OCL_SOLVER == 1
+    cl_platform_id platform;
+    cl_device_id device;
+    if(boinc_get_opencl_ids(&device, &platform) != 0) {
+        exit_msg("Failed to get OpenCL device");
+    }
+
+    ISolver* solver = ClSolver::makeClSolver(cl::Platform(platform), cl::Device(device));
+#else
     ISolver* solver = new cpuSolver();
+#endif
     if(!solver) {
         exit_msg("Failed to create solver");
     }

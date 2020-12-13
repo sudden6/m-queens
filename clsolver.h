@@ -20,6 +20,8 @@ public:
     static void enumerate_devices();
 
     static ClSolver* makeClSolver(unsigned int platform, unsigned int device);
+    static ClSolver* makeClSolver(cl::Platform platform, cl::Device device);
+
 
 private:
     ClSolver();

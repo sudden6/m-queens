@@ -11,7 +11,6 @@
 #include <list>
 #include <thread>
 #include "presolver.h"
-#include "cpusolver.h"
 
 ClSolver::ClSolver()
 {
@@ -27,10 +26,9 @@ constexpr uint_fast8_t MAXN = 29;
  */
 
 static constexpr size_t NUM_CMDQUEUES = 1;
-constexpr uint_fast8_t GPU_DEPTH = 10;
+constexpr uint_fast8_t GPU_DEPTH = 11;
 constexpr size_t WORKGROUP_SIZE = 64;
-constexpr size_t WORKSPACE_SIZE = 1024*1024*60;
-constexpr size_t NUM_BATCHES = 1;
+constexpr size_t WORKSPACE_SIZE = 1024*1024*50;
 constexpr size_t WORKSPACE_DEPTH = GPU_DEPTH - 1;
 
 bool ClSolver::init(uint8_t boardsize, uint8_t placed)
@@ -341,7 +339,7 @@ PreSolver ClSolver::nextPre(std::mutex& pre_lock)
     std::lock_guard<std::mutex> guard(pre_lock);
 
     if(solved < start.size()) {
-        //std::cout << "Solving: " << solved << "/" << start.size() << std::endl;
+        std::cout << "Solving: " << solved << "/" << start.size() << std::endl;
         result = PreSolver(boardsize, placed, presolve_depth, start[solved]);
         solved++;
     }
@@ -438,15 +436,10 @@ void ClSolver::enumerate_devices()
     }
 }
 
+
+
 ClSolver* ClSolver::makeClSolver(unsigned int platform, unsigned int device)
 {
-    cl_int err = 0;
-    ClSolver* solver = new ClSolver();
-    if(!solver) {
-        std::cout << "Failed to allocate memory" << std::endl;
-        return nullptr;
-    }
-
     std::vector<cl::Platform> platforms;
     cl::Platform::get(&platforms);
     if(platforms.empty()) {
@@ -461,12 +454,9 @@ ClSolver* ClSolver::makeClSolver(unsigned int platform, unsigned int device)
 
     const cl::Platform& used_platform = platforms[platform];
 
-    std::cout << "Platform name: " << used_platform.getInfo<CL_PLATFORM_NAME>() << std::endl;
-    std::cout << "Platform version: " << used_platform.getInfo<CL_PLATFORM_VERSION>() << std::endl;
-
     std::vector<cl::Device> devices;
 
-    err = used_platform.getDevices(CL_DEVICE_TYPE_ALL, &devices);
+    cl_int err = used_platform.getDevices(CL_DEVICE_TYPE_ALL, &devices);
     if(err != CL_SUCCESS) {
         std::cout << "getDevices failed" << std::endl;
         return nullptr;
@@ -483,6 +473,34 @@ ClSolver* ClSolver::makeClSolver(unsigned int platform, unsigned int device)
     }
 
     const cl::Device& used_device = devices[device];
+
+    return makeClSolver(used_platform, used_device);
+}
+
+ClSolver* ClSolver::makeClSolver(cl::Platform platform, cl::Device used_device)
+{
+    cl_int err = 0;
+    ClSolver* solver = new ClSolver();
+    if(!solver) {
+        std::cout << "Failed to allocate memory" << std::endl;
+        return nullptr;
+    }
+
+    std::cout << "Platform name: " << platform.getInfo<CL_PLATFORM_NAME>() << std::endl;
+    std::cout << "Platform version: " << platform.getInfo<CL_PLATFORM_VERSION>() << std::endl;
+
+    std::vector<cl::Device> devices;
+
+    err = platform.getDevices(CL_DEVICE_TYPE_ALL, &devices);
+    if(err != CL_SUCCESS) {
+        std::cout << "getDevices failed" << std::endl;
+        return nullptr;
+    }
+
+    if(devices.empty()) {
+        std::cout << "No devices found" << std::endl;
+        return nullptr;
+    }
 
     // check if device is available
     bool available = used_device.getInfo<CL_DEVICE_AVAILABLE>(&err);
@@ -524,6 +542,7 @@ ClSolver* ClSolver::makeClSolver(unsigned int platform, unsigned int device)
 
     return solver;
 }
+
 
 
 
