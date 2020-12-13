@@ -118,11 +118,18 @@ int main(int argc, char **argv) {
 #if OCL_SOLVER == 1
     cl_platform_id platform;
     cl_device_id device;
-    if(boinc_get_opencl_ids(&device, &platform) != 0) {
-        exit_msg("Failed to get OpenCL device");
-    }
+    ISolver* solver = nullptr;
 
-    ISolver* solver = ClSolver::makeClSolver(cl::Platform(platform), cl::Device(device));
+    if(standalone) {
+        // use default
+        solver = ClSolver::makeClSolver(0, 0);
+    } else {
+        if(boinc_get_opencl_ids(&device, &platform) != 0) {
+            exit_msg("Failed to get OpenCL device");
+        }
+
+        solver = ClSolver::makeClSolver(cl::Platform(platform), cl::Device(device));
+    }
 #else
     ISolver* solver = new cpuSolver();
 #endif
