@@ -7,6 +7,8 @@
 #include <cstdlib>
 #include <vector>
 #include <mutex>
+#include <memory>
+#include <thread>
 #include "solverstructs.h"
 #include "presolver.h"
 #include "isolver.h"
@@ -21,6 +23,20 @@ public:
 
     static ClSolver* makeClSolver(unsigned int platform, unsigned int device);
     static ClSolver* makeClSolver(cl::Platform platform, cl::Device device);
+
+private:
+    struct ThreadData {
+        cl::CommandQueue cmdQueue;
+        cl::Kernel clRelaunchKernel;
+        cl::Buffer clWorkspaceBuf;
+        cl::Buffer clWorkspaceSizeBuf;
+        cl::Buffer clOutputBuf;
+        cl::Kernel sumKernel;
+        cl::Buffer sumBuffer;
+        std::unique_ptr<std::thread> thread;
+        uint64_t result;
+    };
+    bool allocateThreads(size_t cnt);
 
 
 private:
@@ -37,8 +53,9 @@ private:
     uint8_t boardsize = 0;
     cl::Context context;
     cl::Device device;
+    cl::DeviceCommandQueue devQueue;
     cl::Program program;
-    std::vector<uint64_t> results;
+    std::vector<ThreadData> threads;
 };
 
 #endif // CLSOLVER_H
