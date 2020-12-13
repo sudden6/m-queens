@@ -448,7 +448,7 @@ ClSolver* ClSolver::makeClSolver(unsigned int platform, unsigned int device)
     }
 
     if(!(platform < platforms.size())) {
-        std::cout << "Invalid OpenCL platform" << std::endl;
+        std::cout << "Invalid OpenCL platform index" << std::endl;
         return nullptr;
     }
 
@@ -468,7 +468,7 @@ ClSolver* ClSolver::makeClSolver(unsigned int platform, unsigned int device)
     }
 
     if(!(device < devices.size())) {
-        std::cout << "Invalid OpenCL platform" << std::endl;
+        std::cout << "Invalid OpenCL device index" << std::endl;
         return nullptr;
     }
 
@@ -486,26 +486,42 @@ ClSolver* ClSolver::makeClSolver(cl::Platform platform, cl::Device used_device)
         return nullptr;
     }
 
-    std::cout << "Platform name: " << platform.getInfo<CL_PLATFORM_NAME>() << std::endl;
-    std::cout << "Platform version: " << platform.getInfo<CL_PLATFORM_VERSION>() << std::endl;
-
-    std::vector<cl::Device> devices;
-
-    err = platform.getDevices(CL_DEVICE_TYPE_ALL, &devices);
+    std::cout << "Platform name:    " << platform.getInfo<CL_PLATFORM_NAME>(&err) << std::endl;
     if(err != CL_SUCCESS) {
-        std::cout << "getDevices failed" << std::endl;
+        std::cout << "getInfogetInfo<CL_PLATFORM_NAME> failed: " << std::to_string(err) << std::endl;
         return nullptr;
     }
 
-    if(devices.empty()) {
-        std::cout << "No devices found" << std::endl;
+    std::cout << "Platform version: " << platform.getInfo<CL_PLATFORM_VERSION>() << std::endl;
+    if(err != CL_SUCCESS) {
+        std::cout << "getInfogetInfo<CL_PLATFORM_VERSION> failed: " << std::to_string(err) << std::endl;
+        return nullptr;
+    }
+
+    std::cout << "Device:           " << used_device.getInfo<CL_DEVICE_NAME>(&err) << std::endl;
+    if(err != CL_SUCCESS) {
+        std::cout << "getInfogetInfo<CL_DEVICE_NAME> failed: " << std::to_string(err) << std::endl;
+        return nullptr;
+    }
+
+    std::string version_info = used_device.getInfo<CL_DEVICE_VERSION>(&err);
+    std::cout << "Device version:   " << version_info << std::endl << std::endl;
+    if(err != CL_SUCCESS) {
+        std::cout << "getInfo<CL_DEVICE_VERSION> failed: " << std::to_string(err) << std::endl;
+        return nullptr;
+    }
+
+    // See: https://www.khronos.org/registry/OpenCL/sdk/2.2/docs/man/html/clGetDeviceInfo.html
+    const std::string min_version = "OpenCL 2.";
+    if (version_info.compare(0, min_version.length(), min_version) != 0) {
+        std::cout << "Not an OpenCL 2.x device, version: " << version_info << std::endl;
         return nullptr;
     }
 
     // check if device is available
     bool available = used_device.getInfo<CL_DEVICE_AVAILABLE>(&err);
     if(err != CL_SUCCESS) {
-        std::cout << "getInfo<CL_DEVICE_AVAILABLE> failed" << std::endl;
+        std::cout << "getInfo<CL_DEVICE_AVAILABLE> failed: " << std::to_string(err) << std::endl;
         return nullptr;
     }
 
@@ -515,13 +531,6 @@ ClSolver* ClSolver::makeClSolver(cl::Platform platform, cl::Device used_device)
     }
 
     solver->device = used_device;
-
-    std::cout << "selected Device: " << used_device.getInfo<CL_DEVICE_NAME>(&err) << std::endl;
-    if(err != CL_SUCCESS) {
-        std::cout << "getInfo<CL_DEVICE_NAME> failed" << std::endl;
-        return nullptr;
-    }
-
     solver->context = cl::Context(used_device, nullptr, nullptr, nullptr, &err);
     if(err != CL_SUCCESS) {
         std::cout << "cl::Context failed" << std::endl;
