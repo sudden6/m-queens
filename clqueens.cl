@@ -1,4 +1,4 @@
-// SYNC: Keep in sync with solverstructs.h
+R"(// SYNC: Keep in sync with solverstructs.h
 struct __attribute__ ((packed)) start_condition_t {
     uint cols; // bitfield with all the used columns
     uint diagl;// bitfield with all the used diagonals down left
@@ -263,7 +263,7 @@ kernel void relaunch_kernel(__global start_condition* workspace, __global uint* 
     }
 
     if (odd_launches == 0 && even_launches == 0) {
-        printf("Finished, recursion: %u\n", recursion);
+        //printf("Finished, recursion: %u\n", recursion);
         return;
     }
 
@@ -420,4 +420,4 @@ kernel void sum_results(const __global ulong* res_in, __global ulong* res_out) {
     }
 
     res_out[G] += cnt;
-}
+})"

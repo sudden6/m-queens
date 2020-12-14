@@ -28,7 +28,17 @@ constexpr uint_fast8_t MAXN = 29;
 static constexpr size_t NUM_CMDQUEUES = 1;
 constexpr uint_fast8_t GPU_DEPTH = 11;
 constexpr size_t WORKGROUP_SIZE = 64;
+#if GPU_RAM == 8
+// Targeted at GPUs with 8G VRAM
+constexpr size_t WORKSPACE_SIZE = 1024*1024*56;
+#elif GPU_RAM == 4
+// Targeted at GPUs with 4G VRAM
 constexpr size_t WORKSPACE_SIZE = 1024*1024*24;
+#elif GPU_RAM == 2
+constexpr size_t WORKSPACE_SIZE = 1024*1024*12;
+#else
+constexpr size_t WORKSPACE_SIZE = 1024*1024*12;
+#endif
 constexpr size_t WORKSPACE_DEPTH = GPU_DEPTH - 1;
 constexpr size_t SUM_REDUCTION_FACTOR = 1024*32;
 
@@ -566,10 +576,18 @@ ClSolver* ClSolver::makeClSolver(cl::Platform platform, cl::Device used_device)
         return nullptr;
     }
 
+#if BOINC_OCL_SOLVER == 1
+    // Hack to easily hardcode the kernel source
+    std::string sourceStr =
+#include "clqueens.cl"
+;
+#else
     // load source code
     std::ifstream sourcefile("clqueens.cl");
     std::string sourceStr((std::istreambuf_iterator<char>(sourcefile)),
                      std::istreambuf_iterator<char>());
+#endif
+
 
     // create OpenCL program
     solver->program = cl::Program(solver->context, sourceStr, false, &err);

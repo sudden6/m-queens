@@ -4,7 +4,7 @@
 #include "start_file.h"
 #include "presolver.h"
 
-#if OCL_SOLVER == 1
+#if BOINC_OCL_SOLVER == 1
 #include "clsolver.h"
 #include <boinc/boinc_opencl.h>
 #else
@@ -115,7 +115,7 @@ int main(int argc, char **argv) {
         exit_msg("Couldn't open output file: " + resolved_outfile_name);
     }
 
-#if OCL_SOLVER == 1
+#if BOINC_OCL_SOLVER == 1
     cl_platform_id platform;
     cl_device_id device;
     ISolver* solver = nullptr;
