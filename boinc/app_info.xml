@@ -1,0 +1,31 @@
+<app_info>
+<app>
+    <name>m-queens</name>
+</app>
+<file_info>
+    <name>m-queens2-boinc-ocl.exe</name>
+    <executable/>
+</file_info>
+<file_info>
+    <name>clqueens.cl</name>
+    <executable/>
+</file_info>
+<app_version>
+    <app_name>m-queens</app_name>
+    <version_num>1</version_num>
+    <api_version>7.16.14</api_version>
+      <coproc>
+		  <type>ATI</type>
+          <count>1</count>
+      </coproc>
+      <avg_ncpus>0.15</avg_ncpus>
+      <max_ncpus>1</max_ncpus>
+    <file_ref>
+        <file_name>m-queens2-boinc-ocl.exe</file_name>
+        <main_program/>
+    </file_ref>
+	<file_ref>
+        <file_name>clqueens.cl</file_name>
+    </file_ref>
+</app_version>
+</app_info>
