@@ -6,10 +6,6 @@
     <name>m-queens2-boinc-ocl.exe</name>
     <executable/>
 </file_info>
-<file_info>
-    <name>clqueens.cl</name>
-    <executable/>
-</file_info>
 <app_version>
     <app_name>m-queens</app_name>
     <version_num>1</version_num>
@@ -23,9 +19,6 @@
     <file_ref>
         <file_name>m-queens2-boinc-ocl.exe</file_name>
         <main_program/>
-    </file_ref>
-	<file_ref>
-        <file_name>clqueens.cl</file_name>
     </file_ref>
 </app_version>
 </app_info>
