@@ -30,12 +30,12 @@ constexpr uint_fast8_t GPU_DEPTH = 11;
 constexpr size_t WORKGROUP_SIZE = 64;
 #if GPU_RAM == 8
 // Targeted at GPUs with 8G VRAM
-constexpr size_t WORKSPACE_SIZE = 1024*1024*56;
+constexpr size_t WORKSPACE_SIZE = 1024*1024*48;
 #elif GPU_RAM == 4
 // Targeted at GPUs with 4G VRAM
-constexpr size_t WORKSPACE_SIZE = 1024*1024*24;
+constexpr size_t WORKSPACE_SIZE = 1024*1024*20;
 #elif GPU_RAM == 2
-constexpr size_t WORKSPACE_SIZE = 1024*1024*12;
+constexpr size_t WORKSPACE_SIZE = 1024*1024*8;
 #else
 constexpr size_t WORKSPACE_SIZE = 1024*1024*12;
 #endif
