@@ -199,11 +199,13 @@ bool ClSolver::allocateThreads(size_t cnt) {
         err = t.sumKernel.setArg(0, t.clOutputBuf);
         if(err != CL_SUCCESS) {
             std::cout << "sumKernel.setArg(0 failed: " << err << std::endl;
+            return false;
         }
 
         t.sumKernel.setArg(1, t.sumBuffer);
         if(err != CL_SUCCESS) {
             std::cout << "sumKernel.setArg(1 failed: " << err << std::endl;
+            return false;
         }
 
         t.hostStartBuf.resize(WORKSPACE_SIZE);
