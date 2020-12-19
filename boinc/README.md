@@ -7,3 +7,11 @@ To install the optimized solver for m-queens on yoyo@home perform the following 
 4) You should now have:
   - C:\ProgramData\BOINC\projects\www.rechenkraft.net_yoyo\app_info.xml
   - C:\ProgramData\BOINC\projects\www.rechenkraft.net_yoyo\m-queens2-boinc-ocl-<x>G.exe
+  - C:\ProgramData\BOINC\projects\www.rechenkraft.net_yoyo\libOpenCL.dll
+
+This has been tested and confirmed working with:
+AMD Radeon RX550
+AMD Radeon RX570
+AMD Radeon RX580
+
+Nvidia cards will not work since they don't support OpenCL 2.x
