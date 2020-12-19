@@ -52,6 +52,7 @@ private:
     uint8_t presolve_depth = 0;
     uint8_t placed = 0;
     uint8_t boardsize = 0;
+    uint64_t workspace_size = 0;
     cl::Context context;
     cl::Device device;
     cl::DeviceCommandQueue devQueue;

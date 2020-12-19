@@ -28,17 +28,6 @@ constexpr uint_fast8_t MAXN = 29;
 static constexpr size_t NUM_CMDQUEUES = 1;
 constexpr uint_fast8_t GPU_DEPTH = 11;
 constexpr size_t WORKGROUP_SIZE = 64;
-#if GPU_RAM == 8
-// Targeted at GPUs with 8G VRAM
-constexpr size_t WORKSPACE_SIZE = 1024*1024*48;
-#elif GPU_RAM == 4
-// Targeted at GPUs with 4G VRAM
-constexpr size_t WORKSPACE_SIZE = 1024*1024*20;
-#elif GPU_RAM == 2
-constexpr size_t WORKSPACE_SIZE = 1024*1024*8;
-#else
-constexpr size_t WORKSPACE_SIZE = 1024*1024*12;
-#endif
 constexpr size_t WORKSPACE_DEPTH = GPU_DEPTH - 1;
 constexpr size_t SUM_REDUCTION_FACTOR = 1024*32;
 
@@ -68,7 +57,7 @@ bool ClSolver::init(uint8_t boardsize, uint8_t placed)
     optionsStream << "-cl-std=CL2.0"
                   << " -DBOARDSIZE=" << std::to_string(boardsize)
                   << " -DGPU_DEPTH=" <<std::to_string(gpu_depth)
-                  << " -DWORKSPACE_SIZE=" <<std::to_string(WORKSPACE_SIZE)
+                  << " -DWORKSPACE_SIZE=" <<std::to_string(workspace_size)
                   << " -DWORKGROUP_SIZE=" <<std::to_string(WORKGROUP_SIZE);
     std::string options = optionsStream.str();
 
@@ -88,9 +77,9 @@ bool ClSolver::init(uint8_t boardsize, uint8_t placed)
         return false;
     }
 
-    size_t workspace_mem = WORKSPACE_SIZE * WORKSPACE_DEPTH * sizeof(start_condition_t);
-    size_t res_mem = WORKSPACE_SIZE * sizeof(cl_ulong);
-    size_t sum_mem = WORKSPACE_SIZE/SUM_REDUCTION_FACTOR * sizeof(cl_ulong);
+    size_t workspace_mem = workspace_size * WORKSPACE_DEPTH * sizeof(start_condition_t);
+    size_t res_mem = workspace_size * sizeof(cl_ulong);
+    size_t sum_mem = workspace_size/SUM_REDUCTION_FACTOR * sizeof(cl_ulong);
     size_t dev_mem = workspace_mem + res_mem + sum_mem;
 
     std::cout << "OCL Kernel memory: " << std::to_string(dev_mem/(1024*1024)) << "MB" << std::endl;
@@ -129,7 +118,7 @@ bool ClSolver::allocateThreads(size_t cnt) {
 
         // Allocate workspace buffer on device
         t.clWorkspaceBuf = cl::Buffer(context, CL_MEM_READ_WRITE | CL_MEM_HOST_WRITE_ONLY,
-            WORKSPACE_SIZE * WORKSPACE_DEPTH * sizeof(start_condition), nullptr, &err);
+            workspace_size * WORKSPACE_DEPTH * sizeof(start_condition), nullptr, &err);
         if(err != CL_SUCCESS) {
             std::cout << "cl::Buffer start_buf failed: " << err << std::endl;
             return false;
@@ -145,7 +134,7 @@ bool ClSolver::allocateThreads(size_t cnt) {
 
         // Allocate result buffer on device
         t.clOutputBuf = cl::Buffer(context, CL_MEM_READ_WRITE,
-            WORKSPACE_SIZE * sizeof(result_type), nullptr, &err);
+            workspace_size * sizeof(result_type), nullptr, &err);
         if(err != CL_SUCCESS) {
             std::cout << "cl::Buffer results_buf failed: " << err << std::endl;
             return false;
@@ -190,7 +179,7 @@ bool ClSolver::allocateThreads(size_t cnt) {
         }
 
         t.sumBuffer = cl::Buffer(context, CL_MEM_READ_WRITE,
-                                          WORKSPACE_SIZE/SUM_REDUCTION_FACTOR * sizeof(cl_ulong), nullptr, &err);
+                                          workspace_size/SUM_REDUCTION_FACTOR * sizeof(cl_ulong), nullptr, &err);
         if(err != CL_SUCCESS) {
             std::cout << "cl::Buffer sumBuffer failed: " << err << std::endl;
             return false;
@@ -208,7 +197,7 @@ bool ClSolver::allocateThreads(size_t cnt) {
             return false;
         }
 
-        t.hostStartBuf.resize(WORKSPACE_SIZE);
+        t.hostStartBuf.resize(workspace_size);
     }
 
     return true;
@@ -239,7 +228,7 @@ void ClSolver::threadWorker(uint32_t id, std::mutex &pre_lock)
     // zero the result buffer
     result_type pattern = 0;
     err = t.cmdQueue.enqueueFillBuffer(t.clOutputBuf, pattern,
-                                     0, WORKSPACE_SIZE * sizeof(result_type),
+                                     0, workspace_size * sizeof(result_type),
                                      nullptr, nullptr);
     if(err != CL_SUCCESS) {
         std::cout << "fillBuffer results_buf failed: " << err << std::endl;
@@ -305,7 +294,7 @@ void ClSolver::threadWorker(uint32_t id, std::mutex &pre_lock)
 
             std::cout << "Starting cleanup" << std::endl;
         } else {
-            const size_t first_free = WORKSPACE_SIZE - first_fill;
+            const size_t first_free = workspace_size - first_fill;
             const size_t batchSize = std::min(hostStartFill, first_free);
             hostStartFill -= batchSize;
 
@@ -343,7 +332,7 @@ void ClSolver::threadWorker(uint32_t id, std::mutex &pre_lock)
     // zero the sum buffer
     err = t.cmdQueue.enqueueFillBuffer(t.sumBuffer, static_cast<cl_ulong>(0),
                                      0,
-                                     WORKSPACE_SIZE/SUM_REDUCTION_FACTOR * sizeof(cl_ulong),
+                                     workspace_size/SUM_REDUCTION_FACTOR * sizeof(cl_ulong),
                                      nullptr, nullptr);
     if(err != CL_SUCCESS) {
         std::cout << "fillBuffer clWorkspaceSizeBuf failed: " << err << std::endl;
@@ -352,13 +341,13 @@ void ClSolver::threadWorker(uint32_t id, std::mutex &pre_lock)
 
     // Launch kernel to sum results
     err = t.cmdQueue.enqueueNDRangeKernel(t.sumKernel, cl::NullRange,
-                                        cl::NDRange{WORKSPACE_SIZE/SUM_REDUCTION_FACTOR}, cl::NullRange,
+                                        cl::NDRange{workspace_size/SUM_REDUCTION_FACTOR}, cl::NullRange,
                                         nullptr, nullptr);
     if(err != CL_SUCCESS) {
         std::cout << "enqueueNDRangeKernel(sumKernel) failed: " << err << std::endl;
     }
 
-    std::vector<cl_ulong> sumHostBuffer(WORKSPACE_SIZE/SUM_REDUCTION_FACTOR);
+    std::vector<cl_ulong> sumHostBuffer(workspace_size/SUM_REDUCTION_FACTOR);
     err = t.cmdQueue.enqueueReadBuffer(t.sumBuffer, CL_TRUE, 0, sumHostBuffer.size() * sizeof(cl_ulong), sumHostBuffer.data());
     if (err != CL_SUCCESS) {
         std::cout << "enqueueReadBuffer clWorkspaceSizeBuf failed: " << err << std::endl;
@@ -539,7 +528,7 @@ ClSolver* ClSolver::makeClSolver(cl::Platform platform, cl::Device used_device)
     }
 
     std::string version_info = used_device.getInfo<CL_DEVICE_VERSION>(&err);
-    std::cout << "Device version:   " << version_info << std::endl << std::endl;
+    std::cout << "Device version:   " << version_info << std::endl;
     if(err != CL_SUCCESS) {
         std::cout << "getInfo<CL_DEVICE_VERSION> failed: " << std::to_string(err) << std::endl;
         return nullptr;
@@ -565,6 +554,27 @@ ClSolver* ClSolver::makeClSolver(cl::Platform platform, cl::Device used_device)
     }
 
     solver->device = used_device;
+
+    cl_ulong memory_size = used_device.getInfo<CL_DEVICE_GLOBAL_MEM_SIZE>(&err);
+    if(err != CL_SUCCESS) {
+        std::cout << "getInfo<CL_DEVICE_GLOBAL_MEM_SIZE> failed: " << std::to_string(err) << std::endl;
+        return nullptr;
+    }
+
+    std::cout << "Device memory:    " << std::to_string(memory_size/(1024*1024)) << "MB" << std::endl << std::endl;
+
+    cl_ulong memory_size_gb = memory_size / (1024*1024*1024);
+    if (memory_size_gb > 8) {
+        solver->workspace_size = 1024*1024*48;
+    } else if (memory_size_gb > 4) {
+        solver->workspace_size = 1024*1024*20;
+    } else if (memory_size_gb > 2) {
+        solver->workspace_size = 1024*1024*8;
+    } else {
+        std::cout << "Not enough memory" << std::endl;
+        return nullptr;
+    }
+
     solver->context = cl::Context(used_device, nullptr, nullptr, nullptr, &err);
     if(err != CL_SUCCESS) {
         std::cout << "cl::Context failed" << std::endl;

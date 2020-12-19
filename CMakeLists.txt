@@ -158,40 +158,33 @@ set(${BOINC_PROJECT_OCL}_SOURCES
     start_file.h
 )
 
-function(create_boinc_ocl GPU_RAM_SIZE)
-    set(target "m-queens2-boinc-ocl-${GPU_RAM_SIZE}G")
-    message("Building: ${target}")
+set(target "m-queens2-boinc-ocl")
 
-    add_executable(${target} ${${BOINC_PROJECT_OCL}_SOURCES})
-    target_compile_definitions(${target} PRIVATE BOINC_OCL_SOLVER=1)
-    target_compile_definitions(${target} PRIVATE GPU_RAM=${GPU_RAM_SIZE})
+add_executable(m-queens2-boinc-ocl ${${BOINC_PROJECT_OCL}_SOURCES})
+target_compile_definitions(m-queens2-boinc-ocl PRIVATE BOINC_OCL_SOLVER=1)
+target_compile_definitions(m-queens2-boinc-ocl PRIVATE GPU_RAM=${GPU_RAM_SIZE})
 
-    # Strip binary for release builds
-    if (CMAKE_BUILD_TYPE STREQUAL Release)
-        set_target_properties(${target} PROPERTIES LINK_FLAGS_RELEASE -s)
-    endif ()
-    target_include_directories(${target} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/cxxopts/include)
-    target_include_directories(${target} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-    target_include_directories(${target} PRIVATE ${BOINC_STATIC_DIR}/include/)
+# Strip binary for release builds
+if (CMAKE_BUILD_TYPE STREQUAL Release)
+    set_target_properties(m-queens2-boinc-ocl PROPERTIES LINK_FLAGS_RELEASE -s)
+endif ()
+target_include_directories(m-queens2-boinc-ocl PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/cxxopts/include)
+target_include_directories(m-queens2-boinc-ocl PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_include_directories(m-queens2-boinc-ocl PRIVATE ${BOINC_STATIC_DIR}/include/)
 
-    target_link_libraries(${target} OpenCL::OpenCL)
-    target_link_libraries(${target} Threads::Threads)
+target_link_libraries(m-queens2-boinc-ocl OpenCL::OpenCL)
+target_link_libraries(m-queens2-boinc-oclThreads::Threads)
 
-    if (${BUILD_STATIC})
-        # Linking standard libs statically
-        set(CMAKE_CXX_STANDARD_LIBRARIES "-Wl,-Bstatic,--whole-archive -lpthread -Wl,--no-whole-archive -static-libgcc -static-libstdc++")
-        set(CMAKE_EXE_LINKER_FLAGS "--static --verbose")
-        target_link_libraries(${target} ${BOINC_STATIC_DIR}/lib/libboinc_api.a)
-        target_link_libraries(${target} ${BOINC_STATIC_DIR}/lib/libboinc_opencl.a)
-        target_link_libraries(${target} ${BOINC_STATIC_DIR}/lib/libboinc.a)
-    else()
-        target_link_libraries(${target} boinc)
-        target_link_libraries(${target} boinc_api)
-    endif()
-endfunction()
-
-create_boinc_ocl(2)
-create_boinc_ocl(4)
-create_boinc_ocl(8)
+if (${BUILD_STATIC})
+    # Linking standard libs statically
+    set(CMAKE_CXX_STANDARD_LIBRARIES "-Wl,-Bstatic,--whole-archive -lpthread -Wl,--no-whole-archive -static-libgcc -static-libstdc++")
+    set(CMAKE_EXE_LINKER_FLAGS "--static --verbose")
+    target_link_libraries(m-queens2-boinc-ocl ${BOINC_STATIC_DIR}/lib/libboinc_api.a)
+    target_link_libraries(m-queens2-boinc-ocl ${BOINC_STATIC_DIR}/lib/libboinc_opencl.a)
+    target_link_libraries(m-queens2-boinc-ocl ${BOINC_STATIC_DIR}/lib/libboinc.a)
+else()
+    target_link_libraries(m-queens2-boinc-ocl boinc)
+    target_link_libraries(m-queens2-boinc-ocl boinc_api)
+endif()
 
 endif()
