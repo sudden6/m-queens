@@ -564,11 +564,11 @@ ClSolver* ClSolver::makeClSolver(cl::Platform platform, cl::Device used_device)
     std::cout << "Device memory:    " << std::to_string(memory_size/(1024*1024)) << "MB" << std::endl << std::endl;
 
     cl_ulong memory_size_gb = memory_size / (1024*1024*1024);
-    if (memory_size_gb > 8) {
+    if (memory_size_gb >= 8) {
         solver->workspace_size = 1024*1024*48;
-    } else if (memory_size_gb > 4) {
+    } else if (memory_size_gb >= 4) {
         solver->workspace_size = 1024*1024*20;
-    } else if (memory_size_gb > 2) {
+    } else if (memory_size_gb >= 2) {
         solver->workspace_size = 1024*1024*8;
     } else {
         std::cout << "Not enough memory" << std::endl;
