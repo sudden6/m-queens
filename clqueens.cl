@@ -1,4 +1,4 @@
-R"(// SYNC: Keep in sync with solverstructs.h
+// SYNC: Keep in sync with solverstructs.h
 struct __attribute__ ((packed)) start_condition_t {
     uint cols; // bitfield with all the used columns
     uint diagl;// bitfield with all the used diagonals down left
@@ -270,7 +270,7 @@ kernel void relaunch_kernel(__global start_condition* workspace, __global uint* 
 #if 1
     // An unlimited recursion level potentially allows to fully use the GPU queue,
     // but this might be a corner case in the code and result in problems
-    if (recursion > 1000) {
+    if (recursion > 500) {
         //printf("Recursion limit\n");
         return;
     }
@@ -420,4 +420,4 @@ kernel void sum_results(const __global ulong* res_in, __global ulong* res_out) {
     }
 
     res_out[G] += cnt;
-})"
+}
