@@ -18,10 +18,6 @@ if (NOT ${BOINC_ONLY} AND NOT ${BUILD_STATIC})
 
 find_package(OpenCL REQUIRED)
 
-# needed for the OpenCL C++ wrapper
-set(THREADS_PREFER_PTHREAD_FLAG ON)
-find_package(Threads REQUIRED)
-
 find_package(OpenMP)
 if (OPENMP_FOUND)
     set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS}")
@@ -52,7 +48,6 @@ set(${PROJECT_NAME}_SOURCES
 
 add_executable(${PROJECT_NAME} ${${PROJECT_NAME}_SOURCES} "main.cpp")
 target_link_libraries(${PROJECT_NAME} OpenCL::OpenCL)
-target_link_libraries(${PROJECT_NAME} Threads::Threads)
 target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/cxxopts/include)
 
 # copy OpenCL kernel source
@@ -158,11 +153,8 @@ set(${BOINC_PROJECT_OCL}_SOURCES
     start_file.h
 )
 
-set(target "m-queens2-boinc-ocl")
-
 add_executable(m-queens2-boinc-ocl ${${BOINC_PROJECT_OCL}_SOURCES})
 target_compile_definitions(m-queens2-boinc-ocl PRIVATE BOINC_OCL_SOLVER=1)
-target_compile_definitions(m-queens2-boinc-ocl PRIVATE GPU_RAM=${GPU_RAM_SIZE})
 
 # Strip binary for release builds
 if (CMAKE_BUILD_TYPE STREQUAL Release)
@@ -173,7 +165,6 @@ target_include_directories(m-queens2-boinc-ocl PRIVATE ${CMAKE_CURRENT_SOURCE_DI
 target_include_directories(m-queens2-boinc-ocl PRIVATE ${BOINC_STATIC_DIR}/include/)
 
 target_link_libraries(m-queens2-boinc-ocl OpenCL::OpenCL)
-target_link_libraries(m-queens2-boinc-oclThreads::Threads)
 
 if (${BUILD_STATIC})
     # Linking standard libs statically
