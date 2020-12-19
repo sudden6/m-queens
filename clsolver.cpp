@@ -34,12 +34,12 @@ constexpr size_t SUM_REDUCTION_FACTOR = 1024*32;
 bool ClSolver::init(uint8_t boardsize, uint8_t placed)
 {
     if(boardsize > MAXN || boardsize < MINN) {
-        std::cout << "Invalid boardsize for ClSolver" << std::endl;
+        std::cerr << "Invalid boardsize for ClSolver" << std::endl;
         return false;
     }
 
     if(placed >= boardsize) {
-        std::cout << "Invalid number of placed queens for ClSolver" << std::endl;
+        std::cerr << "Invalid number of placed queens for ClSolver" << std::endl;
         return false;
     }
 
@@ -61,19 +61,19 @@ bool ClSolver::init(uint8_t boardsize, uint8_t placed)
                   << " -DWORKGROUP_SIZE=" <<std::to_string(WORKGROUP_SIZE);
     std::string options = optionsStream.str();
 
-    std::cout << "OPTIONS: " << options << std::endl;
+    std::cerr << "OPTIONS: " << options << std::endl;
 
     cl_int builderr = program.build(options.c_str());
 
     cl_int err = 0;
-    std::cout << "OpenCL build log:" << std::endl;
+    std::cerr << "OpenCL build log:" << std::endl;
     auto buildlog = program.getBuildInfo<CL_PROGRAM_BUILD_LOG>(device, &err);
-    std::cout << buildlog << std::endl;
+    std::cerr << buildlog << std::endl;
     if(err != CL_SUCCESS) {
-        std::cout << "getBuildInfo<CL_PROGRAM_BUILD_LOG> failed" << std::endl;
+        std::cerr << "getBuildInfo<CL_PROGRAM_BUILD_LOG> failed" << std::endl;
     }
     if(builderr != CL_SUCCESS) {
-        std::cout << "program.build failed: " << builderr << std::endl;
+        std::cerr << "program.build failed: " << builderr << std::endl;
         return false;
     }
 
@@ -82,11 +82,11 @@ bool ClSolver::init(uint8_t boardsize, uint8_t placed)
     size_t sum_mem = workspace_size/SUM_REDUCTION_FACTOR * sizeof(cl_ulong);
     size_t dev_mem = workspace_mem + res_mem + sum_mem;
 
-    std::cout << "OCL Kernel memory: " << std::to_string(dev_mem/(1024*1024)) << "MB" << std::endl;
-    std::cout << "Threads: " << std::to_string(NUM_CMDQUEUES) << std::endl;
+    std::cerr << "OCL Kernel memory: " << std::to_string(dev_mem/(1024*1024)) << "MB" << std::endl;
+    std::cerr << "Threads: " << std::to_string(NUM_CMDQUEUES) << std::endl;
 
     if(!allocateThreads(NUM_CMDQUEUES)) {
-        std::cout << "Failed to allocate resource";
+        std::cerr << "Failed to allocate resource";
         return false;
     }
 
@@ -105,14 +105,14 @@ bool ClSolver::allocateThreads(size_t cnt) {
     for(ThreadData& t: threads) {
         t.cmdQueue = cl::CommandQueue(context, device, cl::QueueProperties::None, &err);
         if(err != CL_SUCCESS) {
-            std::cout << "failed to create command queue: " << err << std::endl;
+            std::cerr << "failed to create command queue: " << err << std::endl;
             return false;
         }
 
         // create device kernel
         t.clRelaunchKernel = cl::Kernel(program, "relaunch_kernel", &err);
         if(err != CL_SUCCESS) {
-            std::cout << "cl::Kernel failed: " << err << std::endl;
+            std::cerr << "cl::Kernel failed: " << err << std::endl;
             return false;
         }
 
@@ -120,7 +120,7 @@ bool ClSolver::allocateThreads(size_t cnt) {
         t.clWorkspaceBuf = cl::Buffer(context, CL_MEM_READ_WRITE | CL_MEM_HOST_WRITE_ONLY,
             workspace_size * WORKSPACE_DEPTH * sizeof(start_condition), nullptr, &err);
         if(err != CL_SUCCESS) {
-            std::cout << "cl::Buffer start_buf failed: " << err << std::endl;
+            std::cerr << "cl::Buffer start_buf failed: " << err << std::endl;
             return false;
         }
 
@@ -128,7 +128,7 @@ bool ClSolver::allocateThreads(size_t cnt) {
         t.clWorkspaceSizeBuf = cl::Buffer(context, CL_MEM_READ_WRITE,
             WORKSPACE_DEPTH * sizeof(cl_uint), nullptr, &err);
         if(err != CL_SUCCESS) {
-            std::cout << "cl::Buffer start_buf failed: " << err << std::endl;
+            std::cerr << "cl::Buffer start_buf failed: " << err << std::endl;
             return false;
         }
 
@@ -136,64 +136,64 @@ bool ClSolver::allocateThreads(size_t cnt) {
         t.clOutputBuf = cl::Buffer(context, CL_MEM_READ_WRITE,
             workspace_size * sizeof(result_type), nullptr, &err);
         if(err != CL_SUCCESS) {
-            std::cout << "cl::Buffer results_buf failed: " << err << std::endl;
+            std::cerr << "cl::Buffer results_buf failed: " << err << std::endl;
             return false;
         }
 
         // Set kernel parameters.
         err = t.clRelaunchKernel.setArg(0, t.clWorkspaceBuf);
         if(err != CL_SUCCESS) {
-            std::cout << "solve_subboard.setArg(0 failed: " << err << std::endl;
+            std::cerr << "solve_subboard.setArg(0 failed: " << err << std::endl;
             return false;
         }
 
         err = t.clRelaunchKernel.setArg(1, t.clWorkspaceSizeBuf);
         if(err != CL_SUCCESS) {
-            std::cout << "solve_subboard.setArg(1 failed: " << err << std::endl;
+            std::cerr << "solve_subboard.setArg(1 failed: " << err << std::endl;
             return false;
         }
 
         err = t.clRelaunchKernel.setArg(2, t.clOutputBuf);
         if(err != CL_SUCCESS) {
-            std::cout << "solve_subboard.setArg(2 failed: " << err << std::endl;
+            std::cerr << "solve_subboard.setArg(2 failed: " << err << std::endl;
             return false;
         }
 
         err = t.clRelaunchKernel.setArg(3, static_cast<cl_uint>(CLSOLVER_FEED));
         if(err != CL_SUCCESS) {
-            std::cout << "solve_subboard.setArg(3 failed: " << err << std::endl;
+            std::cerr << "solve_subboard.setArg(3 failed: " << err << std::endl;
             return false;
         }
 
         err = t.clRelaunchKernel.setArg(4, static_cast<cl_uint>(0));
         if(err != CL_SUCCESS) {
-            std::cout << "solve_subboard.setArg(4 failed: " << err << std::endl;
+            std::cerr << "solve_subboard.setArg(4 failed: " << err << std::endl;
             return false;
         }
 
         // create device kernel
         t.sumKernel = cl::Kernel(program, "sum_results", &err);
         if(err != CL_SUCCESS) {
-            std::cout << "cl::Kernel failed: " << err << std::endl;
+            std::cerr << "cl::Kernel failed: " << err << std::endl;
             return false;
         }
 
         t.sumBuffer = cl::Buffer(context, CL_MEM_READ_WRITE,
                                           workspace_size/SUM_REDUCTION_FACTOR * sizeof(cl_ulong), nullptr, &err);
         if(err != CL_SUCCESS) {
-            std::cout << "cl::Buffer sumBuffer failed: " << err << std::endl;
+            std::cerr << "cl::Buffer sumBuffer failed: " << err << std::endl;
             return false;
         }
 
         err = t.sumKernel.setArg(0, t.clOutputBuf);
         if(err != CL_SUCCESS) {
-            std::cout << "sumKernel.setArg(0 failed: " << err << std::endl;
+            std::cerr << "sumKernel.setArg(0 failed: " << err << std::endl;
             return false;
         }
 
         t.sumKernel.setArg(1, t.sumBuffer);
         if(err != CL_SUCCESS) {
-            std::cout << "sumKernel.setArg(1 failed: " << err << std::endl;
+            std::cerr << "sumKernel.setArg(1 failed: " << err << std::endl;
             return false;
         }
 
@@ -222,7 +222,7 @@ void ClSolver::threadWorker(uint32_t id, std::mutex &pre_lock)
                                      0, WORKSPACE_DEPTH * sizeof(cl_uint),
                                      nullptr, nullptr);
     if(err != CL_SUCCESS) {
-        std::cout << "fillBuffer clWorkspaceSizeBuf failed: " << err << std::endl;
+        std::cerr << "fillBuffer clWorkspaceSizeBuf failed: " << err << std::endl;
     }
 
     // zero the result buffer
@@ -231,13 +231,13 @@ void ClSolver::threadWorker(uint32_t id, std::mutex &pre_lock)
                                      0, workspace_size * sizeof(result_type),
                                      nullptr, nullptr);
     if(err != CL_SUCCESS) {
-        std::cout << "fillBuffer results_buf failed: " << err << std::endl;
+        std::cerr << "fillBuffer results_buf failed: " << err << std::endl;
     }
 
     // ensure we're starting with the correct state
     err = t.clRelaunchKernel.setArg(3, static_cast<cl_uint>(CLSOLVER_FEED));
     if(err != CL_SUCCESS) {
-        std::cout << "solve_subboard.setArg(3 failed: " << err << std::endl;
+        std::cerr << "solve_subboard.setArg(3 failed: " << err << std::endl;
     }
 
     auto start_time = std::time(nullptr);
@@ -254,7 +254,7 @@ void ClSolver::threadWorker(uint32_t id, std::mutex &pre_lock)
                 curIt = pre.getNext(curIt, endIt);
                 if(pre.empty()) {
                     auto end_time = std::time(nullptr);
-                    //std::cout << "pre block took " << difftime(end_time, start_time) << "s" << std::endl;
+                    //std::cerr << "pre block took " << difftime(end_time, start_time) << "s" << std::endl;
                     start_time = end_time;
                     pre = nextPre(pre_lock);
                     if(pre.empty()) {
@@ -268,7 +268,7 @@ void ClSolver::threadWorker(uint32_t id, std::mutex &pre_lock)
 
         err = t.cmdQueue.enqueueReadBuffer(t.clWorkspaceSizeBuf, CL_TRUE, 0, buffer_fill.size() * sizeof(cl_uint), buffer_fill.data());
         if (err != CL_SUCCESS) {
-            std::cout << "enqueueReadBuffer clWorkspaceSizeBuf failed: " << err << std::endl;
+            std::cerr << "enqueueReadBuffer clWorkspaceSizeBuf failed: " << err << std::endl;
             break;
         }
 
@@ -289,10 +289,10 @@ void ClSolver::threadWorker(uint32_t id, std::mutex &pre_lock)
             feeding = false;
             err = t.clRelaunchKernel.setArg(3, static_cast<cl_uint>(CLSOLVER_CLEANUP));
             if(err != CL_SUCCESS) {
-                std::cout << "solve_subboard.setArg(3 failed: " << err << std::endl;
+                std::cerr << "solve_subboard.setArg(3 failed: " << err << std::endl;
             }
 
-            std::cout << "Starting cleanup" << std::endl;
+            std::cerr << "Starting cleanup" << std::endl;
         } else {
             const size_t first_free = workspace_size - first_fill;
             const size_t batchSize = std::min(hostStartFill, first_free);
@@ -306,7 +306,7 @@ void ClSolver::threadWorker(uint32_t id, std::mutex &pre_lock)
                                                     first_fill * sizeof(start_condition), batchSize * sizeof(start_condition),
                                                     t.hostStartBuf.data() + hostStartFill, nullptr, nullptr);
                 if(err != CL_SUCCESS) {
-                    std::cout << "Failed to write start buffer: " << err << std::endl;
+                    std::cerr << "Failed to write start buffer: " << err << std::endl;
                 }
 
                 // write start condition count to workspace size
@@ -314,7 +314,7 @@ void ClSolver::threadWorker(uint32_t id, std::mutex &pre_lock)
                                                     0, sizeof(cl_uint),
                                                     &new_buffer_fill, nullptr, nullptr);
                 if(err != CL_SUCCESS) {
-                    std::cout << "Failed to write start buffer size: " << err << std::endl;
+                    std::cerr << "Failed to write start buffer size: " << err << std::endl;
                 }
             }
         }
@@ -324,7 +324,7 @@ void ClSolver::threadWorker(uint32_t id, std::mutex &pre_lock)
                                             cl::NDRange{1}, cl::NDRange{1},
                                             nullptr, nullptr);
         if(err != CL_SUCCESS) {
-            std::cout << "enqueueNDRangeKernel failed: " << err << std::endl;
+            std::cerr << "enqueueNDRangeKernel failed: " << err << std::endl;
         }
     }
 
@@ -335,7 +335,7 @@ void ClSolver::threadWorker(uint32_t id, std::mutex &pre_lock)
                                      workspace_size/SUM_REDUCTION_FACTOR * sizeof(cl_ulong),
                                      nullptr, nullptr);
     if(err != CL_SUCCESS) {
-        std::cout << "fillBuffer clWorkspaceSizeBuf failed: " << err << std::endl;
+        std::cerr << "fillBuffer clWorkspaceSizeBuf failed: " << err << std::endl;
     }
 
 
@@ -344,13 +344,13 @@ void ClSolver::threadWorker(uint32_t id, std::mutex &pre_lock)
                                         cl::NDRange{workspace_size/SUM_REDUCTION_FACTOR}, cl::NullRange,
                                         nullptr, nullptr);
     if(err != CL_SUCCESS) {
-        std::cout << "enqueueNDRangeKernel(sumKernel) failed: " << err << std::endl;
+        std::cerr << "enqueueNDRangeKernel(sumKernel) failed: " << err << std::endl;
     }
 
     std::vector<cl_ulong> sumHostBuffer(workspace_size/SUM_REDUCTION_FACTOR);
     err = t.cmdQueue.enqueueReadBuffer(t.sumBuffer, CL_TRUE, 0, sumHostBuffer.size() * sizeof(cl_ulong), sumHostBuffer.data());
     if (err != CL_SUCCESS) {
-        std::cout << "enqueueReadBuffer clWorkspaceSizeBuf failed: " << err << std::endl;
+        std::cerr << "enqueueReadBuffer clWorkspaceSizeBuf failed: " << err << std::endl;
         return;
     }
 
@@ -368,7 +368,7 @@ PreSolver ClSolver::nextPre(std::mutex& pre_lock)
     std::lock_guard<std::mutex> guard(pre_lock);
 
     if(solved < start.size()) {
-        //std::cout << "Solving: " << solved << "/" << start.size() << std::endl;
+        //std::cerr << "Solving: " << solved << "/" << start.size() << std::endl;
         result = PreSolver(boardsize, placed, presolve_depth, start[solved]);
         solved++;
     }
@@ -411,7 +411,7 @@ void ClSolver::enumerate_devices()
     std::vector<cl::Platform> platforms;
     cl::Platform::get(&platforms);
     if(platforms.empty()) {
-        std::cout << "No OpenCL platforms found" << std::endl;
+        std::cerr << "No OpenCL platforms found" << std::endl;
         return;
     }
 
@@ -421,14 +421,14 @@ void ClSolver::enumerate_devices()
 
         const std::string platform_str = "Platform[" + std::to_string(platform_idx) + "]";
 
-        std::cout << platform_str << " name: " << platform.getInfo<CL_PLATFORM_NAME>() << std::endl;
-        std::cout << platform_str << " version: " << platform.getInfo<CL_PLATFORM_VERSION>() << std::endl;
+        std::cerr << platform_str << " name: " << platform.getInfo<CL_PLATFORM_NAME>() << std::endl;
+        std::cerr << platform_str << " version: " << platform.getInfo<CL_PLATFORM_VERSION>() << std::endl;
 
         std::vector<cl::Device> devices;
 
         err = platform.getDevices(CL_DEVICE_TYPE_ALL, &devices);
         if(err != CL_SUCCESS) {
-            std::cout << "getDevices failed" << std::endl;
+            std::cerr << "getDevices failed" << std::endl;
             continue;
         }
 
@@ -447,12 +447,12 @@ void ClSolver::enumerate_devices()
                     version = "N/A";
                 }
 
-                std::cout << device_str << " name: " << name << std::endl;
-                std::cout << device_str << " version: " << version << std::endl;
+                std::cerr << device_str << " name: " << name << std::endl;
+                std::cerr << device_str << " version: " << version << std::endl;
 
             }
             if(err != CL_SUCCESS) {
-                std::cout << "getInfo<CL_DEVICE_AVAILABLE> failed" << std::endl;
+                std::cerr << "getInfo<CL_DEVICE_AVAILABLE> failed" << std::endl;
                 continue;
             }
         }
@@ -466,12 +466,12 @@ ClSolver* ClSolver::makeClSolver(unsigned int platform, unsigned int device)
     std::vector<cl::Platform> platforms;
     cl::Platform::get(&platforms);
     if(platforms.empty()) {
-        std::cout << "No OpenCL platforms found" << std::endl;
+        std::cerr << "No OpenCL platforms found" << std::endl;
         return nullptr;
     }
 
     if(!(platform < platforms.size())) {
-        std::cout << "Invalid OpenCL platform index" << std::endl;
+        std::cerr << "Invalid OpenCL platform index" << std::endl;
         return nullptr;
     }
 
@@ -481,17 +481,17 @@ ClSolver* ClSolver::makeClSolver(unsigned int platform, unsigned int device)
 
     cl_int err = used_platform.getDevices(CL_DEVICE_TYPE_ALL, &devices);
     if(err != CL_SUCCESS) {
-        std::cout << "getDevices failed" << std::endl;
+        std::cerr << "getDevices failed" << std::endl;
         return nullptr;
     }
 
     if(devices.empty()) {
-        std::cout << "No devices found" << std::endl;
+        std::cerr << "No devices found" << std::endl;
         return nullptr;
     }
 
     if(!(device < devices.size())) {
-        std::cout << "Invalid OpenCL device index" << std::endl;
+        std::cerr << "Invalid OpenCL device index" << std::endl;
         return nullptr;
     }
 
@@ -505,51 +505,51 @@ ClSolver* ClSolver::makeClSolver(cl::Platform platform, cl::Device used_device)
     cl_int err = 0;
     ClSolver* solver = new ClSolver();
     if(!solver) {
-        std::cout << "Failed to allocate memory" << std::endl;
+        std::cerr << "Failed to allocate memory" << std::endl;
         return nullptr;
     }
 
-    std::cout << "Platform name:    " << platform.getInfo<CL_PLATFORM_NAME>(&err) << std::endl;
+    std::cerr << "Platform name:    " << platform.getInfo<CL_PLATFORM_NAME>(&err) << std::endl;
     if(err != CL_SUCCESS) {
-        std::cout << "getInfogetInfo<CL_PLATFORM_NAME> failed: " << std::to_string(err) << std::endl;
+        std::cerr << "getInfogetInfo<CL_PLATFORM_NAME> failed: " << std::to_string(err) << std::endl;
         return nullptr;
     }
 
-    std::cout << "Platform version: " << platform.getInfo<CL_PLATFORM_VERSION>() << std::endl;
+    std::cerr << "Platform version: " << platform.getInfo<CL_PLATFORM_VERSION>() << std::endl;
     if(err != CL_SUCCESS) {
-        std::cout << "getInfogetInfo<CL_PLATFORM_VERSION> failed: " << std::to_string(err) << std::endl;
+        std::cerr << "getInfogetInfo<CL_PLATFORM_VERSION> failed: " << std::to_string(err) << std::endl;
         return nullptr;
     }
 
-    std::cout << "Device:           " << used_device.getInfo<CL_DEVICE_NAME>(&err) << std::endl;
+    std::cerr << "Device:           " << used_device.getInfo<CL_DEVICE_NAME>(&err) << std::endl;
     if(err != CL_SUCCESS) {
-        std::cout << "getInfogetInfo<CL_DEVICE_NAME> failed: " << std::to_string(err) << std::endl;
+        std::cerr << "getInfogetInfo<CL_DEVICE_NAME> failed: " << std::to_string(err) << std::endl;
         return nullptr;
     }
 
     std::string version_info = used_device.getInfo<CL_DEVICE_VERSION>(&err);
-    std::cout << "Device version:   " << version_info << std::endl;
+    std::cerr << "Device version:   " << version_info << std::endl;
     if(err != CL_SUCCESS) {
-        std::cout << "getInfo<CL_DEVICE_VERSION> failed: " << std::to_string(err) << std::endl;
+        std::cerr << "getInfo<CL_DEVICE_VERSION> failed: " << std::to_string(err) << std::endl;
         return nullptr;
     }
 
     // See: https://www.khronos.org/registry/OpenCL/sdk/2.2/docs/man/html/clGetDeviceInfo.html
     const std::string min_version = "OpenCL 2.";
     if (version_info.compare(0, min_version.length(), min_version) != 0) {
-        std::cout << "Not an OpenCL 2.x device, version: " << version_info << std::endl;
+        std::cerr << "Not an OpenCL 2.x device, version: " << version_info << std::endl;
         return nullptr;
     }
 
     // check if device is available
     bool available = used_device.getInfo<CL_DEVICE_AVAILABLE>(&err);
     if(err != CL_SUCCESS) {
-        std::cout << "getInfo<CL_DEVICE_AVAILABLE> failed: " << std::to_string(err) << std::endl;
+        std::cerr << "getInfo<CL_DEVICE_AVAILABLE> failed: " << std::to_string(err) << std::endl;
         return nullptr;
     }
 
     if(!available) {
-        std::cout << "OpenCL device not available" << std::endl;
+        std::cerr << "OpenCL device not available" << std::endl;
         return nullptr;
     }
 
@@ -557,11 +557,11 @@ ClSolver* ClSolver::makeClSolver(cl::Platform platform, cl::Device used_device)
 
     cl_ulong memory_size = used_device.getInfo<CL_DEVICE_GLOBAL_MEM_SIZE>(&err);
     if(err != CL_SUCCESS) {
-        std::cout << "getInfo<CL_DEVICE_GLOBAL_MEM_SIZE> failed: " << std::to_string(err) << std::endl;
+        std::cerr << "getInfo<CL_DEVICE_GLOBAL_MEM_SIZE> failed: " << std::to_string(err) << std::endl;
         return nullptr;
     }
 
-    std::cout << "Device memory:    " << std::to_string(memory_size/(1024*1024)) << "MB" << std::endl << std::endl;
+    std::cerr << "Device memory:    " << std::to_string(memory_size/(1024*1024)) << "MB" << std::endl << std::endl;
 
     cl_ulong memory_size_gb = memory_size / (1024*1024*1024);
     if (memory_size_gb >= 8) {
@@ -571,20 +571,20 @@ ClSolver* ClSolver::makeClSolver(cl::Platform platform, cl::Device used_device)
     } else if (memory_size_gb >= 2) {
         solver->workspace_size = 1024*1024*8;
     } else {
-        std::cout << "Not enough memory" << std::endl;
+        std::cerr << "Not enough memory" << std::endl;
         return nullptr;
     }
 
     solver->context = cl::Context(used_device, nullptr, nullptr, nullptr, &err);
     if(err != CL_SUCCESS) {
-        std::cout << "cl::Context failed" << std::endl;
+        std::cerr << "cl::Context failed" << std::endl;
         return nullptr;
     }
 
     // Create command queue.
     solver->devQueue = cl::DeviceCommandQueue::makeDefault(solver->context, solver->device, &err);
     if(err != CL_SUCCESS) {
-        std::cout << "DeviceCommandQueue::makeDefault() failed: " << err << std::endl;
+        std::cerr << "DeviceCommandQueue::makeDefault() failed: " << err << std::endl;
         return nullptr;
     }
 
@@ -604,7 +604,7 @@ ClSolver* ClSolver::makeClSolver(cl::Platform platform, cl::Device used_device)
     // create OpenCL program
     solver->program = cl::Program(solver->context, sourceStr, false, &err);
     if(err != CL_SUCCESS) {
-        std::cout << "cl::Program failed" << std::endl;
+        std::cerr << "cl::Program failed" << std::endl;
         return nullptr;
     }
 
