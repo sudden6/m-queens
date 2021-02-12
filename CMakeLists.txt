@@ -1,9 +1,16 @@
 cmake_minimum_required(VERSION 2.8)
 project(m-queens2)
 
-option(BOINC_ONLY "Build only stuff needed for BOINC" ON)
-option(BUILD_STATIC "Build static binaries" ON)
-option(NO_BOINC "Disable BOINC components" OFF)
+option(WITH_BOINC "Build only stuff needed for BOINC" OFF)
+
+set(BUILD_STATIC_TXT  "Statically link against against libraries")
+if (WIN32)
+    option(BUILD_STATIC ${BUILD_STATIC_TXT} ON)
+else()
+    option(BUILD_STATIC ${BUILD_STATIC_TXT} OFF)
+endif()
+
+option(WITH_STANDALONE "Standalone m-queens2 binary" ON)
 # for static linking a path to the boinc static build is needed
 # boinc build commands:
 # mkdir -p /build/static_boinc/
@@ -30,7 +37,7 @@ add_custom_command(
 )
 add_custom_target(clbin2h_stable DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/${CL_KERNEL_HEADER} ${CMAKE_CURRENT_SOURCE_DIR}/${CL_KERNEL_SRC})
 
-if (NOT ${BOINC_ONLY} AND NOT ${BUILD_STATIC})
+if (${WITH_STANDALONE})
 
 find_package(OpenCL REQUIRED)
 
@@ -67,10 +74,9 @@ target_link_libraries(${PROJECT_NAME} OpenCL::OpenCL)
 add_dependencies(${PROJECT_NAME} clbin2h_stable)
 target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/cxxopts/include)
 
-
 endif()
 
-if(NOT ${NO_BOINC})
+if(${WITH_BOINC})
 
 set (CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} -O2")
 set (CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O2")
