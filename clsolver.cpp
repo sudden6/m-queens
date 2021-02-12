@@ -11,6 +11,7 @@
 #include <list>
 #include <thread>
 #include "presolver.h"
+#include "clqueens_kernel.h"
 
 ClSolver::ClSolver()
 {
@@ -588,18 +589,7 @@ ClSolver* ClSolver::makeClSolver(cl::Platform platform, cl::Device used_device)
         return nullptr;
     }
 
-#if BOINC_OCL_SOLVER == 1
-    // Hack to easily hardcode the kernel source
-    std::string sourceStr =
-#include "clqueens.cl"
-;
-#else
-    // load source code
-    std::ifstream sourcefile("clqueens.cl");
-    std::string sourceStr((std::istreambuf_iterator<char>(sourcefile)),
-                     std::istreambuf_iterator<char>());
-#endif
-
+    std::string sourceStr(reinterpret_cast<const char *>(CLQUEENS_CL), CLQUEENS_CL_SIZE);
 
     // create OpenCL program
     solver->program = cl::Program(solver->context, sourceStr, false, &err);
