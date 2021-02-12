@@ -14,6 +14,22 @@ set(BOINC_STATIC_DIR "C:/build/static_boinc/" CACHE PATH "BOINC static build dir
 
 set (CMAKE_CXX_STANDARD 11)
 
+# Put OpenCL kernel into binary
+set(CL_KERNEL_SRC "clqueens.cl")
+set(CL_KERNEL_HEADER "clqueens_kernel.h")
+
+add_custom_command(
+        OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/${CL_KERNEL_HEADER}"
+        COMMAND ${CMAKE_COMMAND} ARGS
+        -DBIN2H_SOURCE_FILE="${CMAKE_CURRENT_SOURCE_DIR}/${CL_KERNEL_SRC}"
+        -DBIN2H_VARIABLE_NAME="CLQUEENS_CL"
+        -DBIN2H_HEADER_FILE="${CMAKE_CURRENT_SOURCE_DIR}/${CL_KERNEL_HEADER}"
+        -P "${CMAKE_CURRENT_SOURCE_DIR}/bin2h.cmake"
+        COMMENT "Generating OpenCL Kernel Byte Array"
+        DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/${CL_KERNEL_SRC}
+)
+add_custom_target(cl_kernel_lib DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/${CL_KERNEL_HEADER} ${CMAKE_CURRENT_SOURCE_DIR}/${CL_KERNEL_SRC})
+
 if (NOT ${BOINC_ONLY} AND NOT ${BUILD_STATIC})
 
 find_package(OpenCL REQUIRED)
@@ -48,10 +64,9 @@ set(${PROJECT_NAME}_SOURCES
 
 add_executable(${PROJECT_NAME} ${${PROJECT_NAME}_SOURCES} "main.cpp")
 target_link_libraries(${PROJECT_NAME} OpenCL::OpenCL)
+add_dependencies(${PROJECT_NAME} cl_kernel_lib)
 target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/cxxopts/include)
 
-# copy OpenCL kernel source
-configure_file(${CMAKE_SOURCE_DIR}/clqueens.cl ./ COPYONLY)
 
 endif()
 
@@ -104,6 +119,8 @@ set(${BOINC_PROJECT}_SOURCES
 )
 
 add_executable(${BOINC_PROJECT} ${${BOINC_PROJECT}_SOURCES} "boinc/main.cpp")
+add_dependencies(${BOINC_PROJECT} cl_kernel_lib)
+
 # Strip binary for release builds
 #if (CMAKE_BUILD_TYPE STREQUAL Release)
 #    add_custom_command(TARGET ${BOINC_PROJECT} POST_BUILD
@@ -165,6 +182,7 @@ target_include_directories(m-queens2-boinc-ocl PRIVATE ${CMAKE_CURRENT_SOURCE_DI
 target_include_directories(m-queens2-boinc-ocl PRIVATE ${BOINC_STATIC_DIR}/include/)
 
 target_link_libraries(m-queens2-boinc-ocl OpenCL::OpenCL)
+add_dependencies(m-queens2-boinc-ocl cl_kernel_lib)
 
 if (${BUILD_STATIC})
     # Linking standard libs statically
