@@ -141,15 +141,6 @@ void solve_single_proto(const __global start_condition* in_start,
     }
 }
 
-kernel void solve_single(const __global start_condition* in_start, __global start_condition* out_base,
-                        __global uint* out_cur_offs, unsigned factor) {
-    __local start_condition scratch_buf[SCRATCH_SIZE];
-    __local uint scratch_fill;
-    __local uint out_offs;
-    solve_single_proto(in_start, out_base, out_cur_offs, scratch_buf, factor, &scratch_fill, &out_offs, 11);    
-}
-
-
 // Hide this pesky code which crashes RGA
 #ifndef RADEON_GPU_ANALYZER
 #define STR_HELPER(x) #x
@@ -169,6 +160,7 @@ SOLVER_KERNEL(7)
 SOLVER_KERNEL(8)
 SOLVER_KERNEL(9)
 SOLVER_KERNEL(10)
+SOLVER_KERNEL(11)
 
 kernel void solve_final(const __global start_condition* in_start, __global ulong* out_res, unsigned factor) {
 	__local start_condition scratch_buf[WORKGROUP_SIZE * 2];
@@ -331,6 +323,7 @@ kernel void relaunch_kernel(__global start_condition* workspace, __global uint* 
         SOLVE_BLK(8)
         SOLVE_BLK(9)
         SOLVE_BLK(10)
+        SOLVE_BLK(11)
         
         void (^solve_single_blk)(void) = ^{
                     solve_single(in_start, out_base, out_offs, applied_factor);
@@ -338,15 +331,15 @@ kernel void relaunch_kernel(__global start_condition* workspace, __global uint* 
         
         uint remaining = GPU_DEPTH - workspace_idx;
         // HACK: must init block at declaration
-        void (^run_blk)(void) = (remaining == 10 ? solve_10_blk :
+        void (^run_blk)(void) = (remaining == 11 ? solve_11_blk :
+                                (remaining == 10 ? solve_10_blk :
                                 (remaining == 9 ? solve_9_blk :
                                 (remaining == 8 ? solve_8_blk :
                                 (remaining == 7 ? solve_7_blk :
                                 (remaining == 6 ? solve_6_blk :
                                 (remaining == 5 ? solve_5_blk :
                                 (remaining == 4 ? solve_4_blk :
-                                (remaining == 3 ? solve_3_blk :
-                                (remaining == 2 ? solve_final_blk : solve_single_blk)))))))));
+                                (remaining == 3 ? solve_3_blk : solve_final_blk)))))))));
         uint local_size = min((uint)WORKGROUP_SIZE, (uint)get_kernel_work_group_size(run_blk));
         //printf("local_size: %u, kernel_wg_size: %u\n", local_size, get_kernel_work_group_size(run_blk));
         //printf("launch workspace_idx: %u, launch_cnt: %u, factor: %u, local_size: %u, utilization: %f\n", workspace_idx, launch_cnt, applied_factor, local_size, ((float)launch_cnt)/WORKSPACE_SIZE);
