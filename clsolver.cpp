@@ -55,11 +55,17 @@ bool ClSolver::init(uint8_t boardsize, uint8_t placed)
     }
 
     std::ostringstream optionsStream;
-    optionsStream << "-cl-std=CL2.0"
-                  << " -DBOARDSIZE=" << std::to_string(boardsize)
+    if (ocl_version == OCL_VERSION::OCL_2X) {
+        optionsStream <<  "-cl-std=CL2.0";
+    }
+
+    optionsStream << " -DBOARDSIZE=" << std::to_string(boardsize)
                   << " -DGPU_DEPTH=" <<std::to_string(gpu_depth)
                   << " -DWORKSPACE_SIZE=" <<std::to_string(workspace_size)
                   << " -DWORKGROUP_SIZE=" <<std::to_string(WORKGROUP_SIZE);
+
+
+
     std::string options = optionsStream.str();
 
     std::cerr << "OPTIONS: " << options << std::endl;
@@ -110,13 +116,6 @@ bool ClSolver::allocateThreads(size_t cnt) {
             return false;
         }
 
-        // create device kernel
-        t.clRelaunchKernel = cl::Kernel(program, "relaunch_kernel", &err);
-        if(err != CL_SUCCESS) {
-            std::cerr << "cl::Kernel failed: " << err << std::endl;
-            return false;
-        }
-
         // Allocate workspace buffer on device
         t.clWorkspaceBuf = cl::Buffer(context, CL_MEM_READ_WRITE | CL_MEM_HOST_WRITE_ONLY,
             workspace_size * WORKSPACE_DEPTH * sizeof(start_condition), nullptr, &err);
@@ -141,38 +140,53 @@ bool ClSolver::allocateThreads(size_t cnt) {
             return false;
         }
 
-        // Set kernel parameters.
-        err = t.clRelaunchKernel.setArg(0, t.clWorkspaceBuf);
-        if(err != CL_SUCCESS) {
-            std::cerr << "solve_subboard.setArg(0 failed: " << err << std::endl;
-            return false;
+        if (ocl_version == OCL_VERSION::OCL_1X) {
+            // TODO: initialize kernel for each stage
+        } else {
+            // create device kernel
+            cl::Kernel relaunchKernel = cl::Kernel(program, "relaunch_kernel", &err);
+            if(err != CL_SUCCESS) {
+                std::cerr << "cl::Kernel failed: " << err << std::endl;
+                return false;
+            }
+
+            // Set kernel parameters.
+            err = relaunchKernel.setArg(0, t.clWorkspaceBuf);
+            if(err != CL_SUCCESS) {
+                std::cerr << "solve_subboard.setArg(0 failed: " << err << std::endl;
+                return false;
+            }
+
+            err = relaunchKernel.setArg(1, t.clWorkspaceSizeBuf);
+            if(err != CL_SUCCESS) {
+                std::cerr << "solve_subboard.setArg(1 failed: " << err << std::endl;
+                return false;
+            }
+
+            err = relaunchKernel.setArg(2, t.clOutputBuf);
+            if(err != CL_SUCCESS) {
+                std::cerr << "solve_subboard.setArg(2 failed: " << err << std::endl;
+                return false;
+            }
+
+            err = relaunchKernel.setArg(3, static_cast<cl_uint>(CLSOLVER_FEED));
+            if(err != CL_SUCCESS) {
+                std::cerr << "solve_subboard.setArg(3 failed: " << err << std::endl;
+                return false;
+            }
+
+            err = relaunchKernel.setArg(4, static_cast<cl_uint>(0));
+            if(err != CL_SUCCESS) {
+                std::cerr << "solve_subboard.setArg(4 failed: " << err << std::endl;
+                return false;
+            }
+
+            t.clRelaunchKernel = relaunchKernel;
         }
 
-        err = t.clRelaunchKernel.setArg(1, t.clWorkspaceSizeBuf);
-        if(err != CL_SUCCESS) {
-            std::cerr << "solve_subboard.setArg(1 failed: " << err << std::endl;
-            return false;
-        }
 
-        err = t.clRelaunchKernel.setArg(2, t.clOutputBuf);
-        if(err != CL_SUCCESS) {
-            std::cerr << "solve_subboard.setArg(2 failed: " << err << std::endl;
-            return false;
-        }
 
-        err = t.clRelaunchKernel.setArg(3, static_cast<cl_uint>(CLSOLVER_FEED));
-        if(err != CL_SUCCESS) {
-            std::cerr << "solve_subboard.setArg(3 failed: " << err << std::endl;
-            return false;
-        }
-
-        err = t.clRelaunchKernel.setArg(4, static_cast<cl_uint>(0));
-        if(err != CL_SUCCESS) {
-            std::cerr << "solve_subboard.setArg(4 failed: " << err << std::endl;
-            return false;
-        }
-
-        // create device kernel
+        // create device kernel for summing
         t.sumKernel = cl::Kernel(program, "sum_results", &err);
         if(err != CL_SUCCESS) {
             std::cerr << "cl::Kernel failed: " << err << std::endl;
@@ -235,10 +249,12 @@ void ClSolver::threadWorker(uint32_t id, std::mutex &pre_lock)
         std::cerr << "fillBuffer results_buf failed: " << err << std::endl;
     }
 
-    // ensure we're starting with the correct state
-    err = t.clRelaunchKernel.setArg(3, static_cast<cl_uint>(CLSOLVER_FEED));
-    if(err != CL_SUCCESS) {
-        std::cerr << "solve_subboard.setArg(3 failed: " << err << std::endl;
+    if (ocl_version == OCL_VERSION::OCL_2X) {
+        // ensure we're starting with the correct state
+        err = t.clRelaunchKernel.setArg(3, static_cast<cl_uint>(CLSOLVER_FEED));
+        if(err != CL_SUCCESS) {
+            std::cerr << "solve_subboard.setArg(3 failed: " << err << std::endl;
+        }
     }
 
     auto start_time = std::time(nullptr);
@@ -288,9 +304,11 @@ void ClSolver::threadWorker(uint32_t id, std::mutex &pre_lock)
             break;
         } else if ((hostStartFill == 0) && feeding) {
             feeding = false;
-            err = t.clRelaunchKernel.setArg(3, static_cast<cl_uint>(CLSOLVER_CLEANUP));
-            if(err != CL_SUCCESS) {
-                std::cerr << "solve_subboard.setArg(3 failed: " << err << std::endl;
+            if (ocl_version == OCL_VERSION::OCL_2X) {
+                err = t.clRelaunchKernel.setArg(3, static_cast<cl_uint>(CLSOLVER_CLEANUP));
+                if(err != CL_SUCCESS) {
+                    std::cerr << "solve_subboard.setArg(3 failed: " << err << std::endl;
+                }
             }
 
             std::cerr << "Starting cleanup" << std::endl;
@@ -320,12 +338,14 @@ void ClSolver::threadWorker(uint32_t id, std::mutex &pre_lock)
             }
         }
 
-        // Launch kernel on the compute device.
-        err = t.cmdQueue.enqueueNDRangeKernel(t.clRelaunchKernel, cl::NullRange,
-                                            cl::NDRange{1}, cl::NDRange{1},
-                                            nullptr, nullptr);
-        if(err != CL_SUCCESS) {
-            std::cerr << "enqueueNDRangeKernel failed: " << err << std::endl;
+        if (ocl_version == OCL_VERSION::OCL_2X) {
+            // Launch kernel on the compute device.
+            err = t.cmdQueue.enqueueNDRangeKernel(t.clRelaunchKernel, cl::NullRange,
+                                                cl::NDRange{1}, cl::NDRange{1},
+                                                nullptr, nullptr);
+            if(err != CL_SUCCESS) {
+                std::cerr << "enqueueNDRangeKernel failed: " << err << std::endl;
+            }
         }
     }
 
@@ -361,6 +381,8 @@ void ClSolver::threadWorker(uint32_t id, std::mutex &pre_lock)
     for(size_t i = 0; i < sumHostBuffer.size(); i++) {
         t.result += sumHostBuffer[i];
     }
+
+    t.cmdQueue.finish();
 }
 
 PreSolver ClSolver::nextPre(std::mutex& pre_lock)
@@ -535,10 +557,19 @@ ClSolver* ClSolver::makeClSolver(cl::Platform platform, cl::Device used_device)
         return nullptr;
     }
 
+    // Find our most recent OpenCL version
     // See: https://www.khronos.org/registry/OpenCL/sdk/2.2/docs/man/html/clGetDeviceInfo.html
-    const std::string min_version = "OpenCL 2.";
-    if (version_info.compare(0, min_version.length(), min_version) != 0) {
-        std::cerr << "Not an OpenCL 2.x device, version: " << version_info << std::endl;
+    const std::string ocl_1x_version = "OpenCL 1.";
+    const std::string ocl_2x_version = "OpenCL 2.";
+
+    if (version_info.compare(0, ocl_1x_version.length(), ocl_1x_version) == 0) {
+        std::cerr << "Found OpenCL 1.x device, version: " << version_info << std::endl;
+        solver->ocl_version = OCL_VERSION::OCL_1X;
+    } else if (version_info.compare(0, ocl_2x_version.length(), ocl_2x_version) == 0) {
+        std::cerr << "Found OpenCL 2.x device, version: " << version_info << std::endl;
+        solver->ocl_version = OCL_VERSION::OCL_2X;
+    } else {
+        std::cerr << "Unknown OpenCL version: " << version_info << std::endl;
         return nullptr;
     }
 
@@ -582,11 +613,13 @@ ClSolver* ClSolver::makeClSolver(cl::Platform platform, cl::Device used_device)
         return nullptr;
     }
 
-    // Create command queue.
-    solver->devQueue = cl::DeviceCommandQueue::makeDefault(solver->context, solver->device, &err);
-    if(err != CL_SUCCESS) {
-        std::cerr << "DeviceCommandQueue::makeDefault() failed: " << err << std::endl;
-        return nullptr;
+    if (solver->ocl_version == OCL_VERSION::OCL_2X) {
+        // Create Device command queue.
+        solver->devQueue = cl::DeviceCommandQueue::makeDefault(solver->context, solver->device, &err);
+        if(err != CL_SUCCESS) {
+            std::cerr << "DeviceCommandQueue::makeDefault() failed: " << err << std::endl;
+            return nullptr;
+        }
     }
 
     std::string sourceStr(reinterpret_cast<const char *>(CLQUEENS_CL), CLQUEENS_CL_SIZE);
