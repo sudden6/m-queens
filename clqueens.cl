@@ -109,13 +109,133 @@ void solver_core_single(const __global start_condition* work_in, __local start_c
     scratch[out_offs].diagl = new_diagl;
 }
 
-            scratch[out_offs].cols = bit;
-            scratch[out_offs].diagr = new_diagr;
-            scratch[out_offs].diagl = new_diagl;
+void solve_single_proto_1x(__global start_condition* workspace_base,
+                        __global uint* workspace_sizes,
+                        __local start_condition* scratch_buf,
+                        __local uint* scratch_fill,
+                        __local uint* out_offs,
+                        unsigned factor,
+                        uint remaining) {
+
+    uint cur_workspace = GPU_DEPTH - remaining;
+
+    __global start_condition* out_cur_base = workspace_base + (cur_workspace + 1)*WORKSPACE_SIZE;
+    __global uint *out_cur_offs = workspace_sizes + cur_workspace + 1;
+
+    uint stride = get_local_size(0);
+    // assume the number of launched items has been subtracted already
+    uint offs = workspace_sizes[cur_workspace] + (G-L)*factor + L;
+    uint end = offs + stride*factor;
+
+    for(uint in_our_idx = offs; in_our_idx < end; in_our_idx += stride) {
+        if(L == 0) {
+            *scratch_fill = 0;
         }
+
+        //printf("G: %u, L: %u, L_size: %u, in_our_idx: %u\n", G, L, get_local_size(0), in_our_idx);
+        work_group_barrier(CLK_LOCAL_MEM_FENCE);
+        solver_core_single(&workspace_base[in_our_idx], scratch_buf, scratch_fill, remaining);
+        work_group_barrier(CLK_LOCAL_MEM_FENCE);
+
+        if(L == 0) {
+            *out_offs = atomic_add(out_cur_offs, *scratch_fill);
+        }
+
+        work_group_barrier(CLK_LOCAL_MEM_FENCE);
+
+        for(int i = L; i < *scratch_fill; i += get_local_size(0)) {
+            out_cur_base[*out_offs + i] = scratch_buf[i];
+            //printf("G: %u, L: %u, out_workspace_idx %u, cols: %x, diagl: %x, diagr: %x\n", G, L, out_offs + i,
+            //       workspace[out_offs + i].cols, workspace[out_offs + i].diagl, workspace[out_offs + i].diagr);
+        }
+
+        work_group_barrier(CLK_LOCAL_MEM_FENCE);
     }
 }
 
+kernel void solve_final_1x(const __global start_condition* in_start, __global ulong* out_res, unsigned factor) {
+    __local start_condition scratch_buf[WORKGROUP_SIZE * 2];
+    __local uint scratch_fill;
+    __local uint scratch_cnt;
+    if (L == 0) {
+        scratch_cnt = 0;
+    }
+
+    uint stride = get_local_size(0);
+    uint offs = (G-L)*factor + L;
+    uint end = offs + stride*factor;
+
+    uint cnt = 0;
+    for(uint in_our_idx = offs; in_our_idx < end; in_our_idx += stride) {
+        if(L == 0) {
+            scratch_fill = 0;
+        }
+
+        // printf("G: %u, L: %u, L_size: %u, in_our_idx: %u\n", G, L, get_local_size(0), in_our_idx);
+        work_group_barrier(CLK_LOCAL_MEM_FENCE);
+        solver_core_single(&in_start[in_our_idx], scratch_buf, &scratch_fill, 2);
+        work_group_barrier(CLK_LOCAL_MEM_FENCE);
+
+        for(int i = L; i < scratch_fill; i += get_local_size(0)) {
+            uint_fast32_t cols = scratch_buf[i].cols;
+            // This places the first two queens
+            uint_fast32_t diagl = scratch_buf[i].diagl;
+            uint_fast32_t diagr = scratch_buf[i].diagr;
+
+            //  The variable posib contains the bitmask of possibilities we still have
+            //  to try in a given row ...
+            uint_fast32_t posib = (cols | diagl | diagr);
+
+            diagl <<= 1;
+            diagr >>= 1;
+
+            //printf("G: %u, posib: %x", G, posib);
+
+            if (posib != UINT_FAST32_MAX) {
+                // The standard trick for getting the rightmost bit in the mask
+                uint_fast32_t bit = ~posib & (posib + 1);
+                posib ^= bit; // Eliminate the tried possibility.
+                uint_fast32_t new_diagl = (bit << 1) | diagl;
+                uint_fast32_t new_diagr = (bit >> 1) | diagr;
+                bit |= cols;
+                uint_fast32_t new_posib = (bit | new_diagl | new_diagr);
+
+                cnt += new_posib == UINT_FAST32_MAX && bit == UINT_FAST32_MAX;
+            }
+        }
+
+        work_group_barrier(CLK_LOCAL_MEM_FENCE);
+    }
+
+    atomic_add(&scratch_cnt, cnt);
+    work_group_barrier(CLK_LOCAL_MEM_FENCE);
+
+    //printf("G: %u, cnt: %u", G, cnt);
+    if (L == 0) {
+        out_res[G] += scratch_cnt;
+    }
+}
+
+#define SOLVER_KERNEL_1X(remaining) \
+kernel void solve_##remaining_1x (__global start_condition* workspace_base, __global uint* workspace_sizes, \
+                                  __local start_condition* scratch_buf, __local uint* scratch_fill, \
+                                  __local uint* out_offs, unsigned factor) { \
+    __local start_condition scratch_buf[WORKGROUP_SIZE * (remaining)]; __local uint scratch_fill; __local uint out_offs; \
+    solve_single_proto_1x(workspace_base, workspace_sizes, scratch_buf, &scratch_fill, &out_offs,  (remaining));  \
+}
+
+SOLVER_KERNEL_1X(3)
+SOLVER_KERNEL_1X(4)
+SOLVER_KERNEL_1X(5)
+SOLVER_KERNEL_1X(6)
+SOLVER_KERNEL_1X(7)
+SOLVER_KERNEL_1X(8)
+SOLVER_KERNEL_1X(9)
+SOLVER_KERNEL_1X(10)
+SOLVER_KERNEL_1X(11)
+
+// Don't crash on OpenCL 1.2 platforms
+#if __OPENCL_VERSION__ == CL_VERSION_2_0
 void solve_single_proto(const __global start_condition* in_start,
                         __global start_condition* out_base,
                         __global uint* out_cur_offs,
@@ -147,7 +267,6 @@ void solve_single_proto(const __global start_condition* in_start,
             //printf("G: %u, L: %u, out_workspace_idx %u, cols: %x, diagl: %x, diagr: %x\n", G, L, out_offs + i,
             //       workspace[out_offs + i].cols, workspace[out_offs + i].diagl, workspace[out_offs + i].diagr);
         }
-
         work_group_barrier(CLK_LOCAL_MEM_FENCE);
     }
 }
@@ -411,6 +530,8 @@ kernel void relaunch_kernel(__global start_condition* workspace, __global uint* 
         release_event(launched_kernels_evt[i]);
     }
 }
+
+#endif
 
 #endif
 
