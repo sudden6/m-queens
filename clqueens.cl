@@ -50,53 +50,64 @@ void solver_core_single(const __global start_condition* work_in, __local start_c
     diagl <<= 1;
     diagr >>= 1;
 
-    while (posib != UINT_FAST32_MAX) {
-        // The standard trick for getting the rightmost bit in the mask
-        uint_fast32_t bit = ~posib & (posib + 1);
-        posib ^= bit; // Eliminate the tried possibility.
-        uint_fast32_t new_diagl = (bit << 1) | diagl;
-        uint_fast32_t new_diagr = (bit >> 1) | diagr;
-        bit |= cols;
-        uint_fast32_t new_posib = (bit | new_diagl | new_diagr);
+    if (posib == UINT_FAST32_MAX) {
+        // No possibilities left
+        return;
+    }
 
-        if (new_posib != UINT_FAST32_MAX) {
-            /* Optimizations from "Putting Queens in Carry Chains" {Thomas B. Preußer, Bernd Nägel, and Rainer G. Spallek} */
+    // The standard trick for getting the rightmost bit in the mask
+    uint_fast32_t bit = ~posib & (posib + 1);
+    posib ^= bit; // Eliminate the tried possibility.
+    uint_fast32_t new_diagl = (bit << 1) | diagl;
+    uint_fast32_t new_diagr = (bit >> 1) | diagr;
+    bit |= cols;
+    uint_fast32_t new_posib = (bit | new_diagl | new_diagr);
 
-            // Page 8, 1)
-            // Lookahead optimization, DEPTH 2
-            uint_fast32_t lookahead2 = (bit | (new_diagl << 1) | (new_diagr >> 1));
-            if ((lookahead_depth > 2) && (lookahead2 == UINT_FAST32_MAX)) {
-                continue;
-            }
+    if (new_posib == UINT_FAST32_MAX) {
+        return;
+    }
+    /* Optimizations from "Putting Queens in Carry Chains" {Thomas B. Preußer, Bernd Nägel, and Rainer G. Spallek} */
 
-            // Lookahead optimization, DEPTH 3
-            uint_fast32_t lookahead3 = (bit | (new_diagl << 2) | (new_diagr >> 2));
-            if ((lookahead_depth > 3) && (lookahead3 == UINT_FAST32_MAX)) {
-                continue;
-            }
+    // Page 8, 1)
+    // Lookahead optimization, DEPTH 2
+    uint_fast32_t lookahead2 = (bit | (new_diagl << 1) | (new_diagr >> 1));
+    if ((lookahead_depth > 2) && (lookahead2 == UINT_FAST32_MAX)) {
+        return;
+    }
+
+    // Lookahead optimization, DEPTH 3
+    uint_fast32_t lookahead3 = (bit | (new_diagl << 2) | (new_diagr >> 2));
+    if ((lookahead_depth > 3) && (lookahead3 == UINT_FAST32_MAX)) {
+        return;
+    }
 
 #if 0
-            // 2x2 square lookahead optimization Page 8, 2)
-            if((lookahead_depth > 3) && (popcount(~lookahead2) == 2)) {
-                uint_fast32_t adjacent = ~lookahead2 & (~lookahead2 << 1);
-                if (adjacent && ((lookahead2 == new_posib) || (lookahead2 == lookahead3))) {
-                    continue;
-                }
-            }
+    // 2x2 square lookahead optimization Page 8, 2)
+    if((lookahead_depth > 3) && (popcount(~lookahead2) == 2)) {
+        uint_fast32_t adjacent = ~lookahead2 & (~lookahead2 << 1);
+        if (adjacent && ((lookahead2 == new_posib) || (lookahead2 == lookahead3))) {
+            return;
+        }
+    }
 #endif
 
 #if 0
-            // 2x2 square lookahead optimization Page 8, 2)
-            if((lookahead_depth > 3) && (lookahead2 == new_posib)) {
-                uint_fast32_t adjacent = ~lookahead2 & (~lookahead2 << 1);
-                if (adjacent && (popcount(~lookahead2) == 2)) {
-                    continue;
-                }
-            }
+    // 2x2 square lookahead optimization Page 8, 2)
+    if((lookahead_depth > 3) && (lookahead2 == new_posib)) {
+        uint_fast32_t adjacent = ~lookahead2 & (~lookahead2 << 1);
+        if (adjacent && (popcount(~lookahead2) == 2)) {
+            return;
+        }
+    }
 #endif
 
-            uint out_offs = atomic_add(scratch_fill, 1);
-            //printf("found G: %u, out_offs: %u, bit: %x, diagl: %x, diagr: %x\n", G, out_offs, bit, new_diagl, new_diagr);
+    uint out_offs = atomic_add(scratch_fill, 1);
+    //printf("found G: %u, out_offs: %u, bit: %x, diagl: %x, diagr: %x\n", G, out_offs, bit, new_diagl, new_diagr);
+
+    scratch[out_offs].cols = bit;
+    scratch[out_offs].diagr = new_diagr;
+    scratch[out_offs].diagl = new_diagl;
+}
 
             scratch[out_offs].cols = bit;
             scratch[out_offs].diagr = new_diagr;
