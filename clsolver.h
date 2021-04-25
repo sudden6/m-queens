@@ -2,6 +2,7 @@
 #define CLSOLVER_H
 
 #define CL_HPP_TARGET_OPENCL_VERSION 200
+#define CL_HPP_MINIMUM_OPENCL_VERSION 120
 #include <CL/cl2.hpp>
 
 #include <cstdlib>
@@ -28,6 +29,7 @@ private:
     struct ThreadData {
         cl::CommandQueue cmdQueue;
         cl::Kernel clRelaunchKernel;
+        std::vector<cl::Kernel> clMainKernels;
         cl::Buffer clWorkspaceBuf;
         cl::Buffer clWorkspaceSizeBuf;
         cl::Buffer clOutputBuf;
@@ -41,9 +43,17 @@ private:
 
 
 private:
+    enum class OCL_VERSION
+    {
+        OCL_1X,
+        OCL_2X
+    };
+
     ClSolver();
     void threadWorker(uint32_t id, std::mutex &pre_lock);
     PreSolver nextPre(std::mutex &pre_lock);
+
+    OCL_VERSION ocl_version;
 
     std::vector<start_condition> start;
     size_t solved = 0;
