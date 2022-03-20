@@ -3,6 +3,7 @@
 
 #include "solverstructs.h"
 
+#include <cstddef>
 #include <vector>
 
 class PreSolver
