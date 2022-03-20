@@ -535,9 +535,14 @@ ClSolver* ClSolver::makeClSolver(cl::Platform platform, cl::Device used_device)
     }
 
     // See: https://www.khronos.org/registry/OpenCL/sdk/2.2/docs/man/html/clGetDeviceInfo.html
-    const std::string min_version = "OpenCL 2.";
-    if (version_info.compare(0, min_version.length(), min_version) != 0) {
-        std::cerr << "Not an OpenCL 2.x device, version: " << version_info << std::endl;
+    const std::string version_ocl2 = "OpenCL 2.";
+    const std::string version_ocl3 = "OpenCL 3.";
+    if (version_info.compare(0, version_ocl2.length(), version_ocl2) == 0) {
+        std::cerr << version_ocl2 << "x supported" << std::endl;
+    } else if (version_info.compare(0, version_ocl3.length(), version_ocl3) == 0) {
+        std::cerr << version_ocl3 << "x supported" << std::endl;
+    } else {
+        std::cerr << "Not an OpenCL 2.x or later device, version: " << version_info << std::endl;
         return nullptr;
     }
 
