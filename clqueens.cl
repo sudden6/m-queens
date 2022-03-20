@@ -317,7 +317,7 @@ kernel void relaunch_kernel(__global start_condition* workspace, __global uint* 
         __global start_condition *out_base = workspace + (workspace_idx + 1) * WORKSPACE_SIZE;
         __global uint *out_offs = workspace_sizes + workspace_idx + 1;
 
-        void (^solve_final_blk)(void) = ^{
+        void (^solve_2_blk)(void) = ^{
                     solve_final(in_start, out_res, applied_factor);
                 };
 
@@ -337,31 +337,60 @@ kernel void relaunch_kernel(__global start_condition* workspace, __global uint* 
                 };
         
         uint remaining = GPU_DEPTH - workspace_idx;
-        // HACK: must init block at declaration
-        void (^run_blk)(void) = (remaining == 10 ? solve_10_blk :
-                                (remaining == 9 ? solve_9_blk :
-                                (remaining == 8 ? solve_8_blk :
-                                (remaining == 7 ? solve_7_blk :
-                                (remaining == 6 ? solve_6_blk :
-                                (remaining == 5 ? solve_5_blk :
-                                (remaining == 4 ? solve_4_blk :
-                                (remaining == 3 ? solve_3_blk :
-                                (remaining == 2 ? solve_final_blk : solve_single_blk)))))))));
-        uint local_size = min((uint)WORKGROUP_SIZE, (uint)get_kernel_work_group_size(run_blk));
-        //printf("local_size: %u, kernel_wg_size: %u\n", local_size, get_kernel_work_group_size(run_blk));
+        uint kernel_wg_size = 0;
+
+#define BLK_WG_SIZE(remaining) case remaining: kernel_wg_size = get_kernel_work_group_size(solve_##remaining##_blk); break
+
+
+        switch (remaining) {
+            BLK_WG_SIZE(10);
+            BLK_WG_SIZE(9);
+            BLK_WG_SIZE(8);
+            BLK_WG_SIZE(7);
+            BLK_WG_SIZE(6);
+            BLK_WG_SIZE(5);
+            BLK_WG_SIZE(4);
+            BLK_WG_SIZE(3);
+            BLK_WG_SIZE(2);
+        default:
+            kernel_wg_size = get_kernel_work_group_size(solve_single_blk);
+        }
+
+        uint local_size = min((uint)WORKGROUP_SIZE, kernel_wg_size);
+        local_size = min(local_size, launch_cnt/applied_factor);
+        //printf("local_size: %u, kernel_wg_size: %u\n", local_size, kernel_wg_size);
         //printf("launch workspace_idx: %u, launch_cnt: %u, factor: %u, local_size: %u, utilization: %f\n", workspace_idx, launch_cnt, applied_factor, local_size, ((float)launch_cnt)/WORKSPACE_SIZE);
 
-        // launch kernel
-        // must wait after this one finishes, because of write to 'workspace_sizes'
-        err = enqueue_kernel(q, CLK_ENQUEUE_FLAGS_WAIT_KERNEL,
-                            ndrange_1D(launch_cnt/applied_factor, local_size),
-                            0,
-                            NULL,
-                            &launched_kernels_evt[launched_kernels_cnt],
-                            run_blk);
+#define ENQUEUE_BLK(remaining) case remaining: \
+                                err = enqueue_kernel(q, CLK_ENQUEUE_FLAGS_WAIT_KERNEL, \
+                                                     ndrange_1D(launch_cnt/applied_factor, local_size), \
+                                                     0, \
+                                                     NULL, \
+                                                     &launched_kernels_evt[launched_kernels_cnt], \
+                                                     solve_##remaining##_blk); break
+        switch (remaining) {
+            ENQUEUE_BLK(10);
+            ENQUEUE_BLK(9);
+            ENQUEUE_BLK(8);
+            ENQUEUE_BLK(7);
+            ENQUEUE_BLK(6);
+            ENQUEUE_BLK(5);
+            ENQUEUE_BLK(4);
+            ENQUEUE_BLK(3);
+            ENQUEUE_BLK(2);
+        default:
+            err = enqueue_kernel(q, CLK_ENQUEUE_FLAGS_WAIT_KERNEL,
+                                 ndrange_1D(launch_cnt/applied_factor, local_size),
+                                 0,
+                                 NULL,
+                                 &launched_kernels_evt[launched_kernels_cnt],
+                                 solve_single_blk);
+
+
+        }
 
         if (err != 0) {
-            printf("Error when enqueuing kernel, launch_cnt: %u, workspace_idx: %u, state: 0x%x", launch_cnt, workspace_idx, state);
+            printf("Error when enqueuing kernel, launch_cnt: %u, workspace_idx: %u, state: 0x%x, err: %d\n", launch_cnt, workspace_idx, state, err);
             goto cleanup_kernels_evt;
         } else  {
             //printf("launch removed: %u", max_launches);
