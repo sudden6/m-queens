@@ -561,7 +561,15 @@ ClSolver* ClSolver::makeClSolver(cl::Platform platform, cl::Device used_device)
         return nullptr;
     }
 
-    std::cerr << "Device memory:    " << std::to_string(memory_size/(1024*1024)) << "MB" << std::endl << std::endl;
+    std::cerr << "Device memory:    " << std::to_string(memory_size/(1024*1024)) << "MB" << std::endl;
+
+    cl_ulong max_allocation_size = used_device.getInfo<CL_DEVICE_MAX_MEM_ALLOC_SIZE>(&err);
+    if(err != CL_SUCCESS) {
+        std::cerr << "getInfo<CL_DEVICE_MAX_MEM_ALLOC_SIZE> failed: " << std::to_string(err) << std::endl;
+        return nullptr;
+    }
+
+    std::cerr << "Allocation limit: " << std::to_string(max_allocation_size/(1024*1024)) << "MB" << std::endl << std::endl;
 
     cl_ulong memory_size_gb = memory_size / (1024*1024*1024);
     if (memory_size_gb >= 8) {
@@ -573,6 +581,12 @@ ClSolver* ClSolver::makeClSolver(cl::Platform platform, cl::Device used_device)
     } else {
         std::cerr << "Not enough memory" << std::endl;
         return nullptr;
+    }
+
+    const size_t workspace_allocation_limit = max_allocation_size / (sizeof(start_condition_t) * WORKSPACE_DEPTH);
+    if (workspace_allocation_limit < solver->workspace_size) {
+        solver->workspace_size = workspace_allocation_limit;
+        std::cerr << "Allocation limit reached, truncating to: " << std::to_string(solver->workspace_size) << std::endl;
     }
 
     solver->context = cl::Context(used_device, nullptr, nullptr, nullptr, &err);
