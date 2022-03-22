@@ -1,6 +1,7 @@
 #ifndef START_FILE_HANDLER_H
 #define START_FILE_HANDLER_H
 
+#include <cstdint>
 #include <string>
 #include <vector>
 #include <stdio.h>
