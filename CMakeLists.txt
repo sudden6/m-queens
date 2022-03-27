@@ -28,7 +28,7 @@ set(CL_KERNEL_SRC "clqueens.cl")
 set(CL_KERNEL_HEADER "clqueens_kernel.h")
 
 add_custom_command(
-        OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/${CL_KERNEL_HEADER}"
+        OUTPUT "${CMAKE_CURRENT_SOURCE_DIR}/${CL_KERNEL_HEADER}"
         COMMAND ${CMAKE_COMMAND} ARGS
         -DBIN2H_SOURCE_FILE="${CMAKE_CURRENT_SOURCE_DIR}/${CL_KERNEL_SRC}"
         -DBIN2H_VARIABLE_NAME="CLQUEENS_CL"
@@ -37,7 +37,7 @@ add_custom_command(
         COMMENT "Generating OpenCL Kernel Byte Array"
         DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/${CL_KERNEL_SRC}
 )
-add_custom_target(cl_kernel_lib DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/${CL_KERNEL_HEADER} ${CMAKE_CURRENT_SOURCE_DIR}/${CL_KERNEL_SRC})
+add_custom_target(cl_kernel_lib DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/${CL_KERNEL_HEADER} ${CMAKE_CURRENT_SOURCE_DIR}/${CL_KERNEL_SRC})
 
 if (${WITH_STANDALONE})
 
