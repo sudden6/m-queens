@@ -439,8 +439,6 @@ kernel void relaunch_kernel(__global start_condition* workspace, __global uint* 
 
 #endif
 
-#define SUM_REDUCTION_FACTOR 1024*32
-
 kernel void sum_results(const __global ulong* res_in, __global ulong* res_out) {
     ulong cnt = 0;
 
