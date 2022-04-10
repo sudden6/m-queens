@@ -330,26 +330,31 @@ void ClSolver::threadWorker(uint32_t id, std::mutex &pre_lock)
         }
     }
 
+	size_t reduction_res_size = workspace_size/SUM_REDUCTION_FACTOR;
 
     // zero the sum buffer
     err = t.cmdQueue.enqueueFillBuffer(t.sumBuffer, static_cast<cl_ulong>(0),
                                      0,
-                                     workspace_size/SUM_REDUCTION_FACTOR * sizeof(cl_ulong),
+                                     reduction_res_size * sizeof(cl_ulong),
                                      nullptr, nullptr);
     if(err != CL_SUCCESS) {
         std::cerr << "fillBuffer clWorkspaceSizeBuf failed: " << err << std::endl;
     }
 
-
+	std::cerr << "Launching reduction sum kernels, count: " << std::to_string(reduction_res_size)
+	          << ", workspace_size: "
+	          << std::to_string(workspace_size)
+			  << ", SUM_REDUCTION_FACTOR: "
+			  << std::to_string(SUM_REDUCTION_FACTOR) << std::endl;
     // Launch kernel to sum results
     err = t.cmdQueue.enqueueNDRangeKernel(t.sumKernel, cl::NullRange,
-                                        cl::NDRange{workspace_size/SUM_REDUCTION_FACTOR}, cl::NullRange,
+                                        cl::NDRange{reduction_res_size}, cl::NullRange,
                                         nullptr, nullptr);
     if(err != CL_SUCCESS) {
         std::cerr << "enqueueNDRangeKernel(sumKernel) failed: " << err << std::endl;
     }
 
-    std::vector<cl_ulong> sumHostBuffer(workspace_size/SUM_REDUCTION_FACTOR);
+    std::vector<cl_ulong> sumHostBuffer(reduction_res_size);
     err = t.cmdQueue.enqueueReadBuffer(t.sumBuffer, CL_TRUE, 0, sumHostBuffer.size() * sizeof(cl_ulong), sumHostBuffer.data());
     if (err != CL_SUCCESS) {
         std::cerr << "enqueueReadBuffer clWorkspaceSizeBuf failed: " << err << std::endl;
