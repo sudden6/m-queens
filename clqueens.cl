@@ -21,7 +21,9 @@ typedef struct start_condition_t start_condition;
 #define WORKGROUP_SIZE 64
 #endif
 
-//#define printf(...)
+#if DEBUG_PRINT == 0
+#define printf(...)
+#endif
 
 typedef char int8_t;
 typedef char int_fast8_t;
@@ -46,11 +48,11 @@ typedef uint uint_fast32_t;
 #define WORK_FACTOR 8
 
 inline void solver_core_single(const __global start_condition* work_in, volatile __local start_condition* scratch, volatile __local atomic_uint* scratch_fill, uint lookahead_depth) {
-	uint_fast32_t cols = work_in->cols;
+    uint_fast32_t cols = work_in->cols;
     uint_fast32_t diagl = work_in->diagl;
     uint_fast32_t diagr = work_in->diagr;
 
-    printf("[core ] solve G: %lu, L: %lu, cols: %x, diagl: %x, diagr: %x\n", G, L, cols, diagl, diagr);
+    //printf("[core ] solve G: %lu, L: %lu, cols: %x, diagl: %x, diagr: %x\n", G, L, cols, diagl, diagr);
 
     //  The variable posib contains the bitmask of possibilities we still have
     //  to try in a given row ...
@@ -105,7 +107,7 @@ inline void solver_core_single(const __global start_condition* work_in, volatile
 #endif
 
             uint out_offs = atomic_fetch_add(scratch_fill, 1);
-            printf("[core ] found G: %lu, out_offs: %u, bit: %x, diagl: %x, diagr: %x\n", G, out_offs, bit, new_diagl, new_diagr);
+            //printf("[core ] found G: %lu, out_offs: %u, bit: %x, diagl: %x, diagr: %x\n", G, out_offs, bit, new_diagl, new_diagr);
 
             scratch[out_offs].cols = bit;
             scratch[out_offs].diagr = new_diagr;
@@ -125,9 +127,9 @@ inline void solve_single_proto(const __global start_condition* in_start,
     uint end = offs + stride*factor;
 
     for(uint in_our_idx = offs; in_our_idx < end; in_our_idx += stride) {
-		atomic_store(scratch_fill, 0);
+        atomic_store(scratch_fill, 0);
 
-        printf("[pr %2u] G: %lu, L: %lu, L_size: %lu, in_our_idx: %u\n", remaining, G, L, get_local_size(0), in_our_idx);
+        //printf("[pr %2u] G: %lu, L: %lu, L_size: %lu, in_our_idx: %u\n", remaining, G, L, get_local_size(0), in_our_idx);
         work_group_barrier(CLK_LOCAL_MEM_FENCE);
         solver_core_single(&in_start[in_our_idx], scratch_buf, scratch_fill, remaining);     
         work_group_barrier(CLK_LOCAL_MEM_FENCE);
@@ -142,8 +144,8 @@ inline void solve_single_proto(const __global start_condition* in_start,
 
         for(uint i = L; i < l_scratch_fill; i += get_local_size(0)) {
             out_base[out_offs + i] = scratch_buf[i];
-            printf("[pr %2u] G: %lu, L: %lu, out_workspace_idx %u, cols: %x, diagl: %x, diagr: %x\n", remaining, G, L, out_offs + i,
-                   out_base[out_offs + i].cols,out_base[out_offs + i].diagl, out_base[out_offs + i].diagr);
+            //printf("[pr %2u] G: %lu, L: %lu, out_workspace_idx %u, cols: %x, diagl: %x, diagr: %x\n", remaining, G, L, out_offs + i,
+            //       out_base[out_offs + i].cols,out_base[out_offs + i].diagl, out_base[out_offs + i].diagr);
         }
 
         work_group_barrier(CLK_LOCAL_MEM_FENCE);
@@ -184,7 +186,7 @@ SOLVER_KERNEL(9)
 SOLVER_KERNEL(10)
 
 kernel void solve_final(const __global start_condition* in_start, __global ulong* out_res, unsigned factor) {
-	__local start_condition scratch_buf[WORKGROUP_SIZE * 2];
+    __local start_condition scratch_buf[WORKGROUP_SIZE * 2];
     __local atomic_uint scratch_fill;
     __local atomic_uint scratch_cnt;
 
@@ -206,7 +208,7 @@ kernel void solve_final(const __global start_condition* in_start, __global ulong
 
         printf("[final] G: %lu, L: %lu, L_size: %lu, in_our_idx: %u\n", G, L, get_local_size(0), in_our_idx);
         work_group_barrier(CLK_LOCAL_MEM_FENCE);
-		solver_core_single(&in_start[in_our_idx], scratch_buf, &scratch_fill, 2);
+        solver_core_single(&in_start[in_our_idx], scratch_buf, &scratch_fill, 2);
         work_group_barrier(CLK_LOCAL_MEM_FENCE);
 
         uint l_scratch_fill = atomic_load(&scratch_fill);
@@ -240,7 +242,7 @@ kernel void solve_final(const __global start_condition* in_start, __global ulong
         }
 
         work_group_barrier(CLK_LOCAL_MEM_FENCE);
-	}
+    }
 
     atomic_fetch_add(&scratch_cnt, cnt);
 
@@ -248,14 +250,14 @@ kernel void solve_final(const __global start_condition* in_start, __global ulong
     if (L == 0) {
         uint l_scratch_cnt = atomic_load(&scratch_cnt);
         out_res[G] += l_scratch_cnt;
-		printf("[final] G: %lu, scratch_cnt: %u\n", G, l_scratch_cnt);
+        printf("[final] G: %lu, scratch_cnt: %u\n", G, l_scratch_cnt);
     }
 }
 
 kernel void relaunch_kernel(__global start_condition* workspace, __global uint* workspace_sizes, __global ulong* out_res, unsigned state, unsigned recursion) {
     queue_t q = get_default_queue();
-	
-	printf("START RELAUNCH recursion: %u\n", recursion);
+    
+    printf("START RELAUNCH recursion: %u\n", recursion);
 
     uint limits[GPU_DEPTH - 1];
     // final run only depends on input limit, calculate differently
@@ -381,7 +383,7 @@ kernel void relaunch_kernel(__global start_condition* workspace, __global uint* 
         uint local_size = min((uint)WORKGROUP_SIZE, kernel_wg_size);
         local_size = min(local_size, launch_cnt/applied_factor);
         printf("local_size: %u, kernel_wg_size: %u\n", local_size, kernel_wg_size);
-        printf("launch workspace_idx: %u, launch_cnt: %u, factor: %u, local_size: %u, utilization: %f\n", workspace_idx, launch_cnt, applied_factor, local_size, ((float)launch_cnt)/WORKSPACE_SIZE);
+        printf("launch workspace_idx: %u, launch_cnt: %u, factor: %u, local_size: %u, utilization: %f\n", workspace_idx, launch_cnt, applied_factor, local_size, ((float)launch_cnt)/(float)WORKSPACE_SIZE);
 
 #define ENQUEUE_BLK(remaining) case remaining: \
                                 err = enqueue_kernel(q, CLK_ENQUEUE_FLAGS_WAIT_KERNEL, \
@@ -457,8 +459,8 @@ kernel void relaunch_kernel(__global start_condition* workspace, __global uint* 
     for(uint i = 0; i < launched_kernels_cnt; i++) {
         release_event(launched_kernels_evt[i]);
     }
-	
-	printf("STOP  RELAUNCH recursion: %u\n", recursion);
+    
+    printf("STOP  RELAUNCH recursion: %u\n", recursion);
 }
 
 kernel void sum_results(const __global ulong* res_in, __global ulong* res_out) {
@@ -467,7 +469,7 @@ kernel void sum_results(const __global ulong* res_in, __global ulong* res_out) {
     for(uint i = 0; i < SUM_REDUCTION_FACTOR; i++) {
         cnt += res_in[G*SUM_REDUCTION_FACTOR+i];
     }
-	
-	printf("[sum  ] G: %lu, cnt: %lu\n", G, cnt);
+    
+    //printf("[sum  ] G: %lu, cnt: %lu\n", G, cnt);
     res_out[G] += cnt;
 }
