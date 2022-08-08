@@ -244,18 +244,18 @@ kernel void solve_final(const __global start_condition* in_start, __global ulong
 
     atomic_fetch_add(&scratch_cnt, cnt);
 
-    printf("[final] G: %lu, cnt: %u", G, cnt);
+    printf("[final] G: %lu, cnt: %u\n", G, cnt);
     if (L == 0) {
         uint l_scratch_cnt = atomic_load(&scratch_cnt);
         out_res[G] += l_scratch_cnt;
-		printf("[final] G: %lu, scratch_cnt: %u", G, l_scratch_cnt);
+		printf("[final] G: %lu, scratch_cnt: %u\n", G, l_scratch_cnt);
     }
 }
 
 kernel void relaunch_kernel(__global start_condition* workspace, __global uint* workspace_sizes, __global ulong* out_res, unsigned state, unsigned recursion) {
     queue_t q = get_default_queue();
 	
-	printf("START RELAUNCH recursion: %u", recursion);
+	printf("START RELAUNCH recursion: %u\n", recursion);
 
     uint limits[GPU_DEPTH - 1];
     // final run only depends on input limit, calculate differently
@@ -415,7 +415,7 @@ kernel void relaunch_kernel(__global start_condition* workspace, __global uint* 
             printf("Error when enqueuing kernel, launch_cnt: %u, workspace_idx: %u, state: 0x%x, err: %d\n", launch_cnt, workspace_idx, state, err);
             goto cleanup_kernels_evt;
         } else  {
-            printf("launch removed: %u", launch_cnt);
+            printf("launch removed: %u\n", launch_cnt);
             // remove completed work items only when successfully launched
             workspace_sizes[workspace_idx] -= launch_cnt;
             launched_kernels_cnt++;
@@ -458,7 +458,7 @@ kernel void relaunch_kernel(__global start_condition* workspace, __global uint* 
         release_event(launched_kernels_evt[i]);
     }
 	
-	printf("STOP  RELAUNCH recursion: %u", recursion);
+	printf("STOP  RELAUNCH recursion: %u\n", recursion);
 }
 
 kernel void sum_results(const __global ulong* res_in, __global ulong* res_out) {
@@ -468,6 +468,6 @@ kernel void sum_results(const __global ulong* res_in, __global ulong* res_out) {
         cnt += res_in[G*SUM_REDUCTION_FACTOR+i];
     }
 	
-	printf("[sum  ] G: %lu, cnt: %lu", G, cnt);
+	printf("[sum  ] G: %lu, cnt: %lu\n", G, cnt);
     res_out[G] += cnt;
 }
