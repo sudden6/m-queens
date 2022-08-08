@@ -332,6 +332,12 @@ void ClSolver::threadWorker(uint32_t id, std::mutex &pre_lock)
 
 	size_t reduction_res_size = workspace_size/SUM_REDUCTION_FACTOR;
 
+    // Prevent mistakes due to rounding
+    if(reduction_res_size*SUM_REDUCTION_FACTOR != workspace_size) {
+        std::cerr << "workspace_size not a multiple of SUM_REDUCTION_FACTOR" << std::endl;
+        return;
+    }
+
     // zero the sum buffer
     err = t.cmdQueue.enqueueFillBuffer(t.sumBuffer, static_cast<cl_ulong>(0),
                                      0,
@@ -600,6 +606,10 @@ ClSolver* ClSolver::makeClSolver(cl::Platform platform, cl::Device used_device)
         solver->workspace_size = workspace_allocation_limit;
         std::cerr << "Allocation limit reached, truncating to: " << std::to_string(solver->workspace_size) << std::endl;
     }
+
+    // Ensure workspace size is still a multiple of the sum reduction size
+    solver->workspace_size -= solver->workspace_size % SUM_REDUCTION_FACTOR;
+    std::cerr << "Aligning to SUM_REDUCTION_FACTOR: " << std::to_string(solver->workspace_size) << std::endl;
 
     solver->context = cl::Context(used_device, nullptr, nullptr, nullptr, &err);
     if(err != CL_SUCCESS) {
