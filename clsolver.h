@@ -22,8 +22,8 @@ public:
     uint64_t solve_subboard(const std::vector<start_condition>& start);
     static void enumerate_devices();
 
-    static ClSolver* makeClSolver(unsigned int platform, unsigned int device);
-    static ClSolver* makeClSolver(cl::Platform platform, cl::Device device);
+    static ClSolver* makeClSolver(unsigned int platform, unsigned int device, bool debug_print);
+    static ClSolver* makeClSolver(cl::Platform platform, cl::Device device, bool debug_print);
 
 private:
     struct ThreadData {
@@ -49,6 +49,7 @@ private:
     std::vector<start_condition> start;
     size_t solved = 0;
 
+    bool debug_print = false;
     uint8_t gpu_depth = 0;
     uint8_t presolve_depth = 0;
     uint8_t placed = 0;

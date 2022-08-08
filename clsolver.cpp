@@ -60,7 +60,9 @@ bool ClSolver::init(uint8_t boardsize, uint8_t placed)
                   << " -DGPU_DEPTH=" << std::to_string(gpu_depth)
                   << " -DWORKSPACE_SIZE=" << std::to_string(workspace_size)
                   << " -DWORKGROUP_SIZE=" << std::to_string(WORKGROUP_SIZE)
-                  << " -DSUM_REDUCTION_FACTOR=" << std::to_string(SUM_REDUCTION_FACTOR);
+                  << " -DSUM_REDUCTION_FACTOR=" << std::to_string(SUM_REDUCTION_FACTOR)
+                  << " -DDEBUG_PRINT=" << (debug_print ? "1" : "0");
+
     std::string options = optionsStream.str();
 
     std::cerr << "OPTIONS: " << options << std::endl;
@@ -474,7 +476,7 @@ void ClSolver::enumerate_devices()
 
 
 
-ClSolver* ClSolver::makeClSolver(unsigned int platform, unsigned int device)
+ClSolver* ClSolver::makeClSolver(unsigned int platform, unsigned int device, bool debug_print)
 {
     std::vector<cl::Platform> platforms;
     cl::Platform::get(&platforms);
@@ -510,10 +512,10 @@ ClSolver* ClSolver::makeClSolver(unsigned int platform, unsigned int device)
 
     const cl::Device& used_device = devices[device];
 
-    return makeClSolver(used_platform, used_device);
+    return makeClSolver(used_platform, used_device, debug_print);
 }
 
-ClSolver* ClSolver::makeClSolver(cl::Platform platform, cl::Device used_device)
+ClSolver* ClSolver::makeClSolver(cl::Platform platform, cl::Device used_device, bool debug_print)
 {
     cl_int err = 0;
     ClSolver* solver = new ClSolver();
@@ -521,6 +523,8 @@ ClSolver* ClSolver::makeClSolver(cl::Platform platform, cl::Device used_device)
         std::cerr << "Failed to allocate memory" << std::endl;
         return nullptr;
     }
+
+    solver->debug_print = debug_print;
 
     std::cerr << "Platform name:    " << platform.getInfo<CL_PLATFORM_NAME>(&err) << std::endl;
     if(err != CL_SUCCESS) {
