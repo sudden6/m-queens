@@ -127,27 +127,34 @@ inline void solve_single_proto(const __global start_condition* in_start,
     uint end = offs + stride*factor;
 
     for(uint in_our_idx = offs; in_our_idx < end; in_our_idx += stride) {
-        atomic_store(scratch_fill, 0);
-
         //printf("[pr %2u] G: %lu, L: %lu, L_size: %lu, in_our_idx: %u\n", remaining, G, L, get_local_size(0), in_our_idx);
+        solver_core_single(&in_start[in_our_idx], scratch_buf, scratch_fill, remaining);
+        // Wait until all threads added their results to the scratch buffer
         work_group_barrier(CLK_LOCAL_MEM_FENCE);
-        solver_core_single(&in_start[in_our_idx], scratch_buf, scratch_fill, remaining);     
-        work_group_barrier(CLK_LOCAL_MEM_FENCE);
+        // Retrieve fill level for all threads before we destroy it
         uint l_scratch_fill = atomic_load(scratch_fill);
+        // Wait until all threads received the value
+        work_group_barrier(CLK_LOCAL_MEM_FENCE);
         uint out_offs = 0;
 
         if(L == 0) {
+            // Reserve space for results in global buffer only once
             out_offs = atomic_fetch_add(out_cur_offs, l_scratch_fill);
+            // Zero scratch buffer fill level only once
+            atomic_store(scratch_fill, 0);
         }
 
+        // Make global buffer offset known to all threads
         out_offs = work_group_broadcast(out_offs, 0);
 
+        // Copy scratch buffer contents to global buffer using all threads
         for(uint i = L; i < l_scratch_fill; i += get_local_size(0)) {
             out_base[out_offs + i] = scratch_buf[i];
             //printf("[pr %2u] G: %lu, L: %lu, out_workspace_idx %u, cols: %x, diagl: %x, diagr: %x\n", remaining, G, L, out_offs + i,
             //       out_base[out_offs + i].cols,out_base[out_offs + i].diagl, out_base[out_offs + i].diagr);
         }
 
+        // Wait until copy for all threads finished, so that we don't overwrite the scratch buffer before it's copied
         work_group_barrier(CLK_LOCAL_MEM_FENCE);
     }
 }
@@ -161,6 +168,7 @@ kernel void solve_single(const __global start_condition* in_start, __global star
         atomic_init(&scratch_fill, 0);
     }
 
+    // Wait until thread 0 initialized the atomic variables
     work_group_barrier(CLK_LOCAL_MEM_FENCE);
 
     solve_single_proto(in_start, out_base, (volatile __global atomic_uint*) out_cur_offs, scratch_buf, factor, &scratch_fill, 11);
@@ -171,8 +179,12 @@ kernel void solve_single(const __global start_condition* in_start, __global star
 
 #define SOLVER_KERNEL(remaining) \
 kernel void solve_##remaining (const __global start_condition* in_start, __global start_condition* out_base, __global uint* out_cur_offs, unsigned factor) { \
-    volatile __local start_condition scratch_buf[WORKGROUP_SIZE * (remaining)]; volatile __local atomic_uint scratch_fill; \
-    if (L == 0) { atomic_init(&scratch_fill, 0);} work_group_barrier(CLK_LOCAL_MEM_FENCE); \
+    volatile __local start_condition scratch_buf[WORKGROUP_SIZE * (remaining)]; \
+    volatile __local atomic_uint scratch_fill; \
+    if (L == 0) { \
+        atomic_init(&scratch_fill, 0); \
+    } \
+    work_group_barrier(CLK_LOCAL_MEM_FENCE); \
     solve_single_proto(in_start, out_base, (volatile __global atomic_uint*) out_cur_offs, scratch_buf, factor, &scratch_fill, (remaining));  \
 }
 
@@ -195,8 +207,8 @@ kernel void solve_final(const __global start_condition* in_start, __global ulong
         atomic_init(&scratch_cnt, 0);
     }
 
+    // Wait until thread 0 initialized the atomic variables
     work_group_barrier(CLK_LOCAL_MEM_FENCE);
-
 
     uint stride = get_local_size(0);
     uint offs = (G-L)*factor + L;
@@ -204,14 +216,27 @@ kernel void solve_final(const __global start_condition* in_start, __global ulong
 
     uint cnt = 0;
     for(uint in_our_idx = offs; in_our_idx < end; in_our_idx += stride) {
-        atomic_store(&scratch_fill, 0);
 
-        printf("[final] G: %lu, L: %lu, L_size: %lu, in_our_idx: %u\n", G, L, get_local_size(0), in_our_idx);
-        work_group_barrier(CLK_LOCAL_MEM_FENCE);
+        //printf("[final] G: %lu, L: %lu, L_size: %lu, in_our_idx: %u\n", G, L, get_local_size(0), in_our_idx);
+        //work_group_barrier(CLK_LOCAL_MEM_FENCE);
         solver_core_single(&in_start[in_our_idx], scratch_buf, &scratch_fill, 2);
+
+        // Wait until all threads added their results to the scratch buffer
         work_group_barrier(CLK_LOCAL_MEM_FENCE);
 
-        uint l_scratch_fill = atomic_load(&scratch_fill);
+        // Retrieve fill level for all threads before we destroy it
+        const uint l_scratch_fill = atomic_load(&scratch_fill);
+
+        // Wait until all threads retrieved the fill level
+        work_group_barrier(CLK_LOCAL_MEM_FENCE);
+
+        // Reset fill level only once using thread 0
+        if (L == 0) {
+            atomic_store(&scratch_fill, 0);
+        }
+
+        // Wait until fill level is reset
+        work_group_barrier(CLK_LOCAL_MEM_FENCE);
 
         for(int i = L; i < l_scratch_fill; i += get_local_size(0)) {
             uint_fast32_t cols = scratch_buf[i].cols;
@@ -240,11 +265,13 @@ kernel void solve_final(const __global start_condition* in_start, __global ulong
                 cnt += new_posib == UINT_FAST32_MAX && bit == UINT_FAST32_MAX;
             }
         }
-
-        work_group_barrier(CLK_LOCAL_MEM_FENCE);
     }
 
+    // Add the result for each thread to scratch_cnt
     atomic_fetch_add(&scratch_cnt, cnt);
+
+    // Wait until all threads added their result count
+    work_group_barrier(CLK_LOCAL_MEM_FENCE);
 
     printf("[final] G: %lu, cnt: %u\n", G, cnt);
     if (L == 0) {
