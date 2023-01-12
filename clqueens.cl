@@ -265,6 +265,9 @@ kernel void solve_final(const __global start_condition* in_start, __global ulong
                 cnt += new_posib == UINT_FAST32_MAX && bit == UINT_FAST32_MAX;
             }
         }
+
+        // Wait until scratch buffer has been read by all threads
+        work_group_barrier(CLK_LOCAL_MEM_FENCE);
     }
 
     // Add the result for each thread to scratch_cnt
@@ -273,11 +276,11 @@ kernel void solve_final(const __global start_condition* in_start, __global ulong
     // Wait until all threads added their result count
     work_group_barrier(CLK_LOCAL_MEM_FENCE);
 
-    printf("[final] G: %lu, cnt: %u\n", G, cnt);
+    //printf("[final] G: %lu, cnt: %u\n", G, cnt);
     if (L == 0) {
         uint l_scratch_cnt = atomic_load(&scratch_cnt);
         out_res[G] += l_scratch_cnt;
-        printf("[final] G: %lu, scratch_cnt: %u\n", G, l_scratch_cnt);
+        //printf("[final] G: %lu, scratch_cnt: %u\n", G, l_scratch_cnt);
     }
 }
 
@@ -296,13 +299,13 @@ kernel void relaunch_kernel(__global start_condition* workspace, __global uint* 
         uint remaining = GPU_DEPTH - workspace_idx;
         uint input_limit = workspace_sizes[workspace_idx];
         uint output_limit = (WORKSPACE_SIZE - workspace_sizes[workspace_idx+1]) / remaining;
-        printf("  size[%u] = %u, output_limit: %u\n",workspace_idx, workspace_sizes[workspace_idx], output_limit);
+        //printf("  size[%u] = %u, output_limit: %u\n",workspace_idx, workspace_sizes[workspace_idx], output_limit);
         limits[workspace_idx] = min(input_limit, output_limit);;
     }
 
     uint even_launches = 0;
     uint odd_launches = 0;
-    printf("  size[%u] = %u\n", GPU_DEPTH-2, workspace_sizes[GPU_DEPTH-2]);
+    //printf("  size[%u] = %u\n", GPU_DEPTH-2, workspace_sizes[GPU_DEPTH-2]);
 
     for(uint workspace_idx = 0; workspace_idx < (GPU_DEPTH - 1); workspace_idx++) {
         if (workspace_idx % 2) {
@@ -320,7 +323,7 @@ kernel void relaunch_kernel(__global start_condition* workspace, __global uint* 
 #if 1
     // An unlimited recursion level potentially allows to fully use the GPU queue,
     // but this might be a corner case in the code and result in problems
-    if (recursion > 500) {
+    if (recursion > 100) {
         printf("Recursion limit\n");
         return;
     }
@@ -340,7 +343,7 @@ kernel void relaunch_kernel(__global start_condition* workspace, __global uint* 
         uint launch_cnt = limits[workspace_idx];
 
         if (launch_cnt == 0) {
-            printf("Skipping, workspace_idx: %u\n", workspace_idx);
+            //printf("Skipping, workspace_idx: %u\n", workspace_idx);
             continue;
         }
 
@@ -409,8 +412,8 @@ kernel void relaunch_kernel(__global start_condition* workspace, __global uint* 
 
         uint local_size = min((uint)WORKGROUP_SIZE, kernel_wg_size);
         local_size = min(local_size, launch_cnt/applied_factor);
-        printf("local_size: %u, kernel_wg_size: %u\n", local_size, kernel_wg_size);
-        printf("launch workspace_idx: %u, launch_cnt: %u, factor: %u, local_size: %u, utilization: %f\n", workspace_idx, launch_cnt, applied_factor, local_size, ((float)launch_cnt)/(float)WORKSPACE_SIZE);
+        //printf("local_size: %u, kernel_wg_size: %u\n", local_size, kernel_wg_size);
+        //printf("launch workspace_idx: %u, launch_cnt: %u, factor: %u, local_size: %u, utilization: %f\n", workspace_idx, launch_cnt, applied_factor, local_size, ((float)launch_cnt)/(float)WORKSPACE_SIZE);
 
 #define ENQUEUE_BLK(remaining) case remaining: \
                                 err = enqueue_kernel(q, CLK_ENQUEUE_FLAGS_WAIT_KERNEL, \
@@ -444,14 +447,14 @@ kernel void relaunch_kernel(__global start_condition* workspace, __global uint* 
             printf("Error when enqueuing kernel, launch_cnt: %u, workspace_idx: %u, state: 0x%x, err: %d\n", launch_cnt, workspace_idx, state, err);
             goto cleanup_kernels_evt;
         } else  {
-            printf("launch removed: %u\n", launch_cnt);
+            //printf("launch removed: %u\n", launch_cnt);
             // remove completed work items only when successfully launched
             workspace_sizes[workspace_idx] -= launch_cnt;
             launched_kernels_cnt++;
         }
     }
 
-    printf("launched_kernels_cnt: %u\n", launched_kernels_cnt);
+    //printf("launched_kernels_cnt: %u\n", launched_kernels_cnt);
 
     clk_event_t marker_evt;
     err = enqueue_marker(q, launched_kernels_cnt, launched_kernels_evt, &marker_evt);
@@ -493,8 +496,12 @@ kernel void relaunch_kernel(__global start_condition* workspace, __global uint* 
 kernel void sum_results(const __global ulong* res_in, __global ulong* res_out) {
     ulong cnt = 0;
 
-    for(uint i = 0; i < SUM_REDUCTION_FACTOR; i++) {
-        cnt += res_in[G*SUM_REDUCTION_FACTOR+i];
+    uint stride = get_local_size(0);
+    uint offs = (G-L)*SUM_REDUCTION_FACTOR + L;
+    uint end = offs + stride*SUM_REDUCTION_FACTOR;
+
+    for(uint i = offs; i < end; i += stride) {
+        cnt += res_in[i];
     }
     
     //printf("[sum  ] G: %lu, cnt: %lu\n", G, cnt);
