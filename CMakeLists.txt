@@ -146,11 +146,12 @@ if (${BUILD_STATIC})
     # Linking standard libs statically
     set(CMAKE_CXX_STANDARD_LIBRARIES "-Wl,-Bstatic,--whole-archive -lpthread -Wl,--no-whole-archive -static-libgcc -static-libstdc++")
     set(CMAKE_EXE_LINKER_FLAGS "--static --verbose")
+    # Static BOINC builds expose all sublibraries separately
     target_link_libraries(${BOINC_PROJECT} ${BOINC_STATIC_DIR}/lib/libboinc_api.a)
     target_link_libraries(${BOINC_PROJECT} ${BOINC_STATIC_DIR}/lib/libboinc.a)
 else()
+    # For dynamic BOINC builds there's only libboinc.so to link to
     target_link_libraries(${BOINC_PROJECT} boinc)
-    target_link_libraries(${BOINC_PROJECT} boinc_api)
 endif()
 
 set(BOINC_PROJECT_OCL m-queens2-boinc-ocl)
@@ -200,12 +201,13 @@ if (${BUILD_STATIC})
     # Linking standard libs statically
     set(CMAKE_CXX_STANDARD_LIBRARIES "-Wl,-Bstatic,--whole-archive -lpthread -Wl,--no-whole-archive -static-libgcc -static-libstdc++")
     set(CMAKE_EXE_LINKER_FLAGS "--static --verbose")
+    # Static BOINC builds expose all sublibraries separately
     target_link_libraries(m-queens2-boinc-ocl ${BOINC_STATIC_DIR}/lib/libboinc_api.a)
     target_link_libraries(m-queens2-boinc-ocl ${BOINC_STATIC_DIR}/lib/libboinc_opencl.a)
     target_link_libraries(m-queens2-boinc-ocl ${BOINC_STATIC_DIR}/lib/libboinc.a)
 else()
+    # For dynamic BOINC builds there's only libboinc.so to link to
     target_link_libraries(m-queens2-boinc-ocl boinc)
-    target_link_libraries(m-queens2-boinc-ocl boinc_api)
 endif()
 
 endif()
