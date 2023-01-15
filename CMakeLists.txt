@@ -150,8 +150,10 @@ if (${BUILD_STATIC})
     target_link_libraries(${BOINC_PROJECT} ${BOINC_STATIC_DIR}/lib/libboinc_api.a)
     target_link_libraries(${BOINC_PROJECT} ${BOINC_STATIC_DIR}/lib/libboinc.a)
 else()
-    # For dynamic BOINC builds there's only libboinc.so to link to
+    # For dynamic BOINC builds there's libboinc.so to link dynamically
     target_link_libraries(${BOINC_PROJECT} boinc)
+    # libboinc_api.a is a static library, but is also needed.
+    target_link_libraries(${BOINC_PROJECT} boinc_api)
 endif()
 
 set(BOINC_PROJECT_OCL m-queens2-boinc-ocl)
@@ -208,6 +210,9 @@ if (${BUILD_STATIC})
 else()
     # For dynamic BOINC builds there's only libboinc.so to link to
     target_link_libraries(m-queens2-boinc-ocl boinc)
+    # These are static libraries, but is also needed.
+    target_link_libraries(m-queens2-boinc-ocl boinc_api)
+    target_link_libraries(m-queens2-boinc-ocl boinc_opencl)
 endif()
 
 endif()
