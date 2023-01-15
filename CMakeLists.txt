@@ -39,9 +39,42 @@ add_custom_command(
 )
 add_custom_target(cl_kernel_lib DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/${CL_KERNEL_HEADER} ${CMAKE_CURRENT_SOURCE_DIR}/${CL_KERNEL_SRC})
 
-if (${WITH_STANDALONE})
+# Common files used by all build targets
+add_library(m-queens2-common
+    isolver.h
+    result_file.cpp
+    result_file.h
+    presolver.cpp
+    presolver.h
+    serialize_util.cpp
+    serialize_util.h
+    solverstructs.h
+    start_file.cpp
+    start_file.h
+)
 
 find_package(OpenCL REQUIRED)
+# needed for the OpenCL C++ wrapper
+set(THREADS_PREFER_PTHREAD_FLAG ON)
+find_package(Threads REQUIRED)
+
+# CPU solver core
+add_library(m-queens2-cpu-solver
+    cpusolver.h
+    cpusolver.cpp
+)
+
+# OpenCL solver core
+add_library(m-queens2-ocl-solver
+    clsolver.h
+    clsolver.cpp
+)
+
+# OpenCL solver needs thre pre-solver from common
+target_link_libraries(m-queens2-ocl-solver OpenCL::OpenCL m-queens2-common)
+add_dependencies(m-queens2-ocl-solver cl_kernel_lib)
+
+if (${WITH_STANDALONE})
 
 find_package(OpenMP)
 if (OPENMP_FOUND)
@@ -53,31 +86,12 @@ endif()
 set (CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} -march=native -mtune=native")
 set (CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -march=native -mtune=native")
 
-set(${PROJECT_NAME}_SOURCES
-  clqueens.cl
-  clsolver.cpp
-  clsolver.h
-  cpusolver.h
-  cpusolver.cpp
-  isolver.h
-  presolver.cpp
-  presolver.h
-  result_file.cpp
-  result_file.h
-  serialize_util.cpp
-  serialize_util.h
-  solverstructs.h
-  start_file.cpp
-  start_file.h
- )
-
-add_executable(${PROJECT_NAME} ${${PROJECT_NAME}_SOURCES} "main.cpp")
-target_link_libraries(${PROJECT_NAME} OpenCL::OpenCL)
-add_dependencies(${PROJECT_NAME} cl_kernel_lib)
-target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/cxxopts/include)
+add_executable(m-queens2 main.cpp)
+target_link_libraries(m-queens2 m-queens2-common m-queens2-cpu-solver m-queens2-ocl-solver)
+target_include_directories(m-queens2 PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/cxxopts/include)
 if (${BUILD_STATIC})
 set(CMAKE_EXE_LINKER_FLAGS " -static")
-target_link_libraries(${PROJECT_NAME} "-static-libgcc -static-libstdc++")
+target_link_libraries(m-queens2 "-static-libgcc -static-libstdc++")
 endif()
 
 endif()
@@ -87,105 +101,51 @@ if(${WITH_BOINC})
 set (CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} -O2")
 set (CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O2")
 
-set(PRESOLVER_PROJECT m-queens2-presolver)
-
-set(${PRESOLVER_PROJECT}_SOURCES
-    presolver/main.cpp
-    presolver.cpp
-    presolver.h
-    solverstructs.h
-    serialize_util.cpp
-    serialize_util.h
-    start_file.cpp
-    start_file.h
-)
-
-add_executable(${PRESOLVER_PROJECT} ${${PRESOLVER_PROJECT}_SOURCES} "presolver/main.cpp")
+add_executable(m-queens2-presolver "presolver/main.cpp")
+target_link_libraries(m-queens2-presolver m-queens2-common m-queens2-cpu-solver)
 # Strip binary for release builds
 #if (CMAKE_BUILD_TYPE STREQUAL Release)
 #    add_custom_command(TARGET ${PRESOLVER_PROJECT} POST_BUILD
 #            COMMAND ${CMAKE_STRIP} ${PRESOLVER_PROJECT})
 #endif ()
-target_include_directories(${PRESOLVER_PROJECT} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/cxxopts/include)
-target_include_directories(${PRESOLVER_PROJECT} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_include_directories(m-queens2-presolver PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/cxxopts/include)
+target_include_directories(m-queens2-presolver PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 if (${BUILD_STATIC})
 set(CMAKE_EXE_LINKER_FLAGS " -static")
-target_link_libraries(${PRESOLVER_PROJECT} "-static-libgcc -static-libstdc++")
+target_link_libraries(m-queens2-presolver "-static-libgcc -static-libstdc++")
 endif()
 
-set(BOINC_PROJECT m-queens2-boinc)
-
-set(${BOINC_PROJECT}_SOURCES
-    boinc/main.cpp
-    cpusolver.h
-    cpusolver.cpp
-    presolver.cpp
-    presolver.h
-    result_file.cpp
-    result_file.h
-    solverstructs.h
-    serialize_util.cpp
-    serialize_util.h
-    start_file.cpp
-    start_file.h
-)
-
-add_executable(${BOINC_PROJECT} ${${BOINC_PROJECT}_SOURCES} "boinc/main.cpp")
-add_dependencies(${BOINC_PROJECT} cl_kernel_lib)
+# BOINC executable with CPU solver
+add_executable(m-queens2-boinc-cpu "boinc/main.cpp")
+target_link_libraries(m-queens2-boinc-cpu m-queens2-common m-queens2-cpu-solver)
 
 # Strip binary for release builds
 #if (CMAKE_BUILD_TYPE STREQUAL Release)
 #    add_custom_command(TARGET ${BOINC_PROJECT} POST_BUILD
 #            COMMAND ${CMAKE_STRIP} ${BOINC_PROJECT})
 #endif ()
-target_include_directories(${BOINC_PROJECT} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/cxxopts/include)
-target_include_directories(${BOINC_PROJECT} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-target_include_directories(${BOINC_PROJECT} PRIVATE ${BOINC_STATIC_DIR}/include/)
+target_include_directories(m-queens2-boinc-cpu PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/cxxopts/include)
+target_include_directories(m-queens2-boinc-cpu PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_include_directories(m-queens2-boinc-cpu PRIVATE ${BOINC_STATIC_DIR}/include/)
 
 if (${BUILD_STATIC})
     # Linking standard libs statically
     set(CMAKE_CXX_STANDARD_LIBRARIES "-Wl,-Bstatic,--whole-archive -lpthread -Wl,--no-whole-archive -static-libgcc -static-libstdc++")
     set(CMAKE_EXE_LINKER_FLAGS "--static --verbose")
     # Static BOINC builds expose all sublibraries separately
-    target_link_libraries(${BOINC_PROJECT} ${BOINC_STATIC_DIR}/lib/libboinc_api.a)
-    target_link_libraries(${BOINC_PROJECT} ${BOINC_STATIC_DIR}/lib/libboinc.a)
+    target_link_libraries(m-queens2-boinc-cpu ${BOINC_STATIC_DIR}/lib/libboinc_api.a)
+    target_link_libraries(m-queens2-boinc-cpu ${BOINC_STATIC_DIR}/lib/libboinc.a)
 else()
     # For dynamic BOINC builds there's libboinc.so to link dynamically
-    target_link_libraries(${BOINC_PROJECT} boinc)
+    target_link_libraries(m-queens2-boinc-cpu boinc)
     # libboinc_api.a is a static library, but is also needed.
-    target_link_libraries(${BOINC_PROJECT} boinc_api)
+    target_link_libraries(m-queens2-boinc-cpu boinc_api)
 endif()
 
-set(BOINC_PROJECT_OCL m-queens2-boinc-ocl)
 
-find_package(OpenCL REQUIRED)
-
-# needed for the OpenCL C++ wrapper
-set(THREADS_PREFER_PTHREAD_FLAG ON)
-find_package(Threads REQUIRED)
-
-# copy OpenCL kernel source
-configure_file(${CMAKE_SOURCE_DIR}/clqueens.cl ./ COPYONLY)
-
-set(${BOINC_PROJECT_OCL}_SOURCES
-    boinc/main.cpp
-    clqueens.cl
-    clsolver.cpp
-    clsolver.h
-    cpusolver.h
-    cpusolver.cpp
-    presolver.cpp
-    presolver.h
-    result_file.cpp
-    result_file.h
-    solverstructs.h
-    serialize_util.cpp
-    serialize_util.h
-    start_file.cpp
-    start_file.h
-)
-
-add_executable(m-queens2-boinc-ocl ${${BOINC_PROJECT_OCL}_SOURCES})
+# BOINC executable with OpenCL enabled solver
+add_executable(m-queens2-boinc-ocl boinc/main.cpp)
+target_link_libraries(m-queens2-boinc-ocl m-queens2-common m-queens2-cpu-solver m-queens2-ocl-solver)
 target_compile_definitions(m-queens2-boinc-ocl PRIVATE BOINC_OCL_SOLVER=1)
 
 # Strip binary for release builds
@@ -195,9 +155,6 @@ endif ()
 target_include_directories(m-queens2-boinc-ocl PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/cxxopts/include)
 target_include_directories(m-queens2-boinc-ocl PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_include_directories(m-queens2-boinc-ocl PRIVATE ${BOINC_STATIC_DIR}/include/)
-
-target_link_libraries(m-queens2-boinc-ocl OpenCL::OpenCL)
-add_dependencies(m-queens2-boinc-ocl cl_kernel_lib)
 
 if (${BUILD_STATIC})
     # Linking standard libs statically
