@@ -22,8 +22,8 @@ public:
     uint64_t solve_subboard(const std::vector<start_condition>& start);
     static void enumerate_devices();
 
-    static ClSolver* makeClSolver(unsigned int platform, unsigned int device, bool debug_print);
-    static ClSolver* makeClSolver(cl::Platform platform, cl::Device device, bool debug_print);
+    static ClSolver* makeClSolver(unsigned int platform, unsigned int device, bool debug_print = false);
+    static ClSolver* makeClSolver(cl::Platform platform, cl::Device device, bool debug_print = false);
 
 private:
     struct ThreadData {
