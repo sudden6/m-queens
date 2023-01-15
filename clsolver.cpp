@@ -169,7 +169,7 @@ bool ClSolver::allocateThreads(size_t cnt) {
             return false;
         }
 
-        err = t.clRelaunchKernel.setArg(4, static_cast<cl_uint>(0));
+        err = t.clRelaunchKernel.setArg(4, static_cast<cl_uint>(max_device_events));
         if(err != CL_SUCCESS) {
             std::cerr << "solve_subboard.setArg(4 failed: " << err << std::endl;
             return false;
@@ -576,6 +576,15 @@ ClSolver* ClSolver::makeClSolver(cl::Platform platform, cl::Device used_device, 
     }
 
     solver->device = used_device;
+
+    cl_uint max_events = used_device.getInfo<CL_DEVICE_MAX_ON_DEVICE_EVENTS>(&err);
+    if(err != CL_SUCCESS) {
+        std::cerr << "getInfo<CL_DEVICE_MAX_ON_DEVICE_EVENTS> failed: " << std::to_string(err) << std::endl;
+        return nullptr;
+    }
+
+    solver->max_device_events = max_events;
+    std::cerr << "Device events:    " << std::to_string(max_events) << std::endl;
 
     cl_ulong memory_size = used_device.getInfo<CL_DEVICE_GLOBAL_MEM_SIZE>(&err);
     if(err != CL_SUCCESS) {

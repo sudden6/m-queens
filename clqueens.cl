@@ -284,17 +284,17 @@ kernel void solve_final(const __global start_condition* in_start, __global ulong
     }
 }
 
-kernel void relaunch_kernel(__global start_condition* workspace, __global uint* workspace_sizes, __global ulong* out_res, unsigned state, unsigned recursion) {
+kernel void relaunch_kernel(__global start_condition* workspace, __global uint* workspace_sizes, __global ulong* out_res, unsigned state, unsigned events_remaining) {
     queue_t q = get_default_queue();
     
-    printf("START RELAUNCH recursion: %u\n", recursion);
+    printf("START RELAUNCH events_remaining: %u\n", events_remaining);
 
     uint limits[GPU_DEPTH - 1];
     // final run only depends on input limit, calculate differently
     limits[GPU_DEPTH-2] = workspace_sizes[GPU_DEPTH - 2];
 
     // Find maximum possible kernel launches
-    //printf("state: 0x%x, recursion: %u\n", state, recursion);
+    //printf("state: 0x%x, events_remaining: %u\n", state, events_remaining);
     for(uint workspace_idx = 0; workspace_idx < (GPU_DEPTH - 2); workspace_idx++) {
         uint remaining = GPU_DEPTH - workspace_idx;
         uint input_limit = workspace_sizes[workspace_idx];
@@ -316,18 +316,9 @@ kernel void relaunch_kernel(__global start_condition* workspace, __global uint* 
     }
 
     if (odd_launches == 0 && even_launches == 0) {
-        printf("Finished, recursion: %u\n", recursion);
+        printf("Finished, events_remaining: %u\n", events_remaining);
         return;
     }
-
-#if 1
-    // An unlimited recursion level potentially allows to fully use the GPU queue,
-    // but this might be a corner case in the code and result in problems
-    if (recursion > 100) {
-        printf("Recursion limit\n");
-        return;
-    }
-#endif
 
     uint launch_odd = odd_launches > even_launches;
     //printf("Launch odd: %u\n", launch_odd);
@@ -454,7 +445,15 @@ kernel void relaunch_kernel(__global start_condition* workspace, __global uint* 
         }
     }
 
-    //printf("launched_kernels_cnt: %u\n", launched_kernels_cnt);
+    printf("launched_kernels_cnt: %u\n", launched_kernels_cnt);
+
+    // Limit the recursion depth based on the maximum number of on device events remaining
+    unsigned remaining_recursion = events_remaining - launched_kernels_cnt;
+    // Only start relaunch kernel when we have enough events for 1 marker_event and 1 + (GPU_DEPTH/2 + 1) (round up) kernel launches left
+    if (remaining_recursion < (1 + 1 +(GPU_DEPTH + 1) /2)) {
+        printf("Estimated event queue full\n");
+        goto cleanup_kernels_evt;
+    }
 
     clk_event_t marker_evt;
     err = enqueue_marker(q, launched_kernels_cnt, launched_kernels_evt, &marker_evt);
@@ -463,8 +462,9 @@ kernel void relaunch_kernel(__global start_condition* workspace, __global uint* 
         goto cleanup_kernels_evt;
     }
 
+    // Subtract 2 from recursions, 1 for marker event, 1 for relaunch_kernel recursion
     void (^recursion_blk)(void) = ^{
-                    relaunch_kernel(workspace, workspace_sizes, out_res, state, recursion + 1);
+                    relaunch_kernel(workspace, workspace_sizes, out_res, state, remaining_recursion - 2);
                 };
 
     // self enqueue recursion
@@ -475,7 +475,7 @@ kernel void relaunch_kernel(__global start_condition* workspace, __global uint* 
                         NULL,
                         recursion_blk);
     if ( err != 0) {
-        printf("Error enqueuing recursion: %u\n", recursion);
+        printf("Error enqueuing recursion kernel, events_remaining: %u\n", events_remaining);
     }
 
     for(uint i = 0; i < launched_kernels_cnt; i++) {
@@ -490,7 +490,7 @@ kernel void relaunch_kernel(__global start_condition* workspace, __global uint* 
         release_event(launched_kernels_evt[i]);
     }
     
-    printf("STOP  RELAUNCH recursion: %u\n", recursion);
+    printf("STOP  RELAUNCH events_remaining: %u\n", events_remaining);
 }
 
 kernel void sum_results(const __global ulong* res_in, __global ulong* res_out) {

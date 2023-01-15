@@ -55,6 +55,7 @@ private:
     uint8_t placed = 0;
     uint8_t boardsize = 0;
     uint64_t workspace_size = 0;
+    uint32_t max_device_events = 0;
     cl::Context context;
     cl::Device device;
     cl::DeviceCommandQueue devQueue;
