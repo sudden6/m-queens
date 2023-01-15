@@ -103,11 +103,7 @@ set (CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O2")
 
 add_executable(m-queens2-presolver "presolver/main.cpp")
 target_link_libraries(m-queens2-presolver m-queens2-common m-queens2-cpu-solver)
-# Strip binary for release builds
-#if (CMAKE_BUILD_TYPE STREQUAL Release)
-#    add_custom_command(TARGET ${PRESOLVER_PROJECT} POST_BUILD
-#            COMMAND ${CMAKE_STRIP} ${PRESOLVER_PROJECT})
-#endif ()
+
 target_include_directories(m-queens2-presolver PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/cxxopts/include)
 target_include_directories(m-queens2-presolver PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 if (${BUILD_STATIC})
@@ -119,11 +115,6 @@ endif()
 add_executable(m-queens2-boinc-cpu "boinc/main.cpp")
 target_link_libraries(m-queens2-boinc-cpu m-queens2-common m-queens2-cpu-solver)
 
-# Strip binary for release builds
-#if (CMAKE_BUILD_TYPE STREQUAL Release)
-#    add_custom_command(TARGET ${BOINC_PROJECT} POST_BUILD
-#            COMMAND ${CMAKE_STRIP} ${BOINC_PROJECT})
-#endif ()
 target_include_directories(m-queens2-boinc-cpu PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/cxxopts/include)
 target_include_directories(m-queens2-boinc-cpu PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_include_directories(m-queens2-boinc-cpu PRIVATE ${BOINC_STATIC_DIR}/include/)
@@ -148,10 +139,6 @@ add_executable(m-queens2-boinc-ocl boinc/main.cpp)
 target_link_libraries(m-queens2-boinc-ocl m-queens2-common m-queens2-cpu-solver m-queens2-ocl-solver)
 target_compile_definitions(m-queens2-boinc-ocl PRIVATE BOINC_OCL_SOLVER=1)
 
-# Strip binary for release builds
-if (CMAKE_BUILD_TYPE STREQUAL Release)
-    set_target_properties(m-queens2-boinc-ocl PROPERTIES LINK_FLAGS_RELEASE -s)
-endif ()
 target_include_directories(m-queens2-boinc-ocl PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/cxxopts/include)
 target_include_directories(m-queens2-boinc-ocl PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_include_directories(m-queens2-boinc-ocl PRIVATE ${BOINC_STATIC_DIR}/include/)
