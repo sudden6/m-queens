@@ -403,9 +403,15 @@ kernel void relaunch_kernel(__global start_condition* workspace, __global uint* 
 
         uint local_size = min((uint)WORKGROUP_SIZE, kernel_wg_size);
         local_size = min(local_size, launch_cnt/applied_factor);
-        //printf("local_size: %u, kernel_wg_size: %u\n", local_size, kernel_wg_size);
-        //printf("launch workspace_idx: %u, launch_cnt: %u, factor: %u, local_size: %u, utilization: %f\n", workspace_idx, launch_cnt, applied_factor, local_size, ((float)launch_cnt)/(float)WORKSPACE_SIZE);
 
+        float utilization = ((float)launch_cnt)*applied_factor/(float)WORKSPACE_SIZE;
+        //printf("local_size: %u, kernel_wg_size: %u\n", local_size, kernel_wg_size);
+        printf("launch workspace_idx: %u, launch_cnt: %u, factor: %u, local_size: %u, utilization: %f\n", workspace_idx, launch_cnt, applied_factor, local_size, utilization);
+
+        if (state == CLSOLVER_FEED && utilization < 0.1) {
+            continue;
+        }
+        
 #define ENQUEUE_BLK(remaining) case remaining: \
                                 err = enqueue_kernel(q, CLK_ENQUEUE_FLAGS_WAIT_KERNEL, \
                                                      ndrange_1D(launch_cnt/applied_factor, local_size), \
@@ -446,6 +452,10 @@ kernel void relaunch_kernel(__global start_condition* workspace, __global uint* 
     }
 
     printf("launched_kernels_cnt: %u\n", launched_kernels_cnt);
+    if (launched_kernels_cnt == 0) {
+        printf("Lower utilization limit reached\n");
+        return;
+    }
 
     // Limit the recursion depth based on the maximum number of on device events remaining
     unsigned remaining_recursion = events_remaining - launched_kernels_cnt;
