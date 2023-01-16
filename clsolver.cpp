@@ -30,7 +30,7 @@ static constexpr size_t NUM_CMDQUEUES = 1;
 constexpr uint_fast8_t GPU_DEPTH = 11;
 constexpr size_t WORKGROUP_SIZE = 64;
 constexpr size_t WORKSPACE_DEPTH = GPU_DEPTH - 1;
-constexpr size_t SUM_REDUCTION_FACTOR = 1024*32;
+constexpr size_t SUM_REDUCTION_FACTOR = 1024*8;
 
 bool ClSolver::init(uint8_t boardsize, uint8_t placed)
 {
